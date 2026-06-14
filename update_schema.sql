@@ -2,7 +2,7 @@
 -- CONSOLIDATED SCHEMA UPDATE FOR ARPENT.IO
 -- ==========================================
 
--- 1. Activer l'extension PostGIS (requis pour la géométrie spatiale)
+-- 1. Activer l'extension PostGIS
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- 2. Table des points GPS pour l'historique complet des tracés
@@ -103,6 +103,37 @@ CREATE TRIGGER on_territoire_changed
     AFTER INSERT OR UPDATE OR DELETE ON public.territoires
     FOR EACH ROW EXECUTE PROCEDURE public.update_profile_cached_area();
 
+-- 7. Nettoyage et fusion des doublons existants par joueur
+DO $$
+DECLARE
+    r record;
+    v_merged_geom geometry;
+    v_total_area float;
+    v_new_points text[];
+BEGIN
+    FOR r IN SELECT utilisateur_id, guilde_id FROM public.territoires GROUP BY utilisateur_id, guilde_id LOOP
+        SELECT ST_Union(ST_Accum(contour)) INTO v_merged_geom
+        FROM public.territoires
+        WHERE utilisateur_id = r.utilisateur_id;
+
+        IF v_merged_geom IS NOT NULL THEN
+            v_merged_geom := ST_CollectionExtract(v_merged_geom, 3);
+            
+            IF NOT ST_IsEmpty(v_merged_geom) THEN
+                v_total_area := ST_Area(v_merged_geom::geography);
+                SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
+                FROM ST_DumpPoints(v_merged_geom);
+
+                DELETE FROM public.territoires WHERE utilisateur_id = r.utilisateur_id;
+
+                INSERT INTO public.territoires (utilisateur_id, guilde_id, contour, superficie_m2, points)
+                VALUES (r.utilisateur_id, r.guilde_id, v_merged_geom, v_total_area, v_new_points);
+            END IF;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 -- Recalculer les superficies existantes
 UPDATE public.profiles p
 SET total_area_m2 = coalesce(
@@ -110,7 +141,7 @@ SET total_area_m2 = coalesce(
     0.0
 );
 
--- 7. Fonction d'enregistrement de course avec Conquête et non-superposition alliée
+-- 8. Fonction d'enregistrement de course avec Conquête et fusion automatique (MultiPolygon)
 CREATE OR REPLACE FUNCTION public.enregistrer_course(
     p_user_id uuid,
     p_date_debut timestamp with time zone,
@@ -135,9 +166,9 @@ DECLARE
     v_team_terr record;
     v_diff_geom geometry;
     v_enemy_pts text[];
-    v_self_intersect_ids uuid[];
-    v_union_geom geometry;
     v_new_points text[];
+    v_existing_id uuid;
+    v_existing_contour geometry;
 BEGIN
     -- 1. Insérer la session de course
     INSERT INTO public.courses (utilisateur_id, date_debut, date_fin, distance_totale, duree_secondes, est_bouclee)
@@ -174,7 +205,7 @@ BEGIN
             -- Récupérer la guilde de l'utilisateur
             SELECT guilde_id INTO v_guilde_id FROM public.profiles WHERE id = p_user_id;
 
-            -- A. CONQUÊTE : Soustraire ce nouveau territoire aux ennemis (autres clans ou joueurs sans clan)
+            -- A. CONQUÊTE : Soustraire ce nouveau territoire aux ennemis
             FOR v_enemy_terr IN 
                 SELECT t.id, t.contour, p.guilde_id as enemy_guilde_id
                 FROM public.territoires t
@@ -201,7 +232,7 @@ BEGIN
                 END IF;
             END LOOP;
 
-            -- B. NON-SUPERPOSITION ALLIÉS : Soustraire les territoires alliés existants de notre nouveau territoire
+            -- B. NON-SUPERPOSITION ALLIÉS : Soustraire les territoires alliés existants
             IF v_guilde_id IS NOT NULL THEN
                 FOR v_team_terr IN 
                     SELECT t.contour
@@ -216,31 +247,42 @@ BEGIN
                 END LOOP;
             END IF;
 
-            -- C. FUSION PROPRE : Fusionner avec nos propres territoires existants qui s'intersectent
-            SELECT array_agg(id) INTO v_self_intersect_ids
+            -- C. FUSION / MISE À JOUR : Fusionner avec le territoire existant du joueur
+            SELECT id, contour INTO v_existing_id, v_existing_contour
             FROM public.territoires
-            WHERE utilisateur_id = p_user_id AND ST_Intersects(contour, v_geom);
+            WHERE utilisateur_id = p_user_id;
 
-            IF v_self_intersect_ids IS NOT NULL AND array_length(v_self_intersect_ids, 1) > 0 THEN
-                SELECT ST_Union(ST_Accum(contour)) INTO v_union_geom
-                FROM public.territoires
-                WHERE id = ANY(v_self_intersect_ids);
-
-                v_geom := ST_Union(v_geom, v_union_geom);
+            IF v_existing_id IS NOT NULL THEN
+                v_geom := ST_Union(v_existing_contour, v_geom);
                 v_geom := ST_CollectionExtract(v_geom, 3);
 
-                DELETE FROM public.territoires WHERE id = ANY(v_self_intersect_ids);
-            END IF;
+                IF NOT ST_IsValid(v_geom) THEN
+                    v_geom := ST_MakeValid(v_geom);
+                END IF;
 
-            -- D. INSERTION du territoire final
-            IF NOT ST_IsEmpty(v_geom) THEN
-                v_superficie := ST_Area(v_geom::geography);
-                
-                SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
-                FROM ST_DumpPoints(v_geom);
+                IF NOT ST_IsEmpty(v_geom) THEN
+                    v_superficie := ST_Area(v_geom::geography);
+                    SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
+                    FROM ST_DumpPoints(v_geom);
 
-                INSERT INTO public.territoires (utilisateur_id, guilde_id, contour, superficie_m2, points)
-                VALUES (p_user_id, v_guilde_id, v_geom, v_superficie, v_new_points);
+                    UPDATE public.territoires 
+                    SET contour = v_geom,
+                        superficie_m2 = v_superficie,
+                        points = v_new_points,
+                        derniere_mise_a_jour = now()
+                    WHERE id = v_existing_id;
+                ELSE
+                    DELETE FROM public.territoires WHERE id = v_existing_id;
+                END IF;
+            ELSE
+                IF NOT ST_IsEmpty(v_geom) THEN
+                    v_superficie := ST_Area(v_geom::geography);
+                    SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
+                    FROM ST_DumpPoints(v_geom);
+
+                    INSERT INTO public.territoires (utilisateur_id, guilde_id, contour, superficie_m2, points)
+                    VALUES (p_user_id, v_guilde_id, v_geom, v_superficie, v_new_points);
+                END IF;
             END IF;
 
         EXCEPTION WHEN OTHERS THEN
@@ -250,7 +292,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- 8. Fonction de récupération des territoires par viewport (Bounding Box)
+-- 9. Fonction de récupération des territoires par viewport (Bounding Box)
 DROP FUNCTION IF EXISTS public.get_territoires_in_bbox(double precision, double precision, double precision, double precision);
 
 CREATE OR REPLACE FUNCTION public.get_territoires_in_bbox(
@@ -269,7 +311,8 @@ RETURNS TABLE (
     latitude float,
     longitude float,
     guilde_nom text,
-    guilde_couleur text
+    guilde_couleur text,
+    total_area_m2 float
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -283,7 +326,8 @@ BEGIN
         CASE WHEN p.share_location THEN p.latitude ELSE null END as latitude,
         CASE WHEN p.share_location THEN p.longitude ELSE null END as longitude,
         g.nom as guilde_nom,
-        g.couleur_hex as guilde_couleur
+        g.couleur_hex as guilde_couleur,
+        p.total_area_m2
     FROM public.territoires t
     JOIN public.profiles p ON t.utilisateur_id = p.id
     LEFT JOIN public.guildes g ON p.guilde_id = g.id
@@ -291,7 +335,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- 9. Vue globale du Classement (Leaderboard)
+-- 10. Vue globale du Classement des Joueurs (Leaderboard)
 DROP VIEW IF EXISTS public.leaderboard;
 
 CREATE OR REPLACE VIEW public.leaderboard AS
@@ -308,3 +352,90 @@ SELECT
 FROM public.profiles p
 LEFT JOIN public.guildes g ON p.guilde_id = g.id
 ORDER BY p.total_area_m2 DESC;
+
+-- 11. Vue globale du Classement des Clans (Clan Leaderboard)
+DROP VIEW IF EXISTS public.clan_leaderboard;
+
+CREATE OR REPLACE VIEW public.clan_leaderboard AS
+SELECT 
+    g.id,
+    g.nom,
+    g.couleur_hex,
+    g.avatar_url,
+    COALESCE(SUM(p.total_area_m2), 0.0) as total_area_m2,
+    COUNT(p.id) as membre_count
+FROM public.guildes g
+LEFT JOIN public.profiles p ON p.guilde_id = g.id
+GROUP BY g.id, g.nom, g.couleur_hex, g.avatar_url
+ORDER BY total_area_m2 DESC;
+
+-- 12. Fonction de suggestions d'amis par proximité géographique
+DROP FUNCTION IF EXISTS public.suggerer_amis_proximite(uuid, int);
+DROP FUNCTION IF EXISTS public.suggerer_amis_proximite(uuid, double precision);
+
+CREATE OR REPLACE FUNCTION public.suggerer_amis_proximite(
+    p_utilisateur_id uuid,
+    p_max_distance_meters double precision DEFAULT 50000
+)
+RETURNS TABLE (
+    id uuid,
+    pseudonyme text,
+    avatar_url text,
+    empire_color text,
+    distance_meters float
+) AS $$
+DECLARE
+    v_user_geom geometry;
+BEGIN
+    SELECT ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) INTO v_user_geom
+    FROM public.profiles
+    WHERE id = p_utilisateur_id AND longitude IS NOT NULL AND latitude IS NOT NULL;
+
+    IF v_user_geom IS NULL THEN
+        -- If current user has no location, suggest profiles by total area
+        RETURN QUERY
+        SELECT 
+            p.id,
+            p.pseudonyme,
+            p.avatar_url,
+            p.empire_color,
+            null::float as distance_meters
+        FROM public.profiles p
+        WHERE p.id <> p_utilisateur_id
+          AND NOT EXISTS (
+              SELECT 1 FROM public.amis a
+              WHERE (a.demandeur_id = p_utilisateur_id AND a.destinataire_id = p.id)
+                 OR (a.demandeur_id = p.id AND a.destinataire_id = p_utilisateur_id)
+          )
+        ORDER BY p.total_area_m2 DESC
+        LIMIT 10;
+    ELSE
+        RETURN QUERY
+        SELECT 
+            p.id,
+            p.pseudonyme,
+            p.avatar_url,
+            p.empire_color,
+            ST_Distance(
+                ST_SetSRID(ST_MakePoint(p.longitude, p.latitude), 4326)::geography,
+                v_user_geom::geography
+            ) as distance_meters
+        FROM public.profiles p
+        WHERE p.id <> p_utilisateur_id
+          AND p.longitude IS NOT NULL 
+          AND p.latitude IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM public.amis a
+              WHERE (a.demandeur_id = p_utilisateur_id AND a.destinataire_id = p.id)
+                 OR (a.demandeur_id = p.id AND a.destinataire_id = p_utilisateur_id)
+          )
+          AND ST_DWithin(
+              ST_SetSRID(ST_MakePoint(p.longitude, p.latitude), 4326)::geography,
+              v_user_geom::geography,
+              p_max_distance_meters
+          )
+        ORDER BY distance_meters ASC
+        LIMIT 10;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER;

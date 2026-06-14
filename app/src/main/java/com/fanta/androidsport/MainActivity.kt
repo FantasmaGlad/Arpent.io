@@ -817,8 +817,8 @@ fun ArpentMainScreen(userId: String) {
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                // Render map in background for conquest and leaderboard tabs
-                if (navigationIndex == 0 || navigationIndex == 1) {
+                // Render map in background for conquest, leaderboard and guild tabs
+                if (navigationIndex == 0 || navigationIndex == 1 || navigationIndex == 3) {
                     ConquestMapScreen(
                         userId = userId,
                         userPseudo = userPseudo,
@@ -827,6 +827,7 @@ fun ArpentMainScreen(userId: String) {
                         userEmpireColor = userEmpireColor,
                         userAvatarUrl = userAvatarUrl,
                         userGuildCouleur = userGuildCouleur,
+                        userGuildNom = userGuildNom,
                         mapTargetPosition = mapTargetPosition,
                         onMapTargetPositionHandled = { mapTargetPosition = null },
                         onRunSaved = { refreshStats() }
@@ -837,6 +838,7 @@ fun ArpentMainScreen(userId: String) {
                 if (navigationIndex == 1) {
                     LeaderboardScreen(
                         userId = userId,
+                        userGuildId = userGuildId,
                         onPlayerClick = { point ->
                             mapTargetPosition = point
                             navigationIndex = 0
@@ -1070,6 +1072,18 @@ fun getPolygonCentroid(points: List<Point>): Point {
     return Point.fromLngLat(sumLng / count, sumLat / count)
 }
 
+fun getPolygonArea(points: List<Point>): Double {
+    if (points.size < 3) return 0.0
+    var area = 0.0
+    val n = points.size
+    for (i in 0 until n) {
+        val j = (i + 1) % n
+        area += points[i].longitude() * points[j].latitude()
+        area -= points[j].longitude() * points[i].latitude()
+    }
+    return Math.abs(area) / 2.0
+}
+
 @Composable
 fun AvatarImage(
     avatarUrl: String?,
@@ -1291,6 +1305,7 @@ fun ConquestMapScreen(
     userEmpireColor: String,
     userAvatarUrl: String?,
     userGuildCouleur: String?,
+    userGuildNom: String?,
     mapTargetPosition: Point?,
     onMapTargetPositionHandled: () -> Unit,
     onRunSaved: () -> Unit
@@ -1351,9 +1366,11 @@ fun ConquestMapScreen(
         val markerPosition: Point?,
         val avatarUrl: String?,
         val guildeNom: String?,
-        val guildeCouleur: String?
+        val guildeCouleur: String?,
+        val totalAreaM2: Double
     )
     var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
+    var selectedPlayerStats by remember { mutableStateOf<OtherPlayerTerritory?>(null) }
 
     // Fetch other players' territories dynamically based on visible bounding box
     LaunchedEffect(userId) {
@@ -1404,7 +1421,8 @@ fun ConquestMapScreen(
                     val colorStr: String,
                     val avatarUrl: String?,
                     val guildeNom: String?,
-                    val guildeCouleur: String?
+                    val guildeCouleur: String?,
+                    val totalAreaM2: Double
                 )
                 val userDetails = mutableMapOf<String, PlayerDetails>()
                 val userLocations = mutableMapOf<String, Point>()
@@ -1417,8 +1435,9 @@ fun ConquestMapScreen(
                     val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
                     val guildeNom = obj["guilde_nom"]?.jsonPrimitive?.contentOrNull
                     val guildeCouleur = obj["guilde_couleur"]?.jsonPrimitive?.contentOrNull
+                    val totalAreaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     
-                    userDetails[uId] = PlayerDetails(pseudo, colorStr, avatarUrl, guildeNom, guildeCouleur)
+                    userDetails[uId] = PlayerDetails(pseudo, colorStr, avatarUrl, guildeNom, guildeCouleur, totalAreaM2)
                     
                     val latVal = obj["latitude"]?.jsonPrimitive?.doubleOrNull
                     val lonVal = obj["longitude"]?.jsonPrimitive?.doubleOrNull
@@ -1455,7 +1474,8 @@ fun ConquestMapScreen(
                         markerPosition = marker,
                         avatarUrl = detail.avatarUrl,
                         guildeNom = detail.guildeNom,
-                        guildeCouleur = detail.guildeCouleur
+                        guildeCouleur = detail.guildeCouleur,
+                        totalAreaM2 = detail.totalAreaM2
                     )
                 }
             }
@@ -1608,12 +1628,19 @@ fun ConquestMapScreen(
                     points = listOf(polygonPoints),
                     polygonAnnotationState = polygonState
                 )
+            }
 
-                // Draw user avatar at centroid of territory
-                val centroid = remember(polygonPoints) { getPolygonCentroid(polygonPoints) }
+            // Draw user avatar exactly once at centroid of largest polygon
+            val userLargestPolygon = remember(completedPolygons.size) {
+                completedPolygons.maxByOrNull { getPolygonArea(it) }
+            }
+            val userCentroid = remember(userLargestPolygon) {
+                userLargestPolygon?.let { getPolygonCentroid(it) }
+            }
+            if (userCentroid != null) {
                 ViewAnnotation(
                     options = viewAnnotationOptions {
-                        geometry(centroid)
+                        geometry(userCentroid)
                         allowOverlap(true)
                     }
                 ) {
@@ -1624,6 +1651,19 @@ fun ConquestMapScreen(
                             .clip(CircleShape)
                             .border(2.dp, parsedUserColor, CircleShape)
                             .background(MaterialTheme.colorScheme.surface)
+                            .clickable {
+                                selectedPlayerStats = OtherPlayerTerritory(
+                                    playerId = userId,
+                                    pseudo = userPseudo,
+                                    empireColor = parsedUserColor,
+                                    polygons = completedPolygons.toList(),
+                                    markerPosition = null,
+                                    avatarUrl = userAvatarUrl,
+                                    guildeNom = userGuildNom,
+                                    guildeCouleur = userGuildCouleur,
+                                    totalAreaM2 = currentArea * 1_000_000.0
+                                )
+                            }
                     )
                 }
             }
@@ -1648,12 +1688,19 @@ fun ConquestMapScreen(
                         points = listOf(polygonPoints),
                         polygonAnnotationState = polygonState
                     )
+                }
 
-                    // Draw player avatar at centroid of territory
-                    val centroid = remember(polygonPoints) { getPolygonCentroid(polygonPoints) }
+                // Draw player avatar exactly once at centroid of largest polygon
+                val playerLargestPolygon = remember(player.polygons) {
+                    player.polygons.maxByOrNull { getPolygonArea(it) }
+                }
+                val playerCentroid = remember(playerLargestPolygon) {
+                    playerLargestPolygon?.let { getPolygonCentroid(it) }
+                }
+                if (playerCentroid != null) {
                     ViewAnnotation(
                         options = viewAnnotationOptions {
-                            geometry(centroid)
+                            geometry(playerCentroid)
                             allowOverlap(true)
                         }
                     ) {
@@ -1664,6 +1711,9 @@ fun ConquestMapScreen(
                                 .clip(CircleShape)
                                 .border(2.dp, player.empireColor, CircleShape)
                                 .background(MaterialTheme.colorScheme.surface)
+                                .clickable {
+                                    selectedPlayerStats = player
+                                }
                         )
                     }
                 }
@@ -2053,6 +2103,82 @@ fun ConquestMapScreen(
                 )
             }
         }
+        
+        // Show player details stats dialog when clicked
+        if (selectedPlayerStats != null) {
+            val player = selectedPlayerStats!!
+            AlertDialog(
+                onDismissRequest = { selectedPlayerStats = null },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val parsedColor = player.empireColor
+                        AvatarImage(
+                            avatarUrl = player.avatarUrl,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, parsedColor, CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(text = player.pseudo, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black)
+                            if (player.guildeNom != null) {
+                                val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color.Gray }
+                                Text(text = "Clan: ${player.guildeNom}", color = gColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text(
+                            text = "Statistiques de l'Empire",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Couleur de l'Empire :", color = Color.Black)
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(player.empireColor)
+                                    .border(1.dp, Color.Gray, CircleShape)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Superficie conquise :", color = Color.Black)
+                            val areaStr = if (player.totalAreaM2 >= 10000.0) {
+                                "%.4f km²".format(player.totalAreaM2 / 1_000_000.0)
+                            } else {
+                                "${player.totalAreaM2.toInt()} m²"
+                            }
+                            Text(
+                                text = areaStr,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { selectedPlayerStats = null }) {
+                        Text("FERMER", color = Color(0xFFE040FB), fontWeight = FontWeight.Bold)
+                    }
+                },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = Color.White
+            )
+        }
     }
 }
 
@@ -2074,22 +2200,38 @@ data class LeaderboardPlayer(
     val empireColor: String,
     val latitude: Double?,
     val longitude: Double?,
-    val totalAreaM2: Double
+    val totalAreaM2: Double,
+    val avatarUrl: String?,
+    val guildeNom: String?,
+    val guildeCouleur: String?
+)
+
+data class LeaderboardClan(
+    val id: String,
+    val nom: String,
+    val couleurHex: String,
+    val avatarUrl: String?,
+    val totalAreaM2: Double,
+    val membreCount: Int
 )
 
 @Composable
 fun LeaderboardScreen(
     userId: String,
+    userGuildId: String? = null,
     onPlayerClick: (Point) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var players by remember { mutableStateOf<List<LeaderboardPlayer>>(emptyList()) }
+    var clans by remember { mutableStateOf<List<LeaderboardClan>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Joueurs, 1 = Clans
 
     LaunchedEffect(Unit) {
         try {
+            // Fetch players
             val response = withContext(Dispatchers.IO) {
                 supabase.postgrest["leaderboard"].select()
             }
@@ -2103,10 +2245,33 @@ fun LeaderboardScreen(
                     val lat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
                     val lon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
                     val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                    LeaderboardPlayer(id, pseudo, color, lat, lon, areaM2)
+                    val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                    val gNom = obj["guilde_nom"]?.jsonPrimitive?.contentOrNull
+                    val gColor = obj["guilde_couleur"]?.jsonPrimitive?.contentOrNull
+                    LeaderboardPlayer(id, pseudo, color, lat, lon, areaM2, avatar, gNom, gColor)
                 } ?: emptyList()
             }
+            
+            // Fetch clans
+            val clanResponse = withContext(Dispatchers.IO) {
+                supabase.postgrest["clan_leaderboard"].select()
+            }
+            val fetchedClans = withContext(Dispatchers.Default) {
+                val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(clanResponse.data) as? kotlinx.serialization.json.JsonArray
+                jsonArray?.mapNotNull { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                    val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
+                    val color = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#E040FB"
+                    val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                    val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    val membreCount = obj["membre_count"]?.jsonPrimitive?.intOrNull ?: 0
+                    LeaderboardClan(id, nom, color, avatarUrl, areaM2, membreCount)
+                } ?: emptyList()
+            }
+            
             players = fetchedPlayers
+            clans = fetchedClans
         } catch (e: Exception) {
             android.util.Log.e("Arpent", "Failed to fetch leaderboard", e)
         } finally {
@@ -2131,198 +2296,403 @@ fun LeaderboardScreen(
                 .background(Color.White.copy(alpha = 0.65f))
                 .padding(16.dp)
         ) {
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = NeonVolt)
-            }
-        } else if (players.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
+            // TabRow for Leaderboard
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color.Transparent,
+                contentColor = ActiveOrange,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("JOUEURS", fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("CLANS", fontWeight = FontWeight.Bold) }
+                )
+            }
+
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = NeonVolt)
+                }
+            } else if (selectedTab == 0) {
+                // JOUEURS LEADERBOARD
+                if (players.isEmpty()) {
                     Box(
                         modifier = Modifier
-                            .size(90.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            .fillMaxSize()
+                            .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.EmojiEvents,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "Aucun joueur enregistré",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        } else {
-            // Afficher le rang de l'utilisateur connecté s'il est présent
-            val userIndex = players.indexOfFirst { it.id == userId?.toString() }
-            if (userIndex != -1) {
-                val me = players[userIndex]
-                val suffix = if (userIndex == 0) "er" else "ème"
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val parsedColor = remember(me.empireColor) {
-                            try { Color(android.graphics.Color.parseColor(me.empireColor)) } catch (e: Exception) { NeonVolt }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(parsedColor.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = parsedColor)
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = "VOTRE CLASSEMENT : ${userIndex + 1}$suffix",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = parsedColor
-                            )
-                            val areaStr = if (me.totalAreaM2 >= 10000) {
-                                "%.4f km²".format(me.totalAreaM2 / 1_000_000.0)
-                            } else {
-                                "${me.totalAreaM2.toInt()} m²"
+                            Box(
+                                modifier = Modifier
+                                    .size(90.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EmojiEvents,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(48.dp)
+                                )
                             }
+                            Spacer(modifier = Modifier.height(24.dp))
                             Text(
-                                text = "${me.pseudonyme} • $areaStr",
+                                text = "Aucun joueur enregistré",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-            }
-
-            Text(
-                text = "Classement des Conquérants",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                itemsIndexed(players) { index, player ->
-                    val isMe = player.id == userId?.toString()
-                    val cardBg = if (isMe) {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    }
-                    val parsedColor = remember(player.empireColor) {
-                        try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { NeonVolt }
-                    }
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (player.latitude != null && player.longitude != null) {
-                                    onPlayerClick(Point.fromLngLat(player.longitude, player.latitude))
-                                } else {
-                                    Toast.makeText(context, "${player.pseudonyme} n'a pas de position sur la carte", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardBg),
-                        border = if (isMe) BorderStroke(1.dp, parsedColor) else null
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                } else {
+                    // Afficher le rang de l'utilisateur connecté s'il est présent
+                    val userIndex = players.indexOfFirst { it.id == userId?.toString() }
+                    if (userIndex != -1) {
+                        val me = players[userIndex]
+                        val suffix = if (userIndex == 0) "er" else "ème"
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                            )
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val rank = index + 1
-                                Text(
-                                    text = "$rank",
-                                    fontWeight = FontWeight.Black,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    modifier = Modifier.width(36.dp),
-                                    color = when (rank) {
-                                        1 -> ActiveOrange
-                                        2 -> ElectricBlue
-                                        3 -> Color(0xFFE91E63)
-                                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    }
-                                )
-                                Box(
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val parsedColor = remember(me.empireColor) {
+                                    try { Color(android.graphics.Color.parseColor(me.empireColor)) } catch (e: Exception) { NeonVolt }
+                                }
+                                AvatarImage(
+                                    avatarUrl = me.avatarUrl,
                                     modifier = Modifier
-                                        .size(32.dp)
+                                        .size(48.dp)
                                         .clip(CircleShape)
-                                        .background(parsedColor),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    val initial = player.pseudonyme.firstOrNull()?.toString()?.uppercase() ?: "J"
+                                        .border(2.dp, parsedColor, CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
                                     Text(
-                                        text = initial,
-                                        color = Color.White,
+                                        text = "VOTRE CLASSEMENT : ${userIndex + 1}$suffix",
+                                        style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyMedium
+                                        color = parsedColor
+                                    )
+                                    val areaStr = if (me.totalAreaM2 >= 10000) {
+                                        "%.4f km²".format(me.totalAreaM2 / 1_000_000.0)
+                                    } else {
+                                        "${me.totalAreaM2.toInt()} m²"
+                                    }
+                                    Text(
+                                        text = "${me.pseudonyme} • $areaStr",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = if (isMe) "${player.pseudonyme} (Vous)" else player.pseudonyme,
-                                    fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
+
+                    Text(
+                        text = "Classement des Conquérants",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(players) { index, player ->
+                            val isMe = player.id == userId?.toString()
+                            val cardBg = if (isMe) {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                            val parsedColor = remember(player.empireColor) {
+                                try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { NeonVolt }
+                            }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (player.latitude != null && player.longitude != null) {
+                                            onPlayerClick(Point.fromLngLat(player.longitude, player.latitude))
+                                        } else {
+                                            Toast.makeText(context, "${player.pseudonyme} n'a pas de position sur la carte", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = cardBg),
+                                border = if (isMe) BorderStroke(1.dp, parsedColor) else null
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val rank = index + 1
+                                        Text(
+                                            text = "$rank",
+                                            fontWeight = FontWeight.Black,
+                                            style = MaterialTheme.typography.titleLarge,
+                                            modifier = Modifier.width(36.dp),
+                                            color = when (rank) {
+                                                1 -> ActiveOrange
+                                                2 -> ElectricBlue
+                                                3 -> Color(0xFFE91E63)
+                                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            }
+                                        )
+                                        AvatarImage(
+                                            avatarUrl = player.avatarUrl,
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape),
+                                            placeholderColor = parsedColor,
+                                            placeholderIcon = Icons.Default.Person
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = if (isMe) "${player.pseudonyme} (Vous)" else player.pseudonyme,
+                                                fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (player.guildeNom != null) {
+                                                val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color.Gray }
+                                                Text(
+                                                    text = player.guildeNom,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = gColor
+                                                )
+                                            }
+                                        }
+                                    }
+                                    val areaStr = if (player.totalAreaM2 >= 10000) {
+                                        "%.4f km²".format(player.totalAreaM2 / 1_000_000.0)
+                                    } else {
+                                        "${player.totalAreaM2.toInt()} m²"
+                                    }
+                                    Text(
+                                        text = areaStr,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (isMe) parsedColor else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // CLANS LEADERBOARD
+                if (clans.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(90.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(48.dp)
                                 )
                             }
-                            val areaStr = if (player.totalAreaM2 >= 10000) {
-                                "%.4f km²".format(player.totalAreaM2 / 1_000_000.0)
-                            } else {
-                                "${player.totalAreaM2.toInt()} m²"
-                            }
+                            Spacer(modifier = Modifier.height(24.dp))
                             Text(
-                                text = areaStr,
+                                text = "Aucun clan enregistré",
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (isMe) parsedColor else MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+                        }
+                    }
+                } else {
+                    // User's Clan rank card
+                    if (userGuildId != null) {
+                        val myClanIndex = clans.indexOfFirst { it.id == userGuildId }
+                        if (myClanIndex != -1) {
+                            val myClan = clans[myClanIndex]
+                            val suffix = if (myClanIndex == 0) "er" else "ème"
+                            val parsedClanColor = remember(myClan.couleurHex) {
+                                try { Color(android.graphics.Color.parseColor(myClan.couleurHex)) } catch (_: Exception) { Color(0xFFE040FB) }
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = parsedClanColor.copy(alpha = 0.15f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(20.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AvatarImage(
+                                        avatarUrl = myClan.avatarUrl,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(CircleShape),
+                                        placeholderColor = parsedClanColor,
+                                        placeholderIcon = Icons.Default.Shield
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column {
+                                        Text(
+                                            text = "RANG DE VOTRE CLAN : ${myClanIndex + 1}$suffix",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = parsedClanColor
+                                        )
+                                        val areaStr = if (myClan.totalAreaM2 >= 10000) {
+                                            "%.4f km²".format(myClan.totalAreaM2 / 1_000_000.0)
+                                        } else {
+                                            "${myClan.totalAreaM2.toInt()} m²"
+                                        }
+                                        Text(
+                                            text = "${myClan.nom} • $areaStr",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+                    }
+
+                    Text(
+                        text = "Classement des Clans",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(clans) { index, clan ->
+                            val isMyClan = clan.id == userGuildId
+                            val cardBg = if (isMyClan) {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                            val parsedClanColor = remember(clan.couleurHex) {
+                                try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { Color(0xFFE040FB) }
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = cardBg),
+                                border = if (isMyClan) BorderStroke(1.dp, parsedClanColor) else null
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val rank = index + 1
+                                        Text(
+                                            text = "$rank",
+                                            fontWeight = FontWeight.Black,
+                                            style = MaterialTheme.typography.titleLarge,
+                                            modifier = Modifier.width(36.dp),
+                                            color = when (rank) {
+                                                1 -> ActiveOrange
+                                                2 -> ElectricBlue
+                                                3 -> Color(0xFFE91E63)
+                                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            }
+                                        )
+                                        AvatarImage(
+                                            avatarUrl = clan.avatarUrl,
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape),
+                                            placeholderColor = parsedClanColor,
+                                            placeholderIcon = Icons.Default.Shield
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = if (isMyClan) "${clan.nom} (Votre Clan)" else clan.nom,
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "${clan.membreCount} membre(s)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    }
+                                    val areaStr = if (clan.totalAreaM2 >= 10000) {
+                                        "%.4f km²".format(clan.totalAreaM2 / 1_000_000.0)
+                                    } else {
+                                        "${clan.totalAreaM2.toInt()} m²"
+                                    }
+                                    Text(
+                                        text = areaStr,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (isMyClan) parsedClanColor else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
 }
 
 @Composable
@@ -2929,13 +3299,14 @@ fun GuildeScreen(
         return
     }
 
-    // Tabs
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Amis, 1 = Guilde/Clan
+    // Tabs: 0 = AMIS, 1 = MON CLAN, 2 = CLANS
+    var selectedTab by remember { mutableStateOf(0) }
     
     // Friends state
     var friendPseudoInput by remember { mutableStateOf("") }
     var friendsList by remember { mutableStateOf<List<FriendItem>>(emptyList()) }
     var pendingRequests by remember { mutableStateOf<List<PendingRequestItem>>(emptyList()) }
+    var suggestedFriends by remember { mutableStateOf<List<ProximitySuggestion>>(emptyList()) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var isFriendsLoading by remember { mutableStateOf(true) }
     
@@ -2950,6 +3321,7 @@ fun GuildeScreen(
     var newClanName by remember { mutableStateOf("") }
     var newClanColor by remember { mutableStateOf("#E040FB") }
     var newClanAvatarBase64 by remember { mutableStateOf<String?>(null) }
+    var clanSearchQuery by remember { mutableStateOf("") }
     var allClansList by remember { mutableStateOf<List<ClanItem>>(emptyList()) }
     var isClanLoading by remember { mutableStateOf(true) }
     
@@ -2969,7 +3341,7 @@ fun GuildeScreen(
     fun loadFriendsData() {
         scope.launch(Dispatchers.IO) {
             try {
-                // Fetch friends where user is either demandeur or destinataire
+                // Fetch friends
                 val res = supabase.postgrest["amis"].select {
                     filter {
                         or {
@@ -2982,9 +3354,8 @@ fun GuildeScreen(
                 val array = kotlinx.serialization.json.Json.parseToJsonElement(res.data) as? kotlinx.serialization.json.JsonArray
                 val friends = mutableListOf<FriendItem>()
                 val pending = mutableListOf<PendingRequestItem>()
-                
                 val otherUserIds = mutableListOf<String>()
-                val relationMap = mutableMapOf<String, Pair<String, String>>() // otherId -> (statut, relationId)
+                val relationMap = mutableMapOf<String, Pair<String, String>>()
                 
                 array?.forEach { element ->
                     val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
@@ -3020,7 +3391,6 @@ fun GuildeScreen(
                         if (statut == "accepte") {
                             friends.add(FriendItem(pId, pseudo, avatar, color))
                         } else {
-                            // If demandeur was the other user, show it to the current user to accept/decline
                             val isDem = array?.any { 
                                 val o = it as? kotlinx.serialization.json.JsonObject
                                 o?.get("demandeur_id")?.jsonPrimitive?.content == pId
@@ -3032,9 +3402,31 @@ fun GuildeScreen(
                     }
                 }
                 
+                // Fetch suggestions by proximity (Max 50 km)
+                val suggestionsParams = kotlinx.serialization.json.buildJsonObject {
+                    put("p_utilisateur_id", kotlinx.serialization.json.JsonPrimitive(userId))
+                    put("p_max_distance_meters", kotlinx.serialization.json.JsonPrimitive(50000.0))
+                }
+                val suggestionsRes = supabase.postgrest.rpc("suggerer_amis_proximite", suggestionsParams)
+                val suggestionsArray = kotlinx.serialization.json.Json.parseToJsonElement(suggestionsRes.data) as? kotlinx.serialization.json.JsonArray
+                val suggestionsList = suggestionsArray?.mapNotNull { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                    val sId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val sPseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
+                    val sAvatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                    val sColor = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                    val sDist = obj["distance_meters"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    ProximitySuggestion(sId, sPseudo, sAvatar, sColor, sDist)
+                } ?: emptyList()
+
+                // Filter out users who are already friends or have pending relations
+                val filterOutIds = otherUserIds.toSet() + setOf(userId)
+                val finalSuggestionsList = suggestionsList.filter { it.id !in filterOutIds }
+                
                 withContext(Dispatchers.Main) {
                     friendsList = friends
                     pendingRequests = pending
+                    suggestedFriends = finalSuggestionsList
                 }
             } catch (e: Exception) {
                 android.util.Log.e("Arpent", "Error loading friends data", e)
@@ -3049,7 +3441,7 @@ fun GuildeScreen(
     fun loadClanData() {
         scope.launch(Dispatchers.IO) {
             try {
-                // 1. Get current profile clan
+                // Get current profile clan
                 val profileRes = supabase.postgrest["profiles"].select {
                     filter { eq("id", userId) }
                 }
@@ -3058,7 +3450,7 @@ fun GuildeScreen(
                 val uClanId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
                 
                 if (uClanId != null) {
-                    // Fetch this guild details
+                    // Fetch guild details
                     val guildRes = supabase.postgrest["guildes"].select {
                         filter { eq("id", uClanId) }
                     }
@@ -3092,7 +3484,7 @@ fun GuildeScreen(
                     withContext(Dispatchers.Main) {
                         clanId = null
                     }
-                    // Fetch all existing guilds so user can join one
+                    // Fetch all existing guilds
                     val allRes = supabase.postgrest["guildes"].select()
                     val allArray = kotlinx.serialization.json.Json.parseToJsonElement(allRes.data) as? kotlinx.serialization.json.JsonArray
                     val clans = allArray?.mapNotNull { element ->
@@ -3145,7 +3537,7 @@ fun GuildeScreen(
                 .background(Color.White.copy(alpha = 0.65f))
                 .padding(16.dp)
         ) {
-            // Tab Selector
+            // Tab Selector (Amis, Mon Clan, Clans)
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.Transparent,
@@ -3160,14 +3552,19 @@ fun GuildeScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("CLAN", fontWeight = FontWeight.Bold) }
+                    text = { Text("MON CLAN", fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("CLANS", fontWeight = FontWeight.Bold) }
                 )
             }
             
             Spacer(modifier = Modifier.height(16.dp))
             
             if (selectedTab == 0) {
-                // Friends List Screen
+                // AMIS TAB
                 if (isFriendsLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color(0xFFE040FB))
@@ -3213,7 +3610,6 @@ fun GuildeScreen(
                                                 searchError = null
                                                 scope.launch(Dispatchers.IO) {
                                                     try {
-                                                        // Search for user by pseudonym
                                                         val targetRes = supabase.postgrest["profiles"].select {
                                                             filter { eq("pseudonyme", friendPseudoInput.trim()) }
                                                         }
@@ -3234,7 +3630,6 @@ fun GuildeScreen(
                                                             return@launch
                                                         }
                                                         
-                                                        // Send friend request
                                                         supabase.postgrest["amis"].insert(
                                                             mapOf(
                                                                 "demandeur_id" to userId,
@@ -3268,6 +3663,83 @@ fun GuildeScreen(
                             }
                         }
                         
+                        // Proximity suggestions
+                        if (suggestedFriends.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Joueurs à proximité",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                            items(suggestedFriends) { suggestion ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val pColor = try { Color(android.graphics.Color.parseColor(suggestion.empireColor)) } catch (_: Exception) { NeonVolt }
+                                        AvatarImage(
+                                            avatarUrl = suggestion.avatarUrl,
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .border(1.5.dp, pColor, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = suggestion.pseudo,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            val distStr = if (suggestion.distanceMeters >= 1000.0) {
+                                                "À %.1f km".format(suggestion.distanceMeters / 1000.0)
+                                            } else {
+                                                "À ${suggestion.distanceMeters.toInt()} m"
+                                            }
+                                            Text(
+                                                text = distStr,
+                                                fontSize = 11.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                        Button(
+                                            onClick = {
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        supabase.postgrest["amis"].insert(
+                                                            mapOf(
+                                                                "demandeur_id" to userId,
+                                                                "destinataire_id" to suggestion.id,
+                                                                "statut" to "en_attente"
+                                                            )
+                                                        )
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Demande envoyée !", Toast.LENGTH_SHORT).show()
+                                                            loadFriendsData()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("Arpent", "Failed to send proximity friend request", e)
+                                                    }
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                            shape = RoundedCornerShape(12.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Ajouter", color = Color.White, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Pending requests list
                         if (pendingRequests.isNotEmpty()) {
                             item {
@@ -3399,14 +3871,14 @@ fun GuildeScreen(
                         }
                     }
                 }
-            } else {
-                // Clan/Guild Screen
+            } else if (selectedTab == 1) {
+                // MON CLAN TAB
                 if (isClanLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color(0xFFE040FB))
                     }
                 } else if (clanId != null) {
-                    // User has a clan
+                    // User belongs to a clan
                     val parsedClanColor = remember(clanCouleur) {
                         try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { Color(0xFFE040FB) }
                     }
@@ -3414,7 +3886,6 @@ fun GuildeScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Clan card header
                         item {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -3435,13 +3906,12 @@ fun GuildeScreen(
                                     Column {
                                         Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp)
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "${clanMembers.size} membres", color = Color.Gray, fontSize = 14.sp)
+                                        Text(text = "${clanMembers.size} membre(s)", color = Color.Gray, fontSize = 14.sp)
                                     }
                                 }
                             }
                         }
                         
-                        // Clan members
                         item {
                             Text(text = "Membres du clan", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
                         }
@@ -3473,7 +3943,6 @@ fun GuildeScreen(
                             }
                         }
                         
-                        // Quit button
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
@@ -3504,12 +3973,11 @@ fun GuildeScreen(
                         }
                     }
                 } else {
-                    // User does not have a clan: show choices
+                    // User has no clan: show creation form (and encourage them to look at CLANS tab to join one)
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Create clan card
                         item {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -3520,7 +3988,6 @@ fun GuildeScreen(
                                     Text(text = "Créer un clan", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                                     Spacer(modifier = Modifier.height(12.dp))
                                     
-                                    // Image picker button
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
@@ -3607,7 +4074,6 @@ fun GuildeScreen(
                                                     val createdGuildId = guildObj?.get("id")?.jsonPrimitive?.content
                                                     
                                                     if (createdGuildId != null) {
-                                                        // Update user profile guilde_id
                                                         supabase.postgrest["profiles"].update(
                                                             mapOf("guilde_id" to createdGuildId)
                                                         ) {
@@ -3634,67 +4100,120 @@ fun GuildeScreen(
                                 }
                             }
                         }
-                        
-                        // Join clan section
                         item {
-                            Text(text = "Rejoindre un clan existant", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Pour rejoindre un clan existant, allez sur l'onglet 'CLANS'.",
+                                    color = Color.Gray,
+                                    fontSize = 13.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
                         }
+                    }
+                }
+            } else {
+                // CLANS TAB (Search & Explore clans)
+                if (isClanLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFFE040FB))
+                    }
+                } else {
+                    val filteredClans = remember(allClansList, clanSearchQuery) {
+                        if (clanSearchQuery.trim().isEmpty()) {
+                            allClansList
+                        } else {
+                            allClansList.filter { it.nom.contains(clanSearchQuery.trim(), ignoreCase = true) }
+                        }
+                    }
+                    
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Search bar
+                        OutlinedTextField(
+                            value = clanSearchQuery,
+                            onValueChange = { clanSearchQuery = it },
+                            placeholder = { Text("Rechercher un clan...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFE040FB),
+                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
+                            )
+                        )
                         
-                        if (allClansList.isEmpty()) {
-                            item {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("Aucun clan disponible pour le moment.", color = Color.Gray, fontSize = 14.sp)
-                                }
+                        if (filteredClans.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Aucun clan trouvé.", color = Color.Gray, fontSize = 14.sp)
                             }
                         } else {
-                            items(allClansList) { clan ->
-                                val parsedCColor = remember(clan.color) {
-                                    try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { Color(0xFFE040FB) }
-                                }
-                                Card(
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                            LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(filteredClans) { clan ->
+                                    val parsedCColor = remember(clan.color) {
+                                        try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { Color(0xFFE040FB) }
+                                    }
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        AvatarImage(
-                                            avatarUrl = clan.avatarUrl,
-                                            modifier = Modifier.size(40.dp),
-                                            placeholderColor = parsedCColor,
-                                            placeholderIcon = Icons.Default.Shield
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(
-                                            text = clan.nom,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Button(
-                                            onClick = {
-                                                scope.launch(Dispatchers.IO) {
-                                                    try {
-                                                        supabase.postgrest["profiles"].update(
-                                                            mapOf("guilde_id" to clan.id)
-                                                        ) {
-                                                            filter { eq("id", userId) }
-                                                        }
-                                                        withContext(Dispatchers.Main) {
-                                                            Toast.makeText(context, "Vous avez rejoint le clan ${clan.nom} !", Toast.LENGTH_SHORT).show()
-                                                            loadClanData()
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        android.util.Log.e("Arpent", "Failed to join clan", e)
-                                                    }
-                                                }
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = parsedCColor),
-                                            shape = RoundedCornerShape(12.dp)
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text("Rejoindre", color = Color.White)
+                                            AvatarImage(
+                                                avatarUrl = clan.avatarUrl,
+                                                modifier = Modifier.size(40.dp),
+                                                placeholderColor = parsedCColor,
+                                                placeholderIcon = Icons.Default.Shield
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(
+                                                text = clan.nom,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (clanId == null) {
+                                                Button(
+                                                    onClick = {
+                                                        scope.launch(Dispatchers.IO) {
+                                                            try {
+                                                                supabase.postgrest["profiles"].update(
+                                                                    mapOf("guilde_id" to clan.id)
+                                                                ) {
+                                                                    filter { eq("id", userId) }
+                                                                }
+                                                                withContext(Dispatchers.Main) {
+                                                                    Toast.makeText(context, "Vous avez rejoint le clan ${clan.nom} !", Toast.LENGTH_SHORT).show()
+                                                                    loadClanData()
+                                                                    // Switch to MON CLAN tab to see it
+                                                                    selectedTab = 1
+                                                                }
+                                                            } catch (e: Exception) {
+                                                                android.util.Log.e("Arpent", "Failed to join clan", e)
+                                                            }
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = parsedCColor),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Text("Rejoindre", color = Color.White, fontSize = 12.sp)
+                                                }
+                                            } else if (clanId == clan.id) {
+                                                Text(
+                                                    text = "Votre clan",
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = parsedCColor,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -3722,6 +4241,14 @@ data class PendingRequestItem(
     val avatarUrl: String?
 )
 
+data class ProximitySuggestion(
+    val id: String,
+    val pseudo: String,
+    val avatarUrl: String?,
+    val empireColor: String,
+    val distanceMeters: Double
+)
+
 data class ClanMember(
     val id: String,
     val pseudo: String,
@@ -3734,3 +4261,5 @@ data class ClanItem(
     val color: String,
     val avatarUrl: String?
 )
+
+

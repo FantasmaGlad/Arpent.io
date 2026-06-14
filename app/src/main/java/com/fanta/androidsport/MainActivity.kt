@@ -77,6 +77,12 @@ import kotlinx.serialization.json.*
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import java.io.File
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.foundation.Canvas
+import kotlin.math.*
 
 val supabase = createSupabaseClient(
     supabaseUrl = BuildConfig.SUPABASE_URL,
@@ -115,7 +121,12 @@ fun ArpentApp() {
             LoadingScreen()
         }
         is SessionStatus.Authenticated -> {
-            ArpentMainScreen()
+            val userId = (sessionStatus as SessionStatus.Authenticated).session.user?.id
+            if (userId != null) {
+                ArpentMainScreen(userId = userId)
+            } else {
+                LoadingScreen()
+            }
         }
         is SessionStatus.NotAuthenticated, is SessionStatus.RefreshFailure -> {
             AuthScreen()
@@ -546,7 +557,7 @@ fun AuthScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ArpentMainScreen() {
+fun ArpentMainScreen(userId: String) {
     var navigationIndex by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
@@ -563,7 +574,6 @@ fun ArpentMainScreen() {
 
     fun refreshStats() {
         if (!isNetworkAvailable(context)) return
-        val userId = supabase.auth.currentUserOrNull()?.id ?: return
         scope.launch {
             try {
                 // 1. Fetch profile
@@ -572,7 +582,7 @@ fun ArpentMainScreen() {
                 }
                 val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
                 val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
-                userPseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.toString().take(8)}"
+                userPseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
                 userEmpireColor = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
 
                 // 2. Fetch courses
@@ -605,14 +615,14 @@ fun ArpentMainScreen() {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(userId) {
         // Load from local storage immediately so there is zero delay/blank screen
         val localPolys = loadTerritoriesLocally(context)
         completedPolygons.clear()
         completedPolygons.addAll(localPolys)
 
         refreshStats()
-        syncTerritoriesFromDatabase(context, completedPolygons)
+        syncTerritoriesFromDatabase(userId, context, completedPolygons)
     }
 
     // Required permissions depending on Android version
@@ -739,8 +749,10 @@ fun ArpentMainScreen() {
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                when (navigationIndex) {
-                    0 -> ConquestMapScreen(
+                // Render map in background for conquest and leaderboard tabs
+                if (navigationIndex == 0 || navigationIndex == 1) {
+                    ConquestMapScreen(
+                        userId = userId,
                         userPseudo = userPseudo,
                         initialArea = currentAreaKm2,
                         completedPolygons = completedPolygons,
@@ -749,13 +761,23 @@ fun ArpentMainScreen() {
                         onMapTargetPositionHandled = { mapTargetPosition = null },
                         onRunSaved = { refreshStats() }
                     )
-                    1 -> LeaderboardScreen(
+                }
+
+                // Overlay Leaderboard screen on top of the map when on Leaderboard tab
+                if (navigationIndex == 1) {
+                    LeaderboardScreen(
+                        userId = userId,
                         onPlayerClick = { point ->
                             mapTargetPosition = point
                             navigationIndex = 0
                         }
                     )
-                    2 -> ProfileScreen(
+                }
+
+                // Render Profile screen
+                if (navigationIndex == 2) {
+                    ProfileScreen(
+                        userId = userId,
                         userPseudo = userPseudo,
                         totalDistance = totalDistanceKm,
                         allTimeArea = allTimeAreaKm2,
@@ -972,10 +994,10 @@ private fun loadTerritoriesLocally(context: android.content.Context): List<List<
 }
 
 private suspend fun syncTerritoriesFromDatabase(
+    userId: String,
     context: android.content.Context,
     completedPolygonsList: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>
 ) {
-    val userId = supabase.auth.currentUserOrNull()?.id ?: return
     if (!isNetworkAvailable(context)) {
         android.util.Log.d("Arpent", "Pas de réseau détecté, synchronisation différée. Utilisation du cache local.")
         return
@@ -1010,18 +1032,17 @@ private suspend fun syncTerritoriesFromDatabase(
             }
         }
 
-        if (dbPolygons.isNotEmpty()) {
-            completedPolygonsList.clear()
-            completedPolygonsList.addAll(dbPolygons)
-            saveTerritoriesLocally(context, dbPolygons)
-            android.util.Log.d("Arpent", "Synchronisation avec la BDD réussie: ${dbPolygons.size} polygones.")
-        }
+        completedPolygonsList.clear()
+        completedPolygonsList.addAll(dbPolygons)
+        saveTerritoriesLocally(context, dbPolygons)
+        android.util.Log.d("Arpent", "Synchronisation avec la BDD réussie: ${dbPolygons.size} polygones.")
     } catch (e: Exception) {
         android.util.Log.e("Arpent", "Error syncing territories from database", e)
     }
 }
 
 private fun saveRunToDatabase(
+    userId: String,
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context,
     runStartTime: Long,
@@ -1030,11 +1051,6 @@ private fun saveRunToDatabase(
     closedPoints: List<Point>,
     onSuccess: (Double) -> Unit
 ) {
-    val userId = supabase.auth.currentUserOrNull()?.id
-    if (userId == null) {
-        Toast.makeText(context, "Utilisateur non connecté. Impossible d'enregistrer la course.", Toast.LENGTH_LONG).show()
-        return
-    }
 
     scope.launch {
         try {
@@ -1085,6 +1101,7 @@ private fun saveRunToDatabase(
 
 @Composable
 fun ConquestMapScreen(
+    userId: String,
     userPseudo: String,
     initialArea: Double,
     completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
@@ -1131,16 +1148,16 @@ fun ConquestMapScreen(
     var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
 
     // Fetch other players' territories once on first composition
-    LaunchedEffect(Unit) {
+    LaunchedEffect(userId) {
         // Sync current user's own territories first to handle fresh installs / reinstalls
         try {
-            syncTerritoriesFromDatabase(context, completedPolygons)
+            syncTerritoriesFromDatabase(userId, context, completedPolygons)
         } catch (e: Exception) {
             android.util.Log.e("Arpent", "Failed to sync own territories in map screen", e)
         }
 
         try {
-            val currentUserId = supabase.auth.currentUserOrNull()?.id?.toString()
+            val currentUserId = userId
             // 1. Fetch all players from the leaderboard view
             val lbResponse = supabase.postgrest["leaderboard"].select()
             val lbJson = kotlinx.serialization.json.Json.parseToJsonElement(lbResponse.data) as? kotlinx.serialization.json.JsonArray ?: return@LaunchedEffect
@@ -1560,6 +1577,7 @@ fun ConquestMapScreen(
                         if (activePathPoints.size >= 3) {
                             val closedPoints = activePathPoints.toList() + activePathPoints[0]
                             saveRunToDatabase(
+                                userId = userId,
                                 scope = scope,
                                 context = context,
                                 runStartTime = runStartTime ?: System.currentTimeMillis(),
@@ -1630,6 +1648,7 @@ fun ConquestMapScreen(
                             if (isSimulatingRun) {
                                 val closedPoints = activePathPoints.toList()
                                 saveRunToDatabase(
+                                    userId = userId,
                                     scope = scope,
                                     context = context,
                                     runStartTime = runStartTime ?: System.currentTimeMillis(),
@@ -1691,6 +1710,7 @@ fun ConquestMapScreen(
 
                         if (activePathPoints.isNotEmpty()) {
                             saveRunToDatabase(
+                                userId = userId,
                                 scope = scope,
                                 context = context,
                                 runStartTime = runStartTime ?: System.currentTimeMillis(),
@@ -1769,11 +1789,11 @@ data class LeaderboardPlayer(
 
 @Composable
 fun LeaderboardScreen(
+    userId: String,
     onPlayerClick: (Point) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val userId = remember { supabase.auth.currentUserOrNull()?.id }
 
     var players by remember { mutableStateOf<List<LeaderboardPlayer>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -1800,11 +1820,23 @@ fun LeaderboardScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
+    val leaderboardColorScheme = lightColorScheme(
+        background = Color.Transparent,
+        surface = Color.White.copy(alpha = 0.85f),
+        onSurface = Color.Black,
+        surfaceVariant = Color.White.copy(alpha = 0.95f),
+        onSurfaceVariant = Color.Black,
+        secondaryContainer = Color(0xFFE3F2FD).copy(alpha = 0.9f),
+        onSecondaryContainer = Color.Black
+    )
+
+    MaterialTheme(colorScheme = leaderboardColorScheme) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.65f))
+                .padding(16.dp)
+        ) {
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = NeonVolt)
@@ -1903,7 +1935,8 @@ fun LeaderboardScreen(
                 text = "Classement des Conquérants",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
+                modifier = Modifier.padding(bottom = 12.dp),
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             LazyColumn(
@@ -1996,6 +2029,99 @@ fun LeaderboardScreen(
         }
     }
 }
+}
+
+@Composable
+fun ColorWheel(
+    selectedColor: Color,
+    onColorSelected: (Color) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var wheelCenter by remember { mutableStateOf(Offset.Zero) }
+    var wheelRadius by remember { mutableStateOf(0f) }
+
+    val colors = remember {
+        listOf(
+            Color.Red, Color.Yellow, Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color.Red
+        )
+    }
+    val brush = remember {
+        Brush.sweepGradient(colors)
+    }
+
+    fun getColorAtPoint(offset: Offset, center: Offset, radius: Float): Color? {
+        val dx = offset.x - center.x
+        val dy = offset.y - center.y
+        val distance = sqrt(dx * dx + dy * dy)
+        if (distance > radius || distance < 0.01f) return null
+
+        var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+        if (angle < 0) {
+            angle += 360f
+        }
+
+        val saturation = (distance / radius).coerceIn(0f, 1f)
+        val hsv = floatArrayOf(angle, saturation, 1.0f)
+        return Color(android.graphics.Color.HSVToColor(hsv))
+    }
+
+    Canvas(
+        modifier = modifier
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull()
+                        if (change != null && change.pressed) {
+                            val color = getColorAtPoint(change.position, wheelCenter, wheelRadius)
+                            if (color != null) onColorSelected(color)
+                            change.consume()
+                        }
+                    }
+                }
+            }
+    ) {
+        wheelCenter = center
+        wheelRadius = size.minDimension / 2f
+
+        drawCircle(
+            brush = brush,
+            radius = wheelRadius,
+            center = center
+        )
+
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White, Color.Transparent),
+                center = center,
+                radius = wheelRadius
+            ),
+            radius = wheelRadius,
+            center = center
+        )
+
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(selectedColor.toArgb(), hsv)
+        val hue = hsv[0]
+        val saturation = hsv[1]
+
+        val angleRad = Math.toRadians(hue.toDouble())
+        val indicatorX = center.x + cos(angleRad).toFloat() * saturation * wheelRadius
+        val indicatorY = center.y + sin(angleRad).toFloat() * saturation * wheelRadius
+
+        drawCircle(
+            color = Color.Black,
+            radius = 10f,
+            center = Offset(indicatorX, indicatorY),
+            style = Stroke(width = 4f)
+        )
+        drawCircle(
+            color = Color.White,
+            radius = 8f,
+            center = Offset(indicatorX, indicatorY)
+        )
+    }
+}
 
 // ==========================================
 // PROFILE SCREEN
@@ -2003,6 +2129,7 @@ fun LeaderboardScreen(
 
 @Composable
 fun ProfileScreen(
+    userId: String,
     userPseudo: String,
     totalDistance: Double,
     allTimeArea: Double,
@@ -2012,13 +2139,38 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val userId = remember { supabase.auth.currentUserOrNull()?.id }
 
     val parsedUserColor = remember(userEmpireColor) {
         try {
             Color(android.graphics.Color.parseColor(userEmpireColor))
         } catch (e: Exception) {
             NeonVolt
+        }
+    }
+
+    var localColor by remember(userEmpireColor) {
+        val parsed = try {
+            Color(android.graphics.Color.parseColor(userEmpireColor))
+        } catch (e: Exception) {
+            NeonVolt
+        }
+        mutableStateOf(parsed)
+    }
+
+    LaunchedEffect(localColor) {
+        val localHex = String.format("#%06X", 0xFFFFFF and localColor.toArgb())
+        if (localHex.equals(userEmpireColor, ignoreCase = true)) return@LaunchedEffect
+
+        delay(500) // debounce updates to database
+        try {
+            supabase.postgrest["profiles"].update(
+                mapOf("empire_color" to localHex)
+            ) {
+                filter { eq("id", userId) }
+            }
+            onStatsUpdated()
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to update empire color", e)
         }
     }
 
@@ -2261,69 +2413,35 @@ fun ProfileScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "COULEUR DE L'EMPIRE",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                val availableColors = listOf(
-                    Pair("Vert", "#00E676"),
-                    Pair("Bleu", "#00B0FF"),
-                    Pair("Violet", "#D500F9"),
-                    Pair("Orange", "#FF3D00"),
-                    Pair("Rose", "#FF4081"),
-                    Pair("Jaune", "#FFEA00")
-                )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    availableColors.forEach { (name, hex) ->
-                        val itemColor = remember(hex) { Color(android.graphics.Color.parseColor(hex)) }
-                        val isSelected = hex.equals(userEmpireColor, ignoreCase = true)
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(itemColor)
-                                .border(
-                                    width = if (isSelected) 3.dp else 1.dp,
-                                    color = if (isSelected) Color.White else Color.Transparent,
-                                    shape = CircleShape
-                                )
-                                .clickable {
-                                    if (userId != null && !isSelected) {
-                                        scope.launch {
-                                            try {
-                                                supabase.postgrest["profiles"].update(
-                                                    mapOf("empire_color" to hex)
-                                                ) {
-                                                    filter { eq("id", userId) }
-                                                }
-                                                onStatsUpdated()
-                                                Toast.makeText(context, "Couleur mise à jour !", Toast.LENGTH_SHORT).show()
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Erreur: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                                            }
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = "COULEUR DE L'EMPIRE",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.weight(1f)
+                    )
+                    // Color Preview Dot
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(localColor)
+                            .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                    )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                ColorWheel(
+                    selectedColor = localColor,
+                    onColorSelected = { localColor = it },
+                    modifier = Modifier
+                        .size(180.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
             }
         }
 
@@ -2359,6 +2477,14 @@ fun ProfileScreen(
                         scope.launch {
                             try {
                                 supabase.auth.signOut()
+                                try {
+                                    val file = File(context.filesDir, "local_territories.json")
+                                    if (file.exists()) {
+                                        file.delete()
+                                    }
+                                } catch (ex: Exception) {
+                                    android.util.Log.e("Arpent", "Failed to delete local cache on signout", ex)
+                                }
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Erreur de déconnexion", Toast.LENGTH_SHORT).show()
                             }

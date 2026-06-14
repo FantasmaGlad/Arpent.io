@@ -11,6 +11,13 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
+import android.util.Base64
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +26,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -62,6 +71,9 @@ import com.mapbox.maps.extension.compose.annotation.generated.PolygonAnnotation
 import com.mapbox.maps.extension.compose.annotation.generated.PolygonAnnotationState
 import com.mapbox.maps.extension.compose.annotation.generated.CircleAnnotation
 import com.mapbox.maps.extension.compose.annotation.generated.CircleAnnotationState
+import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
+import com.mapbox.maps.viewannotation.viewAnnotationOptions
+import com.mapbox.maps.viewannotation.geometry
 import com.mapbox.maps.plugin.animation.MapAnimationOptions.Companion.mapAnimationOptions
 import android.location.Location
 import android.location.LocationManager
@@ -569,6 +581,10 @@ fun ArpentMainScreen(userId: String) {
     var currentAreaKm2 by remember { mutableStateOf(0.0) }
     var userEmpireColor by remember { mutableStateOf("#00E676") }
     var userShareLocation by remember { mutableStateOf(true) }
+    var userAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var userGuildId by remember { mutableStateOf<String?>(null) }
+    var userGuildNom by remember { mutableStateOf<String?>(null) }
+    var userGuildCouleur by remember { mutableStateOf<String?>(null) }
     var mapTargetPosition by remember { mutableStateOf<Point?>(null) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
@@ -592,13 +608,33 @@ fun ArpentMainScreen(userId: String) {
                     filter { eq("utilisateur_id", userId) }
                 }
 
-                val parsed = withContext(Dispatchers.Default) {
-                    val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
-                    val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
-                    val pseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
-                    val color = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
-                    val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
+                // Parse profile info first
+                val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
+                val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                val pseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
+                val color = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
+                val avatarUrl = profileObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
+                val guildeId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
 
+                // Fetch guild details if present
+                var gNom: String? = null
+                var gColor: String? = null
+                if (guildeId != null) {
+                    try {
+                        val guildRes = supabase.postgrest["guildes"].select {
+                            filter { eq("id", guildeId) }
+                        }
+                        val guildArray = kotlinx.serialization.json.Json.parseToJsonElement(guildRes.data) as? kotlinx.serialization.json.JsonArray
+                        val guildObj = guildArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                        gNom = guildObj?.get("nom")?.jsonPrimitive?.contentOrNull
+                        gColor = guildObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to fetch guild info", e)
+                    }
+                }
+
+                val parsed = withContext(Dispatchers.Default) {
                     val coursesArray = kotlinx.serialization.json.Json.parseToJsonElement(coursesRes.data) as? kotlinx.serialization.json.JsonArray
                     var totalDist = 0.0
                     coursesArray?.forEach {
@@ -623,6 +659,10 @@ fun ArpentMainScreen(userId: String) {
                     totalDistanceKm = parsed.third.second
                     currentAreaKm2 = parsed.third.third / 1_000_000.0
                     allTimeAreaKm2 = parsed.third.third / 1_000_000.0
+                    userAvatarUrl = avatarUrl
+                    userGuildId = guildeId
+                    userGuildNom = gNom
+                    userGuildCouleur = gColor
                 }
             } catch (e: Exception) {
                 android.util.Log.e("Arpent", "Error fetching stats", e)
@@ -744,6 +784,19 @@ fun ArpentMainScreen(userId: String) {
                         )
                     )
                     NavigationBarItem(
+                        selected = navigationIndex == 3,
+                        onClick = { navigationIndex = 3 },
+                        icon = { Icon(Icons.Default.Group, contentDescription = "Guilde") },
+                        label = { Text("Guilde") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFFE040FB),
+                            selectedTextColor = Color(0xFFE040FB),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                    NavigationBarItem(
                         selected = navigationIndex == 2,
                         onClick = { navigationIndex = 2 },
                         icon = { Icon(Icons.Default.Person, contentDescription = "Profil") },
@@ -772,6 +825,8 @@ fun ArpentMainScreen(userId: String) {
                         initialArea = currentAreaKm2,
                         completedPolygons = completedPolygons,
                         userEmpireColor = userEmpireColor,
+                        userAvatarUrl = userAvatarUrl,
+                        userGuildCouleur = userGuildCouleur,
                         mapTargetPosition = mapTargetPosition,
                         onMapTargetPositionHandled = { mapTargetPosition = null },
                         onRunSaved = { refreshStats() }
@@ -799,7 +854,24 @@ fun ArpentMainScreen(userId: String) {
                         currentArea = currentAreaKm2,
                         userEmpireColor = userEmpireColor,
                         userShareLocation = userShareLocation,
+                        userAvatarUrl = userAvatarUrl,
                         onStatsUpdated = { refreshStats() }
+                    )
+                }
+
+                // Render Guilde screen
+                if (navigationIndex == 3) {
+                    GuildeScreen(
+                        userId = userId,
+                        onBackToLogin = {
+                            scope.launch {
+                                try {
+                                    supabase.auth.signOut()
+                                } catch (e: Exception) {
+                                    // Ignore
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -946,6 +1018,88 @@ private fun estimateAreaKm2(points: List<Point>): Double {
     }
     val areaM2 = Math.abs(area) / 2.0
     return areaM2 / 1_000_000.0 // convert m² to km²
+}
+
+fun uriToBase64(context: android.content.Context, uri: android.net.Uri): String? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val originalBitmap = BitmapFactory.decodeStream(inputStream)
+        inputStream?.close()
+        
+        if (originalBitmap == null) return null
+        
+        // Resize to max 160x160 for database storage efficiency
+        val size = 160
+        val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, size, size, true)
+        
+        val outputStream = ByteArrayOutputStream()
+        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 75, outputStream)
+        val bytes = outputStream.toByteArray()
+        Base64.encodeToString(bytes, Base64.NO_WRAP)
+    } catch (e: Exception) {
+        android.util.Log.e("Arpent", "Failed to convert image to Base64", e)
+        null
+    }
+}
+
+fun base64ToImageBitmap(base64Str: String?): ImageBitmap? {
+    if (base64Str == null || base64Str.isEmpty()) return null
+    return try {
+        val cleanStr = if (base64Str.startsWith("data:image")) {
+            val commaIdx = base64Str.indexOf(",")
+            if (commaIdx != -1) base64Str.substring(commaIdx + 1) else base64Str
+        } else base64Str
+        val bytes = Base64.decode(cleanStr, Base64.DEFAULT)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        bitmap?.let { it.asImageBitmap() }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+fun getPolygonCentroid(points: List<Point>): Point {
+    if (points.isEmpty()) return Point.fromLngLat(0.0, 0.0)
+    var sumLng = 0.0
+    var sumLat = 0.0
+    var count = 0
+    points.forEach { pt ->
+        sumLng += pt.longitude()
+        sumLat += pt.latitude()
+        count++
+    }
+    return Point.fromLngLat(sumLng / count, sumLat / count)
+}
+
+@Composable
+fun AvatarImage(
+    avatarUrl: String?,
+    modifier: Modifier = Modifier,
+    placeholderColor: Color = ElectricBlue,
+    placeholderIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.Person
+) {
+    val bitmap = remember(avatarUrl) { base64ToImageBitmap(avatarUrl) }
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color.Gray.copy(alpha = 0.2f)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Icon(
+                imageVector = placeholderIcon,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(0.5f),
+                tint = placeholderColor
+            )
+        }
+    }
 }
 
 private fun isNetworkAvailable(context: android.content.Context): Boolean {
@@ -1135,6 +1289,8 @@ fun ConquestMapScreen(
     initialArea: Double,
     completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
     userEmpireColor: String,
+    userAvatarUrl: String?,
+    userGuildCouleur: String?,
     mapTargetPosition: Point?,
     onMapTargetPositionHandled: () -> Unit,
     onRunSaved: () -> Unit
@@ -1192,7 +1348,10 @@ fun ConquestMapScreen(
         val pseudo: String,
         val empireColor: Color,
         val polygons: List<List<Point>>,
-        val markerPosition: Point?
+        val markerPosition: Point?,
+        val avatarUrl: String?,
+        val guildeNom: String?,
+        val guildeCouleur: String?
     )
     var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
 
@@ -1239,7 +1398,15 @@ fun ConquestMapScreen(
             val territories = withContext(Dispatchers.Default) {
                 val array = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray ?: return@withContext emptyList<OtherPlayerTerritory>()
                 val terrByUser = mutableMapOf<String, MutableList<List<Point>>>()
-                val userDetails = mutableMapOf<String, Pair<String, String>>()
+                
+                data class PlayerDetails(
+                    val pseudo: String,
+                    val colorStr: String,
+                    val avatarUrl: String?,
+                    val guildeNom: String?,
+                    val guildeCouleur: String?
+                )
+                val userDetails = mutableMapOf<String, PlayerDetails>()
                 val userLocations = mutableMapOf<String, Point>()
                 
                 array.forEach { element ->
@@ -1247,7 +1414,11 @@ fun ConquestMapScreen(
                     val uId = obj["utilisateur_id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                     val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
                     val colorStr = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
-                    userDetails[uId] = Pair(pseudo, colorStr)
+                    val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                    val guildeNom = obj["guilde_nom"]?.jsonPrimitive?.contentOrNull
+                    val guildeCouleur = obj["guilde_couleur"]?.jsonPrimitive?.contentOrNull
+                    
+                    userDetails[uId] = PlayerDetails(pseudo, colorStr, avatarUrl, guildeNom, guildeCouleur)
                     
                     val latVal = obj["latitude"]?.jsonPrimitive?.doubleOrNull
                     val lonVal = obj["longitude"]?.jsonPrimitive?.doubleOrNull
@@ -1272,11 +1443,20 @@ fun ConquestMapScreen(
                 }
                 
                 userDetails.keys.filter { it != userId }.map { pId ->
-                    val (pseudo, colorStr) = userDetails[pId]!!
-                    val empColor = try { Color(android.graphics.Color.parseColor(colorStr)) } catch (_: Exception) { Color(0xFF00E676) }
+                    val detail = userDetails[pId]!!
+                    val empColor = try { Color(android.graphics.Color.parseColor(detail.colorStr)) } catch (_: Exception) { Color(0xFF00E676) }
                     val marker = userLocations[pId]
                     val polys = terrByUser[pId] ?: emptyList()
-                    OtherPlayerTerritory(pId, pseudo, empColor, polys, marker)
+                    OtherPlayerTerritory(
+                        playerId = pId,
+                        pseudo = detail.pseudo,
+                        empireColor = empColor,
+                        polygons = polys,
+                        markerPosition = marker,
+                        avatarUrl = detail.avatarUrl,
+                        guildeNom = detail.guildeNom,
+                        guildeCouleur = detail.guildeCouleur
+                    )
                 }
             }
             
@@ -1410,10 +1590,17 @@ fun ConquestMapScreen(
             }
 
             // Draw completed polygons (user's own territories)
+            val parsedUserGuildColor = remember(userGuildCouleur) {
+                if (userGuildCouleur != null) {
+                    try { Color(android.graphics.Color.parseColor(userGuildCouleur)) } catch (_: Exception) { null }
+                } else null
+            }
+            val userTerritoryColor = parsedUserGuildColor ?: parsedUserColor
+
             completedPolygons.forEach { polygonPoints ->
-                val polygonState = remember(polygonPoints, parsedUserColor) {
+                val polygonState = remember(polygonPoints, userTerritoryColor, parsedUserColor) {
                     PolygonAnnotationState().apply {
-                        fillColor = parsedUserColor.copy(alpha = 0.25f)
+                        fillColor = userTerritoryColor.copy(alpha = 0.25f)
                         fillOutlineColor = parsedUserColor
                     }
                 }
@@ -1421,14 +1608,39 @@ fun ConquestMapScreen(
                     points = listOf(polygonPoints),
                     polygonAnnotationState = polygonState
                 )
+
+                // Draw user avatar at centroid of territory
+                val centroid = remember(polygonPoints) { getPolygonCentroid(polygonPoints) }
+                ViewAnnotation(
+                    options = viewAnnotationOptions {
+                        geometry(centroid)
+                        allowOverlap(true)
+                    }
+                ) {
+                    AvatarImage(
+                        avatarUrl = userAvatarUrl,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, parsedUserColor, CircleShape)
+                            .background(MaterialTheme.colorScheme.surface)
+                    )
+                }
             }
 
             // Draw other players' territories
             otherPlayersTerritories.forEach { player ->
+                val parsedGuildColor = remember(player.guildeCouleur) {
+                    if (player.guildeCouleur != null) {
+                        try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { null }
+                    } else null
+                }
+                val territoryColor = parsedGuildColor ?: player.empireColor
+
                 player.polygons.forEach { polygonPoints ->
-                    val polygonState = remember(polygonPoints, player.empireColor) {
+                    val polygonState = remember(polygonPoints, territoryColor, player.empireColor) {
                         PolygonAnnotationState().apply {
-                            fillColor = player.empireColor.copy(alpha = 0.20f)
+                            fillColor = territoryColor.copy(alpha = 0.20f)
                             fillOutlineColor = player.empireColor
                         }
                     }
@@ -1436,6 +1648,24 @@ fun ConquestMapScreen(
                         points = listOf(polygonPoints),
                         polygonAnnotationState = polygonState
                     )
+
+                    // Draw player avatar at centroid of territory
+                    val centroid = remember(polygonPoints) { getPolygonCentroid(polygonPoints) }
+                    ViewAnnotation(
+                        options = viewAnnotationOptions {
+                            geometry(centroid)
+                            allowOverlap(true)
+                        }
+                    ) {
+                        AvatarImage(
+                            avatarUrl = player.avatarUrl,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, player.empireColor, CircleShape)
+                                .background(MaterialTheme.colorScheme.surface)
+                        )
+                    }
                 }
 
                 // Draw marker for each player with territory
@@ -2200,6 +2430,7 @@ fun ProfileScreen(
     currentArea: Double,
     userEmpireColor: String,
     userShareLocation: Boolean,
+    userAvatarUrl: String?,
     onStatsUpdated: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2272,12 +2503,37 @@ fun ProfileScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Premium Avatar Card
+        // Premium Avatar Card with photo import launcher
+        val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+        ) { uri: android.net.Uri? ->
+            uri?.let {
+                val base64 = uriToBase64(context, it)
+                if (base64 != null) {
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                supabase.postgrest["profiles"].update(
+                                    mapOf("avatar_url" to base64)
+                                ) {
+                                    filter { eq("id", userId) }
+                                }
+                            }
+                            onStatsUpdated()
+                        } catch (e: Exception) {
+                            android.util.Log.e("Arpent", "Failed to update avatar", e)
+                        }
+                    }
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .size(90.dp)
@@ -2287,7 +2543,11 @@ fun ProfileScreen(
                         listOf(ElectricBlue, parsedUserColor, ActiveOrange, ElectricBlue)
                     )
                 )
-                .padding(3.dp)
+                .clickable {
+                    imageLauncher.launch("image/*")
+                }
+                .padding(3.dp),
+            contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
@@ -2296,11 +2556,29 @@ fun ProfileScreen(
                     .background(MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center
             ) {
+                AvatarImage(
+                    avatarUrl = userAvatarUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    placeholderColor = parsedUserColor,
+                    placeholderIcon = Icons.Default.Person
+                )
+            }
+            
+            // Edit pencil overlay
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = parsedUserColor
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Importer photo",
+                    modifier = Modifier.size(12.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
         }
@@ -2596,3 +2874,863 @@ fun ProfileScreen(
         }
     }
 }
+
+@Composable
+fun GuildeScreen(
+    userId: String,
+    onBackToLogin: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    // Check if the user is anonymous
+    val isAnonymous = remember {
+        supabase.auth.currentUserOrNull()?.email.isNullOrEmpty()
+    }
+    
+    if (isAnonymous) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.65f))
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Group,
+                contentDescription = null,
+                modifier = Modifier.size(72.dp),
+                tint = Color(0xFFE040FB)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Rejoignez la communauté !",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = Color.Black
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "La demande d'ami et rejoindre un clan ne sont possibles que si un compte est créé.",
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                fontSize = 14.sp,
+                color = Color.Gray
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(
+                onClick = onBackToLogin,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB), contentColor = Color.White),
+                shape = RoundedCornerShape(50)
+            ) {
+                Text("CRÉER UN COMPTE", fontWeight = FontWeight.Bold)
+            }
+        }
+        return
+    }
+
+    // Tabs
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Amis, 1 = Guilde/Clan
+    
+    // Friends state
+    var friendPseudoInput by remember { mutableStateOf("") }
+    var friendsList by remember { mutableStateOf<List<FriendItem>>(emptyList()) }
+    var pendingRequests by remember { mutableStateOf<List<PendingRequestItem>>(emptyList()) }
+    var searchError by remember { mutableStateOf<String?>(null) }
+    var isFriendsLoading by remember { mutableStateOf(true) }
+    
+    // Clan state
+    var clanId by remember { mutableStateOf<String?>(null) }
+    var clanNom by remember { mutableStateOf<String?>(null) }
+    var clanCouleur by remember { mutableStateOf<String?>(null) }
+    var clanAvatar by remember { mutableStateOf<String?>(null) }
+    var clanMembers by remember { mutableStateOf<List<ClanMember>>(emptyList()) }
+    
+    // Clan creation/joining forms
+    var newClanName by remember { mutableStateOf("") }
+    var newClanColor by remember { mutableStateOf("#E040FB") }
+    var newClanAvatarBase64 by remember { mutableStateOf<String?>(null) }
+    var allClansList by remember { mutableStateOf<List<ClanItem>>(emptyList()) }
+    var isClanLoading by remember { mutableStateOf(true) }
+    
+    val colorsList = listOf("#FF1744", "#D500F9", "#2979FF", "#00E676", "#FFEA00", "#FF9100")
+
+    val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        uri?.let {
+            val base64 = uriToBase64(context, it)
+            if (base64 != null) {
+                newClanAvatarBase64 = base64
+            }
+        }
+    }
+
+    fun loadFriendsData() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                // Fetch friends where user is either demandeur or destinataire
+                val res = supabase.postgrest["amis"].select {
+                    filter {
+                        or {
+                            eq("demandeur_id", userId)
+                            eq("destinataire_id", userId)
+                        }
+                    }
+                }
+                
+                val array = kotlinx.serialization.json.Json.parseToJsonElement(res.data) as? kotlinx.serialization.json.JsonArray
+                val friends = mutableListOf<FriendItem>()
+                val pending = mutableListOf<PendingRequestItem>()
+                
+                val otherUserIds = mutableListOf<String>()
+                val relationMap = mutableMapOf<String, Pair<String, String>>() // otherId -> (statut, relationId)
+                
+                array?.forEach { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                    val relId = obj["id"]?.jsonPrimitive?.content ?: return@forEach
+                    val demId = obj["demandeur_id"]?.jsonPrimitive?.content ?: return@forEach
+                    val destId = obj["destinataire_id"]?.jsonPrimitive?.content ?: return@forEach
+                    val statut = obj["statut"]?.jsonPrimitive?.content ?: "en_attente"
+                    
+                    if (demId == userId) {
+                        otherUserIds.add(destId)
+                        relationMap[destId] = Pair(statut, relId)
+                    } else {
+                        otherUserIds.add(demId)
+                        relationMap[demId] = Pair(statut, relId)
+                    }
+                }
+                
+                if (otherUserIds.isNotEmpty()) {
+                    val profilesRes = supabase.postgrest["profiles"].select {
+                        filter {
+                            isIn("id", otherUserIds)
+                        }
+                    }
+                    val profArray = kotlinx.serialization.json.Json.parseToJsonElement(profilesRes.data) as? kotlinx.serialization.json.JsonArray
+                    profArray?.forEach { element ->
+                        val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                        val pId = obj["id"]?.jsonPrimitive?.content ?: return@forEach
+                        val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
+                        val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                        val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                        
+                        val (statut, relId) = relationMap[pId] ?: Pair("en_attente", "")
+                        if (statut == "accepte") {
+                            friends.add(FriendItem(pId, pseudo, avatar, color))
+                        } else {
+                            // If demandeur was the other user, show it to the current user to accept/decline
+                            val isDem = array?.any { 
+                                val o = it as? kotlinx.serialization.json.JsonObject
+                                o?.get("demandeur_id")?.jsonPrimitive?.content == pId
+                            } ?: false
+                            if (isDem) {
+                                pending.add(PendingRequestItem(relId, pId, pseudo, avatar))
+                            }
+                        }
+                    }
+                }
+                
+                withContext(Dispatchers.Main) {
+                    friendsList = friends
+                    pendingRequests = pending
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Error loading friends data", e)
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isFriendsLoading = false
+                }
+            }
+        }
+    }
+
+    fun loadClanData() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                // 1. Get current profile clan
+                val profileRes = supabase.postgrest["profiles"].select {
+                    filter { eq("id", userId) }
+                }
+                val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
+                val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                val uClanId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
+                
+                if (uClanId != null) {
+                    // Fetch this guild details
+                    val guildRes = supabase.postgrest["guildes"].select {
+                        filter { eq("id", uClanId) }
+                    }
+                    val guildArray = kotlinx.serialization.json.Json.parseToJsonElement(guildRes.data) as? kotlinx.serialization.json.JsonArray
+                    val guildObj = guildArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                    val nom = guildObj?.get("nom")?.jsonPrimitive?.contentOrNull ?: "Mon Clan"
+                    val col = guildObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull ?: "#E040FB"
+                    val av = guildObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
+                    
+                    // Fetch members
+                    val membersRes = supabase.postgrest["profiles"].select {
+                        filter { eq("guilde_id", uClanId) }
+                    }
+                    val membersArray = kotlinx.serialization.json.Json.parseToJsonElement(membersRes.data) as? kotlinx.serialization.json.JsonArray
+                    val members = membersArray?.mapNotNull { element ->
+                        val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                        val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                        val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
+                        val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                        ClanMember(id, pseudo, avatar)
+                    } ?: emptyList()
+                    
+                    withContext(Dispatchers.Main) {
+                        clanId = uClanId
+                        clanNom = nom
+                        clanCouleur = col
+                        clanAvatar = av
+                        clanMembers = members
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        clanId = null
+                    }
+                    // Fetch all existing guilds so user can join one
+                    val allRes = supabase.postgrest["guildes"].select()
+                    val allArray = kotlinx.serialization.json.Json.parseToJsonElement(allRes.data) as? kotlinx.serialization.json.JsonArray
+                    val clans = allArray?.mapNotNull { element ->
+                        val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                        val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                        val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
+                        val col = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#E040FB"
+                        val av = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                        ClanItem(id, nom, col, av)
+                    } ?: emptyList()
+                    
+                    withContext(Dispatchers.Main) {
+                        allClansList = clans
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Error loading clan data", e)
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isClanLoading = false
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 0) {
+            isFriendsLoading = true
+            loadFriendsData()
+        } else {
+            isClanLoading = true
+            loadClanData()
+        }
+    }
+
+    val guildeColorScheme = lightColorScheme(
+        background = Color.Transparent,
+        surface = Color.White.copy(alpha = 0.85f),
+        onSurface = Color.Black,
+        surfaceVariant = Color.White.copy(alpha = 0.95f),
+        onSurfaceVariant = Color.Black,
+        secondaryContainer = Color(0xFFE040FB).copy(alpha = 0.15f),
+        onSecondaryContainer = Color.Black
+    )
+
+    MaterialTheme(colorScheme = guildeColorScheme) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.65f))
+                .padding(16.dp)
+        ) {
+            // Tab Selector
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color.Transparent,
+                contentColor = Color(0xFFE040FB),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("AMIS", fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("CLAN", fontWeight = FontWeight.Bold) }
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            if (selectedTab == 0) {
+                // Friends List Screen
+                if (isFriendsLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFFE040FB))
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Friend request form
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE040FB).copy(alpha = 0.3f))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Ajouter un ami",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        OutlinedTextField(
+                                            value = friendPseudoInput,
+                                            onValueChange = { friendPseudoInput = it; searchError = null },
+                                            placeholder = { Text("Pseudonyme") },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = Color(0xFFE040FB),
+                                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
+                                            )
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                if (friendPseudoInput.trim().isEmpty()) return@Button
+                                                searchError = null
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        // Search for user by pseudonym
+                                                        val targetRes = supabase.postgrest["profiles"].select {
+                                                            filter { eq("pseudonyme", friendPseudoInput.trim()) }
+                                                        }
+                                                        val targetArray = kotlinx.serialization.json.Json.parseToJsonElement(targetRes.data) as? kotlinx.serialization.json.JsonArray
+                                                        val targetObj = targetArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                                                        val targetId = targetObj?.get("id")?.jsonPrimitive?.content
+                                                        
+                                                        if (targetId == null) {
+                                                            withContext(Dispatchers.Main) {
+                                                                searchError = "Joueur introuvable."
+                                                            }
+                                                            return@launch
+                                                        }
+                                                        if (targetId == userId) {
+                                                            withContext(Dispatchers.Main) {
+                                                                searchError = "Vous ne pouvez pas vous ajouter vous-même."
+                                                            }
+                                                            return@launch
+                                                        }
+                                                        
+                                                        // Send friend request
+                                                        supabase.postgrest["amis"].insert(
+                                                            mapOf(
+                                                                "demandeur_id" to userId,
+                                                                "destinataire_id" to targetId,
+                                                                "statut" to "en_attente"
+                                                            )
+                                                        )
+                                                        withContext(Dispatchers.Main) {
+                                                            friendPseudoInput = ""
+                                                            Toast.makeText(context, "Demande d'ami envoyée !", Toast.LENGTH_SHORT).show()
+                                                            loadFriendsData()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        withContext(Dispatchers.Main) {
+                                                            searchError = "Une demande est déjà en cours ou existe déjà."
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text("Ajouter", color = Color.White)
+                                        }
+                                    }
+                                    if (searchError != null) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(searchError!!, color = Color.Red, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Pending requests list
+                        if (pendingRequests.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Demandes en attente",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                            items(pendingRequests) { req ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AvatarImage(
+                                            avatarUrl = req.avatarUrl,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = req.pseudo,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        supabase.postgrest["amis"].update(
+                                                            mapOf("statut" to "accepte")
+                                                        ) {
+                                                            filter { eq("id", req.id) }
+                                                        }
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Demande acceptée !", Toast.LENGTH_SHORT).show()
+                                                            loadFriendsData()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("Arpent", "Failed to accept friend", e)
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.Check, contentDescription = "Accepter", tint = Color.Green)
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        supabase.postgrest["amis"].delete {
+                                                            filter { eq("id", req.id) }
+                                                        }
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Demande refusée.", Toast.LENGTH_SHORT).show()
+                                                            loadFriendsData()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("Arpent", "Failed to decline friend", e)
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Refuser", tint = Color.Red)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Friends list
+                        item {
+                            Text(
+                                text = "Mes amis (${friendsList.size})",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                        
+                        if (friendsList.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("Vous n'avez pas encore d'amis.", color = Color.Gray, fontSize = 14.sp)
+                                }
+                            }
+                        } else {
+                            items(friendsList) { friend ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AvatarImage(
+                                            avatarUrl = friend.avatarUrl,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(text = friend.pseudo, fontWeight = FontWeight.Bold)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(try { Color(android.graphics.Color.parseColor(friend.color)) } catch(_: Exception) { Color.Green })
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(text = "Empire", fontSize = 11.sp, color = Color.Gray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Clan/Guild Screen
+                if (isClanLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFFE040FB))
+                    }
+                } else if (clanId != null) {
+                    // User has a clan
+                    val parsedClanColor = remember(clanCouleur) {
+                        try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { Color(0xFFE040FB) }
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Clan card header
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(2.dp, parsedClanColor)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(20.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AvatarImage(
+                                        avatarUrl = clanAvatar,
+                                        modifier = Modifier.size(64.dp),
+                                        placeholderColor = parsedClanColor,
+                                        placeholderIcon = Icons.Default.Shield
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column {
+                                        Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(text = "${clanMembers.size} membres", color = Color.Gray, fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Clan members
+                        item {
+                            Text(text = "Membres du clan", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                        }
+                        
+                        items(clanMembers) { member ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AvatarImage(
+                                        avatarUrl = member.avatarUrl,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = member.pseudo,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (member.id == userId) {
+                                        Text("Vous", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Quit button
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            supabase.postgrest["profiles"].update(
+                                                mapOf("guilde_id" to null)
+                                            ) {
+                                                filter { eq("id", userId) }
+                                            }
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "Vous avez quitté le clan.", Toast.LENGTH_SHORT).show()
+                                                clanId = null
+                                                loadClanData()
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("Arpent", "Failed to leave clan", e)
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Text("QUITTER LE CLAN", fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+                } else {
+                    // User does not have a clan: show choices
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Create clan card
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE040FB).copy(alpha = 0.3f))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(text = "Créer un clan", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    
+                                    // Image picker button
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(56.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.Gray.copy(alpha = 0.15f))
+                                                .clickable { imageLauncher.launch("image/*") },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            AvatarImage(
+                                                avatarUrl = newClanAvatarBase64,
+                                                modifier = Modifier.fillMaxSize(),
+                                                placeholderColor = Color(android.graphics.Color.parseColor(newClanColor)),
+                                                placeholderIcon = Icons.Default.Shield
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Button(
+                                            onClick = { imageLauncher.launch("image/*") },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color.Gray.copy(alpha = 0.2f), contentColor = Color.Black),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("Choisir logo", fontSize = 12.sp)
+                                        }
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedTextField(
+                                        value = newClanName,
+                                        onValueChange = { newClanName = it },
+                                        placeholder = { Text("Nom du clan") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color(0xFFE040FB),
+                                            unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
+                                        )
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("Couleur du clan", fontSize = 12.sp, color = Color.Gray)
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        colorsList.forEach { colorStr ->
+                                            val c = Color(android.graphics.Color.parseColor(colorStr))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(c)
+                                                    .border(
+                                                        width = if (newClanColor == colorStr) 3.dp else 0.dp,
+                                                        color = if (newClanColor == colorStr) Color.Black else Color.Transparent,
+                                                        shape = CircleShape
+                                                    )
+                                                    .clickable { newClanColor = colorStr }
+                                            )
+                                        }
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = {
+                                            if (newClanName.trim().isEmpty()) return@Button
+                                            scope.launch(Dispatchers.IO) {
+                                                try {
+                                                    val newGuildRes = supabase.postgrest["guildes"].insert(
+                                                        mapOf(
+                                                            "nom" to newClanName.trim(),
+                                                            "couleur_hex" to newClanColor,
+                                                            "avatar_url" to newClanAvatarBase64
+                                                        )
+                                                    ) {
+                                                        select()
+                                                    }
+                                                    val guildArray = kotlinx.serialization.json.Json.parseToJsonElement(newGuildRes.data) as? kotlinx.serialization.json.JsonArray
+                                                    val guildObj = guildArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                                                    val createdGuildId = guildObj?.get("id")?.jsonPrimitive?.content
+                                                    
+                                                    if (createdGuildId != null) {
+                                                        // Update user profile guilde_id
+                                                        supabase.postgrest["profiles"].update(
+                                                            mapOf("guilde_id" to createdGuildId)
+                                                        ) {
+                                                            filter { eq("id", userId) }
+                                                        }
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Clan créé avec succès !", Toast.LENGTH_SHORT).show()
+                                                            loadClanData()
+                                                        }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Ce nom de clan est déjà pris.", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("CRÉER LE CLAN", fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Join clan section
+                        item {
+                            Text(text = "Rejoindre un clan existant", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                        
+                        if (allClansList.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("Aucun clan disponible pour le moment.", color = Color.Gray, fontSize = 14.sp)
+                                }
+                            }
+                        } else {
+                            items(allClansList) { clan ->
+                                val parsedCColor = remember(clan.color) {
+                                    try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { Color(0xFFE040FB) }
+                                }
+                                Card(
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AvatarImage(
+                                            avatarUrl = clan.avatarUrl,
+                                            modifier = Modifier.size(40.dp),
+                                            placeholderColor = parsedCColor,
+                                            placeholderIcon = Icons.Default.Shield
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = clan.nom,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Button(
+                                            onClick = {
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        supabase.postgrest["profiles"].update(
+                                                            mapOf("guilde_id" to clan.id)
+                                                        ) {
+                                                            filter { eq("id", userId) }
+                                                        }
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Vous avez rejoint le clan ${clan.nom} !", Toast.LENGTH_SHORT).show()
+                                                            loadClanData()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("Arpent", "Failed to join clan", e)
+                                                    }
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = parsedCColor),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text("Rejoindre", color = Color.White)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Data models for GuildeScreen
+data class FriendItem(
+    val id: String,
+    val pseudo: String,
+    val avatarUrl: String?,
+    val color: String
+)
+
+data class PendingRequestItem(
+    val id: String,
+    val senderId: String,
+    val pseudo: String,
+    val avatarUrl: String?
+)
+
+data class ClanMember(
+    val id: String,
+    val pseudo: String,
+    val avatarUrl: String?
+)
+
+data class ClanItem(
+    val id: String,
+    val nom: String,
+    val color: String,
+    val avatarUrl: String?
+)

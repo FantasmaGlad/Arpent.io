@@ -37,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -853,8 +854,14 @@ fun ArpentMainScreen(userId: String) {
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                // Render map in background for conquest, leaderboard and guild tabs
-                if (navigationIndex == 0 || navigationIndex == 1 || navigationIndex == 3) {
+                // 1. Render map in background for conquest, leaderboard and guild tabs (never destroyed)
+                val isMapVisible = navigationIndex != 2
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(x = if (isMapVisible) 0.dp else 10000.dp)
+                        .alpha(if (isMapVisible) 1f else 0f)
+                ) {
                     ConquestMapScreen(
                         userId = userId,
                         userPseudo = userPseudo,
@@ -870,9 +877,16 @@ fun ArpentMainScreen(userId: String) {
                     )
                 }
 
-                // Overlay Leaderboard screen on top of the map when on Leaderboard tab
-                if (navigationIndex == 1) {
+                // 2. Overlay Leaderboard screen on top of the map when on Leaderboard tab (kept in composition tree)
+                val isLeaderboardVisible = navigationIndex == 1
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(x = if (isLeaderboardVisible) 0.dp else 10000.dp)
+                        .alpha(if (isLeaderboardVisible) 1f else 0f)
+                ) {
                     LeaderboardScreen(
+                        isActive = isLeaderboardVisible,
                         userId = userId,
                         userGuildId = userGuildId,
                         onPlayerClick = { point ->
@@ -882,8 +896,15 @@ fun ArpentMainScreen(userId: String) {
                     )
                 }
 
-                // Render Profile screen
-                if (navigationIndex == 2) {
+                // 3. Render Profile screen (kept in composition tree)
+                val isProfileVisible = navigationIndex == 2
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(if (isProfileVisible) MaterialTheme.colorScheme.background else Color.Transparent)
+                        .offset(x = if (isProfileVisible) 0.dp else 10000.dp)
+                        .alpha(if (isProfileVisible) 1f else 0f)
+                ) {
                     ProfileScreen(
                         userId = userId,
                         userPseudo = userPseudo,
@@ -897,9 +918,16 @@ fun ArpentMainScreen(userId: String) {
                     )
                 }
 
-                // Render Guilde screen
-                if (navigationIndex == 3) {
+                // 4. Render Guilde screen (kept in composition tree)
+                val isGuildVisible = navigationIndex == 3
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(x = if (isGuildVisible) 0.dp else 10000.dp)
+                        .alpha(if (isGuildVisible) 1f else 0f)
+                ) {
                     GuildeScreen(
+                        isActive = isGuildVisible,
                         userId = userId,
                         onBackToLogin = {
                             scope.launch {
@@ -2157,6 +2185,7 @@ data class LeaderboardClan(
 
 @Composable
 fun LeaderboardScreen(
+    isActive: Boolean = false,
     userId: String,
     userGuildId: String? = null,
     onPlayerClick: (Point) -> Unit
@@ -2169,7 +2198,14 @@ fun LeaderboardScreen(
     var isLoading by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableStateOf(0) } // 0 = Joueurs, 1 = Clans
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isActive) {
+        if (!isActive) return@LaunchedEffect
+        
+        // Show loader only if we have no cached data yet
+        if (players.isEmpty() && clans.isEmpty()) {
+            isLoading = true
+        }
+        
         try {
             // Fetch players
             val response = withContext(Dispatchers.IO) {
@@ -3314,6 +3350,7 @@ fun ProfileScreen(
 
 @Composable
 fun GuildeScreen(
+    isActive: Boolean = false,
     userId: String,
     onBackToLogin: () -> Unit
 ) {
@@ -3572,12 +3609,17 @@ fun GuildeScreen(
         }
     }
 
-    LaunchedEffect(selectedTab) {
+    LaunchedEffect(isActive, selectedTab) {
+        if (!isActive) return@LaunchedEffect
         if (selectedTab == 0) {
-            isFriendsLoading = true
+            if (friendsList.isEmpty()) {
+                isFriendsLoading = true
+            }
             loadFriendsData()
         } else {
-            isClanLoading = true
+            if (clanId == null && allClansList.isEmpty() && clanMembers.isEmpty()) {
+                isClanLoading = true
+            }
             loadClanData()
         }
     }

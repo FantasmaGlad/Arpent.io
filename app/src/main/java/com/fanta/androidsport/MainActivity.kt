@@ -54,6 +54,7 @@ import org.maplibre.android.annotations.Polyline
 import org.maplibre.android.annotations.PolylineOptions
 import org.maplibre.android.annotations.Polygon
 import org.maplibre.android.annotations.PolygonOptions
+import org.maplibre.android.storage.FileSource
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,6 +62,54 @@ class MainActivity : ComponentActivity() {
         
         // Initialize MapLibre Engine
         MapLibre.getInstance(this)
+
+        // Setup Mapbox URL transformer to support mapbox:// urls in MapLibre
+        val token = BuildConfig.MAPBOX_PUBLIC_TOKEN
+        if (token.isNotEmpty()) {
+            FileSource.getInstance(this).setResourceTransform { kind, url ->
+                if (url.startsWith("mapbox://")) {
+                    val httpUrl = when {
+                        url.startsWith("mapbox://styles/") -> {
+                            val path = url.substring("mapbox://styles/".length)
+                            "https://api.mapbox.com/styles/v1/$path"
+                        }
+                        url.startsWith("mapbox://sprites/") -> {
+                            val path = url.substring("mapbox://sprites/".length)
+                            val parts = path.split("/")
+                            if (parts.size >= 3) {
+                                val user = parts[0]
+                                val style = parts[1]
+                                val last = parts.drop(2).joinToString("/")
+                                val suffix = when {
+                                    last.contains("@2x.json") -> "@2x.json"
+                                    last.contains("@2x.png") -> "@2x.png"
+                                    last.contains(".json") -> ".json"
+                                    last.contains(".png") -> ".png"
+                                    else -> ""
+                                }
+                                "https://api.mapbox.com/styles/v1/$user/$style/sprite$suffix"
+                            } else {
+                                url.replace("mapbox://", "https://api.mapbox.com/")
+                            }
+                        }
+                        url.startsWith("mapbox://fonts/") -> {
+                            val path = url.substring("mapbox://fonts/".length)
+                            "https://api.mapbox.com/fonts/v1/$path"
+                        }
+                        url.startsWith("mapbox://tiles/") -> {
+                            val path = url.substring("mapbox://tiles/".length)
+                            "https://api.mapbox.com/v4/$path"
+                        }
+                        else -> {
+                            url.replace("mapbox://", "https://api.mapbox.com/")
+                        }
+                    }
+                    if (httpUrl.contains("?")) "$httpUrl&access_token=$token" else "$httpUrl?access_token=$token"
+                } else {
+                    url
+                }
+            }
+        }
 
         setContent {
             SportAndroidTheme {
@@ -384,7 +433,7 @@ fun ConquestMapScreen() {
                 // Use the style provided via Config (or fall back to open street/dark tile JSON)
                 val token = BuildConfig.MAPBOX_PUBLIC_TOKEN
                 val styleUrl = if (token.isNotEmpty()) {
-                    "https://api.mapbox.com/styles/v1/mapbox/dark-v11?access_token=$token"
+                    "mapbox://styles/fantasmaglad/cmqe0myj4002c01qr2jd549n8"
                 } else {
                     // OpenStreetMap free fallback style
                     "https://tiles.openfreemap.org/styles/dark"
@@ -716,121 +765,156 @@ data class GuildRank(
 
 @Composable
 fun LeaderboardScreen() {
-    val guilds = remember {
-        listOf(
-            GuildRank(1, "Les Dérailleurs 🚴", 48.34, ActiveOrange),
-            GuildRank(2, "Vortex Runners ⚡", 36.12, ElectricBlue),
-            GuildRank(3, "Les Arpenteurs 🧭 (Vous)", 34.98, NeonVolt, isUserGuild = true),
-            GuildRank(4, "City Raiders 🏃", 22.45, Color(0xFFD6BEE4)),
-            GuildRank(5, "Asphalte Squad 🧱", 15.02, Color(0xFFBAC7DB))
-        )
-    }
+    val guilds = remember { emptyList<GuildRank>() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-            )
-        ) {
-            Row(
+        if (guilds.isEmpty()) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(NeonVolt.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = NeonVolt)
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
+                    Box(
+                        modifier = Modifier
+                            .size(90.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EmojiEvents,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "VOTRE GUILDE EST 3ème",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = NeonVolt
-                    )
-                    Text(
-                        text = "Les Arpenteurs • 34.98 km²",
+                        text = "Aucune guilde enregistrée",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Rejoignez ou créez une guilde pour commencer la conquête du territoire !",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Text(
-            text = "Classement Régional",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(guilds) { guild ->
-                val cardBg = if (guild.isUserGuild) {
-                    MaterialTheme.colorScheme.surfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.surface
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    border = if (guild.isUserGuild) BorderStroke(1.dp, NeonVolt) else null
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(NeonVolt.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = NeonVolt)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = "VOTRE GUILDE EST 3ème",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonVolt
+                        )
+                        Text(
+                            text = "Les Arpenteurs • 34.98 km²",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Text(
+                text = "Classement Régional",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(guilds) { guild ->
+                    val cardBg = if (guild.isUserGuild) {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        border = if (guild.isUserGuild) BorderStroke(1.dp, NeonVolt) else null
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "${guild.rank}",
+                                    fontWeight = FontWeight.Black,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier.width(36.dp),
+                                    color = if (guild.rank == 1) ActiveOrange else if (guild.rank == 2) ElectricBlue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(guild.color)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = guild.name,
+                                    fontWeight = if (guild.isUserGuild) FontWeight.Bold else FontWeight.Medium,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                             Text(
-                                text = "${guild.rank}",
-                                fontWeight = FontWeight.Black,
-                                style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.width(36.dp),
-                                color = if (guild.rank == 1) ActiveOrange else if (guild.rank == 2) ElectricBlue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(guild.color)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = guild.name,
-                                fontWeight = if (guild.isUserGuild) FontWeight.Bold else FontWeight.Medium,
+                                text = "${guild.territorySqKm} km²",
+                                fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = if (guild.isUserGuild) NeonVolt else MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        Text(
-                            text = "${guild.territorySqKm} km²",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (guild.isUserGuild) NeonVolt else MaterialTheme.colorScheme.onSurface
-                        )
                     }
                 }
             }
@@ -852,14 +936,14 @@ fun ProfileScreen() {
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Premium Avatar Card
+        // Premium Avatar Card for Guest
         Box(
             modifier = Modifier
                 .size(90.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.sweepGradient(
-                        listOf(NeonVolt, ElectricBlue, ActiveOrange, NeonVolt)
+                        listOf(Color.Gray, Color.DarkGray, Color.LightGray, Color.Gray)
                     )
                 )
                 .padding(3.dp)
@@ -875,7 +959,7 @@ fun ProfileScreen() {
                     imageVector = Icons.Default.Person,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurface
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                 )
             }
         }
@@ -883,20 +967,20 @@ fun ProfileScreen() {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Athlète Elite #482",
+            text = "Visiteur",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Black,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = "Membre de la guilde 'Les Arpenteurs'",
+            text = "Non connecté",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Level details
+        // Level details (Empty/Initial State)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -909,25 +993,25 @@ fun ProfileScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Niveau 12",
+                        text = "Niveau 1",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = NeonVolt
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     Text(
-                        text = "8,450 / 10,000 XP",
+                        text = "0 / 100 XP",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
-                    progress = { 0.845f },
+                    progress = { 0.0f },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = NeonVolt,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                     trackColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                 )
             }
@@ -935,7 +1019,7 @@ fun ProfileScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Stats Grid
+        // Stats Grid (Zeroed out)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -950,7 +1034,7 @@ fun ProfileScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text("Distance", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                    Text("284.5 km", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                    Text("0.0 km", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                 }
             }
             Card(
@@ -963,8 +1047,36 @@ fun ProfileScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text("Boucles", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                    Text("43", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = ElectricBlue)
+                    Text("0", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Guest Action Prompt
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Rejoignez l'aventure",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Connectez-vous pour enregistrer votre progression et conquérir des territoires.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
 

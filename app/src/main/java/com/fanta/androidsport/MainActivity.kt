@@ -49,6 +49,8 @@ import com.fanta.androidsport.ui.theme.NeonVolt
 import com.fanta.androidsport.ui.theme.SportAndroidTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.extension.compose.MapboxMap
@@ -566,6 +568,7 @@ fun ArpentMainScreen(userId: String) {
     var allTimeAreaKm2 by remember { mutableStateOf(0.0) }
     var currentAreaKm2 by remember { mutableStateOf(0.0) }
     var userEmpireColor by remember { mutableStateOf("#00E676") }
+    var userShareLocation by remember { mutableStateOf(true) }
     var mapTargetPosition by remember { mutableStateOf<Point?>(null) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
@@ -574,41 +577,53 @@ fun ArpentMainScreen(userId: String) {
 
     fun refreshStats() {
         if (!isNetworkAvailable(context)) return
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             try {
                 // 1. Fetch profile
                 val profileRes = supabase.postgrest["profiles"].select {
                     filter { eq("id", userId) }
                 }
-                val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
-                val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
-                userPseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
-                userEmpireColor = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
-
                 // 2. Fetch courses
                 val coursesRes = supabase.postgrest["courses"].select {
                     filter { eq("utilisateur_id", userId) }
                 }
-                val coursesArray = kotlinx.serialization.json.Json.parseToJsonElement(coursesRes.data) as? kotlinx.serialization.json.JsonArray
-                var totalDist = 0.0
-                coursesArray?.forEach {
-                    val obj = it as? kotlinx.serialization.json.JsonObject
-                    totalDist += obj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
-                }
-                totalDistanceKm = totalDist
-
                 // 3. Fetch territories
                 val terrRes = supabase.postgrest["territoires"].select {
                     filter { eq("utilisateur_id", userId) }
                 }
-                val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(terrRes.data) as? kotlinx.serialization.json.JsonArray
-                var totalAreaM2 = 0.0
-                terrArray?.forEach {
-                    val obj = it as? kotlinx.serialization.json.JsonObject
-                    totalAreaM2 += obj?.get("superficie_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+
+                val parsed = withContext(Dispatchers.Default) {
+                    val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
+                    val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                    val pseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
+                    val color = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                    val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
+
+                    val coursesArray = kotlinx.serialization.json.Json.parseToJsonElement(coursesRes.data) as? kotlinx.serialization.json.JsonArray
+                    var totalDist = 0.0
+                    coursesArray?.forEach {
+                        val obj = it as? kotlinx.serialization.json.JsonObject
+                        totalDist += obj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    }
+
+                    val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(terrRes.data) as? kotlinx.serialization.json.JsonArray
+                    var totalAreaM2 = 0.0
+                    terrArray?.forEach {
+                        val obj = it as? kotlinx.serialization.json.JsonObject
+                        totalAreaM2 += obj?.get("superficie_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    }
+
+                    Triple(pseudo, color, Triple(shareLoc, totalDist, totalAreaM2))
                 }
-                currentAreaKm2 = totalAreaM2 / 1_000_000.0
-                allTimeAreaKm2 = totalAreaM2 / 1_000_000.0
+
+                withContext(Dispatchers.Main) {
+                    userPseudo = parsed.first
+                    userEmpireColor = parsed.second
+                    userShareLocation = parsed.third.first
+                    totalDistanceKm = parsed.third.second
+                    currentAreaKm2 = parsed.third.third / 1_000_000.0
+                    allTimeAreaKm2 = parsed.third.third / 1_000_000.0
+                }
             } catch (e: Exception) {
                 android.util.Log.e("Arpent", "Error fetching stats", e)
             }
@@ -783,6 +798,7 @@ fun ArpentMainScreen(userId: String) {
                         allTimeArea = allTimeAreaKm2,
                         currentArea = currentAreaKm2,
                         userEmpireColor = userEmpireColor,
+                        userShareLocation = userShareLocation,
                         onStatsUpdated = { refreshStats() }
                     )
                 }
@@ -1004,37 +1020,46 @@ private suspend fun syncTerritoriesFromDatabase(
     }
 
     try {
-        val result = supabase.postgrest["territoires"].select {
-            filter {
-                eq("utilisateur_id", userId)
+        val result = withContext(Dispatchers.IO) {
+            supabase.postgrest["territoires"].select {
+                filter {
+                    eq("utilisateur_id", userId)
+                }
             }
         }
-        val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(result.data) as? kotlinx.serialization.json.JsonArray
-        val dbPolygons = mutableListOf<List<Point>>()
-        terrArray?.forEach { element ->
-            val obj = element as? kotlinx.serialization.json.JsonObject
-            val ptsArray = obj?.get("points")?.jsonArray
-            if (ptsArray != null) {
-                val pts = ptsArray.mapNotNull { ptEl ->
-                    val str = ptEl.jsonPrimitive.content
-                    val parts = str.split(" ")
-                    if (parts.size == 2) {
-                        val lng = parts[0].toDoubleOrNull()
-                        val lat = parts[1].toDoubleOrNull()
-                        if (lng != null && lat != null) {
-                            Point.fromLngLat(lng, lat)
+        val dbPolygons = withContext(Dispatchers.Default) {
+            val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(result.data) as? kotlinx.serialization.json.JsonArray
+            val polys = mutableListOf<List<Point>>()
+            terrArray?.forEach { element ->
+                val obj = element as? kotlinx.serialization.json.JsonObject
+                val ptsArray = obj?.get("points")?.jsonArray
+                if (ptsArray != null) {
+                    val pts = ptsArray.mapNotNull { ptEl ->
+                        val str = ptEl.jsonPrimitive.content
+                        val parts = str.split(" ")
+                        if (parts.size == 2) {
+                            val lng = parts[0].toDoubleOrNull()
+                            val lat = parts[1].toDoubleOrNull()
+                            if (lng != null && lat != null) {
+                                Point.fromLngLat(lng, lat)
+                            } else null
                         } else null
-                    } else null
-                }
-                if (pts.isNotEmpty()) {
-                    dbPolygons.add(pts)
+                    }
+                    if (pts.isNotEmpty()) {
+                        polys.add(pts)
+                    }
                 }
             }
+            polys
         }
 
-        completedPolygonsList.clear()
-        completedPolygonsList.addAll(dbPolygons)
-        saveTerritoriesLocally(context, dbPolygons)
+        withContext(Dispatchers.Main) {
+            completedPolygonsList.clear()
+            completedPolygonsList.addAll(dbPolygons)
+        }
+        withContext(Dispatchers.IO) {
+            saveTerritoriesLocally(context, dbPolygons)
+        }
         android.util.Log.d("Arpent", "Synchronisation avec la BDD réussie: ${dbPolygons.size} polygones.")
     } catch (e: Exception) {
         android.util.Log.e("Arpent", "Error syncing territories from database", e)
@@ -1052,7 +1077,7 @@ private fun saveRunToDatabase(
     onSuccess: (Double) -> Unit
 ) {
 
-    scope.launch {
+    scope.launch(Dispatchers.IO) {
         try {
             val dateDebut = java.time.Instant.ofEpochMilli(runStartTime).toString()
             val dateFin = java.time.Instant.now().toString()
@@ -1091,10 +1116,14 @@ private fun saveRunToDatabase(
             }
 
             val areaKm2 = estimateAreaKm2(closedPoints)
-            onSuccess(areaKm2)
+            withContext(Dispatchers.Main) {
+                onSuccess(areaKm2)
+            }
         } catch (e: Exception) {
             android.util.Log.e("Arpent", "Erreur d'enregistrement dans la base de données", e)
-            Toast.makeText(context, "Erreur base de données : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Erreur base de données : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 }
@@ -1137,77 +1166,6 @@ fun ConquestMapScreen(
         try { Color(android.graphics.Color.parseColor(userEmpireColor)) } catch (_: Exception) { Color(0xFF00E676) }
     }
 
-    // --- Other players data ---
-    data class OtherPlayerTerritory(
-        val playerId: String,
-        val pseudo: String,
-        val empireColor: Color,
-        val polygons: List<List<Point>>,
-        val markerPosition: Point?
-    )
-    var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
-
-    // Fetch other players' territories once on first composition
-    LaunchedEffect(userId) {
-        // Sync current user's own territories first to handle fresh installs / reinstalls
-        try {
-            syncTerritoriesFromDatabase(userId, context, completedPolygons)
-        } catch (e: Exception) {
-            android.util.Log.e("Arpent", "Failed to sync own territories in map screen", e)
-        }
-
-        try {
-            val currentUserId = userId
-            // 1. Fetch all players from the leaderboard view
-            val lbResponse = supabase.postgrest["leaderboard"].select()
-            val lbJson = kotlinx.serialization.json.Json.parseToJsonElement(lbResponse.data) as? kotlinx.serialization.json.JsonArray ?: return@LaunchedEffect
-
-            // 2. Fetch all territories with their points
-            val terrResponse = supabase.postgrest["territoires"].select()
-            val terrJson = kotlinx.serialization.json.Json.parseToJsonElement(terrResponse.data) as? kotlinx.serialization.json.JsonArray ?: return@LaunchedEffect
-
-            // Group territories by user id
-            val terrByUser = mutableMapOf<String, MutableList<List<Point>>>()
-            terrJson.forEach { element ->
-                val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
-                val uId = obj["utilisateur_id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                val pointsArr = obj["points"] as? kotlinx.serialization.json.JsonArray ?: return@forEach
-                val polygon = pointsArr.mapNotNull { pt ->
-                    val coords = pt.jsonPrimitive.content.split(" ")
-                    if (coords.size >= 2) {
-                        val lon = coords[0].toDoubleOrNull() ?: return@mapNotNull null
-                        val lat = coords[1].toDoubleOrNull() ?: return@mapNotNull null
-                        Point.fromLngLat(lon, lat)
-                    } else null
-                }
-                if (polygon.size >= 3) {
-                    terrByUser.getOrPut(uId) { mutableListOf() }.add(polygon)
-                }
-            }
-
-            // Build OtherPlayerTerritory list (exclude current user)
-            val result = lbJson.mapNotNull { element ->
-                val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
-                val pId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                if (pId == currentUserId) return@mapNotNull null // skip self
-                val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
-                val colorStr = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
-                val lat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
-                val lon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
-                val empColor = try { Color(android.graphics.Color.parseColor(colorStr)) } catch (_: Exception) { Color(0xFF00E676) }
-                val marker = if (lat != null && lon != null) Point.fromLngLat(lon, lat) else null
-                val polys = terrByUser[pId] ?: emptyList()
-                // Only include players that have territory or a position
-                if (polys.isNotEmpty() || marker != null) {
-                    OtherPlayerTerritory(pId, pseudo, empColor, polys, marker)
-                } else null
-            }
-            otherPlayersTerritories = result
-        } catch (e: Exception) {
-            android.util.Log.e("Arpent", "Failed to load other players territories", e)
-        }
-    }
-
     // Paris starting coordinates
     val parisCenter = Point.fromLngLat(2.3522, 48.8566)
     var currentPosition by remember { mutableStateOf(parisCenter) }
@@ -1225,6 +1183,108 @@ fun ConquestMapScreen(
             zoom(16.2)
             pitch(60.0) // 3D Tilt perspective angle
             bearing(30.0)
+        }
+    }
+
+    // --- Other players data ---
+    data class OtherPlayerTerritory(
+        val playerId: String,
+        val pseudo: String,
+        val empireColor: Color,
+        val polygons: List<List<Point>>,
+        val markerPosition: Point?
+    )
+    var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
+
+    // Fetch other players' territories dynamically based on visible bounding box
+    LaunchedEffect(userId) {
+        // Sync current user's own territories first to handle fresh installs / reinstalls
+        try {
+            syncTerritoriesFromDatabase(userId, context, completedPolygons)
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to sync own territories in map screen", e)
+        }
+    }
+
+    LaunchedEffect(userId, mapViewportState.cameraState) {
+        val cam = mapViewportState.cameraState ?: return@LaunchedEffect
+        val centerPoint = cam.center
+        val currentZoom = cam.zoom
+        
+        delay(400) // Debounce viewport updates to avoid database spamming
+        
+        val lat = centerPoint.latitude()
+        val lng = centerPoint.longitude()
+        
+        val multiplier = 2.5 
+        val dLng = (360.0 / Math.pow(2.0, currentZoom)) * multiplier
+        val dLat = (dLng * Math.cos(Math.toRadians(lat))) * multiplier
+        
+        val minLng = lng - dLng
+        val maxLng = lng + dLng
+        val minLat = lat - dLat
+        val maxLat = lat + dLat
+        
+        try {
+            val params = kotlinx.serialization.json.buildJsonObject {
+                put("min_lng", kotlinx.serialization.json.JsonPrimitive(minLng))
+                put("min_lat", kotlinx.serialization.json.JsonPrimitive(minLat))
+                put("max_lng", kotlinx.serialization.json.JsonPrimitive(maxLng))
+                put("max_lat", kotlinx.serialization.json.JsonPrimitive(maxLat))
+            }
+            val response = withContext(Dispatchers.IO) {
+                supabase.postgrest.rpc("get_territoires_in_bbox", params)
+            }
+            
+            val territories = withContext(Dispatchers.Default) {
+                val array = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray ?: return@withContext emptyList<OtherPlayerTerritory>()
+                val terrByUser = mutableMapOf<String, MutableList<List<Point>>>()
+                val userDetails = mutableMapOf<String, Pair<String, String>>()
+                val userLocations = mutableMapOf<String, Point>()
+                
+                array.forEach { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                    val uId = obj["utilisateur_id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                    val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
+                    val colorStr = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                    userDetails[uId] = Pair(pseudo, colorStr)
+                    
+                    val latVal = obj["latitude"]?.jsonPrimitive?.doubleOrNull
+                    val lonVal = obj["longitude"]?.jsonPrimitive?.doubleOrNull
+                    if (latVal != null && lonVal != null) {
+                        userLocations[uId] = Point.fromLngLat(lonVal, latVal)
+                    }
+                    
+                    val pointsArr = obj["points"] as? kotlinx.serialization.json.JsonArray
+                    if (pointsArr != null) {
+                        val polygon = pointsArr.mapNotNull { pt ->
+                            val coords = pt.jsonPrimitive.content.split(" ")
+                            if (coords.size >= 2) {
+                                val lon = coords[0].toDoubleOrNull() ?: return@mapNotNull null
+                                val lat = coords[1].toDoubleOrNull() ?: return@mapNotNull null
+                                Point.fromLngLat(lon, lat)
+                            } else null
+                        }
+                        if (polygon.size >= 3) {
+                            terrByUser.getOrPut(uId) { mutableListOf() }.add(polygon)
+                        }
+                    }
+                }
+                
+                userDetails.keys.filter { it != userId }.map { pId ->
+                    val (pseudo, colorStr) = userDetails[pId]!!
+                    val empColor = try { Color(android.graphics.Color.parseColor(colorStr)) } catch (_: Exception) { Color(0xFF00E676) }
+                    val marker = userLocations[pId]
+                    val polys = terrByUser[pId] ?: emptyList()
+                    OtherPlayerTerritory(pId, pseudo, empColor, polys, marker)
+                }
+            }
+            
+            withContext(Dispatchers.Main) {
+                otherPlayersTerritories = territories
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to fetch territories in bounding box", e)
         }
     }
 
@@ -1800,18 +1860,22 @@ fun LeaderboardScreen(
 
     LaunchedEffect(Unit) {
         try {
-            val response = supabase.postgrest["leaderboard"].select()
-            val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray
-            val fetchedPlayers = jsonArray?.mapNotNull { element ->
-                val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
-                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur_${id.take(8)}"
-                val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
-                val lat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
-                val lon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
-                val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                LeaderboardPlayer(id, pseudo, color, lat, lon, areaM2)
-            } ?: emptyList()
+            val response = withContext(Dispatchers.IO) {
+                supabase.postgrest["leaderboard"].select()
+            }
+            val fetchedPlayers = withContext(Dispatchers.Default) {
+                val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray
+                jsonArray?.mapNotNull { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                    val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur_${id.take(8)}"
+                    val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                    val lat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
+                    val lon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
+                    val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    LeaderboardPlayer(id, pseudo, color, lat, lon, areaM2)
+                } ?: emptyList()
+            }
             players = fetchedPlayers
         } catch (e: Exception) {
             android.util.Log.e("Arpent", "Failed to fetch leaderboard", e)
@@ -2135,6 +2199,7 @@ fun ProfileScreen(
     allTimeArea: Double,
     currentArea: Double,
     userEmpireColor: String,
+    userShareLocation: Boolean,
     onStatsUpdated: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2157,16 +2222,39 @@ fun ProfileScreen(
         mutableStateOf(parsed)
     }
 
+    var shareLocationEnabled by remember(userShareLocation) {
+        mutableStateOf(userShareLocation)
+    }
+
+    LaunchedEffect(shareLocationEnabled) {
+        if (shareLocationEnabled == userShareLocation) return@LaunchedEffect
+        delay(300) // debounce update
+        try {
+            withContext(Dispatchers.IO) {
+                supabase.postgrest["profiles"].update(
+                    mapOf("share_location" to shareLocationEnabled)
+                ) {
+                    filter { eq("id", userId) }
+                }
+            }
+            onStatsUpdated()
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to update share_location", e)
+        }
+    }
+
     LaunchedEffect(localColor) {
         val localHex = String.format("#%06X", 0xFFFFFF and localColor.toArgb())
         if (localHex.equals(userEmpireColor, ignoreCase = true)) return@LaunchedEffect
 
         delay(500) // debounce updates to database
         try {
-            supabase.postgrest["profiles"].update(
-                mapOf("empire_color" to localHex)
-            ) {
-                filter { eq("id", userId) }
+            withContext(Dispatchers.IO) {
+                supabase.postgrest["profiles"].update(
+                    mapOf("empire_color" to localHex)
+                ) {
+                    filter { eq("id", userId) }
+                }
             }
             onStatsUpdated()
         } catch (e: Exception) {
@@ -2454,6 +2542,18 @@ fun ProfileScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column {
+                ListItem(
+                    headlineContent = { Text("Partager ma position (Temps réel)") },
+                    supportingContent = { Text("Permet aux autres joueurs de voir votre position sur la carte") },
+                    trailingContent = {
+                        Switch(
+                            checked = shareLocationEnabled,
+                            onCheckedChange = { shareLocationEnabled = it }
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                 ListItem(
                     headlineContent = { Text("Notifications de capture") },
                     supportingContent = { Text("Alertes en cas de vol de territoire") },

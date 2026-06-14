@@ -54,7 +54,6 @@ import org.maplibre.android.annotations.Polyline
 import org.maplibre.android.annotations.PolylineOptions
 import org.maplibre.android.annotations.Polygon
 import org.maplibre.android.annotations.PolygonOptions
-import org.maplibre.android.storage.FileSource
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,54 +61,6 @@ class MainActivity : ComponentActivity() {
         
         // Initialize MapLibre Engine
         MapLibre.getInstance(this)
-
-        // Setup Mapbox URL transformer to support mapbox:// urls in MapLibre
-        val token = BuildConfig.MAPBOX_PUBLIC_TOKEN
-        if (token.isNotEmpty()) {
-            FileSource.getInstance(this).setResourceTransform { kind, url ->
-                if (url.startsWith("mapbox://")) {
-                    val httpUrl = when {
-                        url.startsWith("mapbox://styles/") -> {
-                            val path = url.substring("mapbox://styles/".length)
-                            "https://api.mapbox.com/styles/v1/$path"
-                        }
-                        url.startsWith("mapbox://sprites/") -> {
-                            val path = url.substring("mapbox://sprites/".length)
-                            val parts = path.split("/")
-                            if (parts.size >= 3) {
-                                val user = parts[0]
-                                val style = parts[1]
-                                val last = parts.drop(2).joinToString("/")
-                                val suffix = when {
-                                    last.contains("@2x.json") -> "@2x.json"
-                                    last.contains("@2x.png") -> "@2x.png"
-                                    last.contains(".json") -> ".json"
-                                    last.contains(".png") -> ".png"
-                                    else -> ""
-                                }
-                                "https://api.mapbox.com/styles/v1/$user/$style/sprite$suffix"
-                            } else {
-                                url.replace("mapbox://", "https://api.mapbox.com/")
-                            }
-                        }
-                        url.startsWith("mapbox://fonts/") -> {
-                            val path = url.substring("mapbox://fonts/".length)
-                            "https://api.mapbox.com/fonts/v1/$path"
-                        }
-                        url.startsWith("mapbox://tiles/") -> {
-                            val path = url.substring("mapbox://tiles/".length)
-                            "https://api.mapbox.com/v4/$path"
-                        }
-                        else -> {
-                            url.replace("mapbox://", "https://api.mapbox.com/")
-                        }
-                    }
-                    if (httpUrl.contains("?")) "$httpUrl&access_token=$token" else "$httpUrl?access_token=$token"
-                } else {
-                    url
-                }
-            }
-        }
 
         setContent {
             SportAndroidTheme {
@@ -397,15 +348,48 @@ fun ConquestMapScreen() {
     var activePolyline by remember { mutableStateOf<Polyline?>(null) }
     val completedPolygons = remember { mutableStateListOf<Polygon>() }
 
-    // MapView Lifecycle Holder
+    // Build the Mapbox style URL (HTTPS, MapLibre-compatible)
+    val token = BuildConfig.MAPBOX_PUBLIC_TOKEN
+    val styleUrl = remember {
+        if (token.isNotEmpty()) {
+            // Mapbox dark-v11 is a classic style fully compatible with MapLibre
+            // Note: custom style cmqe0myj4002c01qr2jd549n8 uses Mapbox Standard imports
+            // which MapLibre does not support, so we use dark-v11 as the base
+            "https://api.mapbox.com/styles/v1/mapbox/dark-v11?access_token=$token"
+        } else {
+            "https://tiles.openfreemap.org/styles/dark"
+        }
+    }
+
+    // MapView Lifecycle Holder — created once, style set in factory
     val mapView = remember {
-        MapView(context)
+        MapView(context).apply {
+            onCreate(null)
+            getMapAsync { map ->
+                maplibreMap = map
+
+                // Hide MapLibre logo and attribution
+                map.uiSettings.isLogoEnabled = false
+                map.uiSettings.isAttributionEnabled = false
+
+                // Load the dark style
+                map.setStyle(styleUrl) { style ->
+                    // Initial Camera layout tilted at 60 degrees for a beautiful 3D view
+                    val cameraPosition = CameraPosition.Builder()
+                        .target(currentPosition)
+                        .zoom(16.2)
+                        .tilt(60.0) // 3D Tilt perspective angle
+                        .bearing(30.0)
+                        .build()
+                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 1200)
+                }
+            }
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_CREATE -> mapView.onCreate(null)
                 Lifecycle.Event.ON_START -> mapView.onStart()
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
                 Lifecycle.Event.ON_PAUSE -> mapView.onPause()
@@ -426,31 +410,7 @@ fun ConquestMapScreen() {
         AndroidView(
             factory = { mapView },
             modifier = Modifier.fillMaxSize()
-        ) { view ->
-            view.getMapAsync { map ->
-                maplibreMap = map
-
-                // Use the style provided via Config (or fall back to open street/dark tile JSON)
-                val token = BuildConfig.MAPBOX_PUBLIC_TOKEN
-                val styleUrl = if (token.isNotEmpty()) {
-                    "mapbox://styles/fantasmaglad/cmqe0myj4002c01qr2jd549n8"
-                } else {
-                    // OpenStreetMap free fallback style
-                    "https://tiles.openfreemap.org/styles/dark"
-                }
-
-                map.setStyle(styleUrl) { style ->
-                    // Initial Camera layout tilted at 60 degrees for a beautiful 3D view
-                    val cameraPosition = CameraPosition.Builder()
-                        .target(currentPosition)
-                        .zoom(16.2)
-                        .tilt(60.0) // 3D Tilt perspective angle
-                        .bearing(30.0)
-                        .build()
-                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 1200)
-                }
-            }
-        }
+        )
 
         // --- OVERLAYS ---
 

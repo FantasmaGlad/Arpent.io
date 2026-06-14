@@ -29,8 +29,8 @@ android {
         applicationId = "com.fanta.androidsport"
         minSdk = 35
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.2"
+        versionCode = 3
+        versionName = "2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -107,12 +107,16 @@ dependencies {
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.auth)
+    implementation(libs.supabase.storage)
     implementation(libs.ktor.client.android)
     implementation(libs.kotlinx.serialization.json)
 
     // Mapbox SDK & Compose Extension
     implementation(libs.mapbox.sdk)
     implementation(libs.mapbox.compose)
+
+    // Image Caching with Coil
+    implementation(libs.coil.compose)
 
     // Tooling support (Previews)
     debugImplementation(libs.androidx.compose.ui.tooling)

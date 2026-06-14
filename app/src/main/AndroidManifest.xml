@@ -6,8 +6,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -29,7 +29,11 @@
             </intent-filter>
         </activity>
 
-    </application>
+        <service
+            android:name=".LocationTrackingService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
 
+    </application>
 
 </manifest>

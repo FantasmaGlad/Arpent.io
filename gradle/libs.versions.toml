@@ -15,6 +15,7 @@ supabase = "3.6.0"
 ktor = "3.0.1"
 kotlinxSerializationJson = "1.6.3"
 mapbox = "11.8.0"
+coil = "2.7.0"
 
 
 [libraries]
@@ -46,10 +47,12 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 supabase-bom = { group = "io.github.jan-tennert.supabase", name = "bom", version.ref = "supabase" }
 supabase-postgrest = { group = "io.github.jan-tennert.supabase", name = "postgrest-kt" }
 supabase-auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
+supabase-storage = { group = "io.github.jan-tennert.supabase", name = "storage-kt" }
 ktor-client-android = { group = "io.ktor", name = "ktor-client-android", version.ref = "ktor" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 mapbox-sdk = { group = "com.mapbox.maps", name = "android", version.ref = "mapbox" }
 mapbox-compose = { group = "com.mapbox.extension", name = "maps-compose", version.ref = "mapbox" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 
 

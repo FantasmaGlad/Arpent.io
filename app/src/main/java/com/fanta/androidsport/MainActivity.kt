@@ -79,6 +79,8 @@ import android.location.Location
 import android.location.LocationManager
 import android.location.LocationListener
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
@@ -86,6 +88,8 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.storage.storage
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.serialization.json.*
 import android.net.ConnectivityManager
@@ -104,6 +108,7 @@ val supabase = createSupabaseClient(
 ) {
     install(Auth)
     install(Postgrest)
+    install(Storage)
 }
 
 class MainActivity : ComponentActivity() {
@@ -678,6 +683,37 @@ fun ArpentMainScreen(userId: String) {
 
         refreshStats()
         syncTerritoriesFromDatabase(userId, context, completedPolygons)
+        
+        // Sync pending offline runs immediately on startup/auth
+        scope.launch {
+            PendingRunsQueue.syncPendingRuns(context, supabase)
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(context) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                scope.launch {
+                    PendingRunsQueue.syncPendingRuns(context, supabase)
+                }
+            }
+        }
+        val request = android.net.NetworkRequest.Builder()
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        try {
+            connectivityManager.registerNetworkCallback(request, networkCallback)
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to register network callback", e)
+        }
+        onDispose {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
     }
 
     // Required permissions depending on Android version
@@ -1091,27 +1127,46 @@ fun AvatarImage(
     placeholderColor: Color = ElectricBlue,
     placeholderIcon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.Person
 ) {
-    val bitmap = remember(avatarUrl) { base64ToImageBitmap(avatarUrl) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     Box(
         modifier = modifier
             .clip(CircleShape)
             .background(Color.Gray.copy(alpha = 0.2f)),
         contentAlignment = Alignment.Center
     ) {
-        if (bitmap != null) {
-            androidx.compose.foundation.Image(
-                bitmap = bitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        } else {
-            Icon(
-                imageVector = placeholderIcon,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(0.5f),
-                tint = placeholderColor
-            )
+        Icon(
+            imageVector = placeholderIcon,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(0.5f),
+            tint = placeholderColor
+        )
+
+        if (avatarUrl != null && avatarUrl.isNotEmpty()) {
+            if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://") || avatarUrl.startsWith("content://") || avatarUrl.startsWith("file://")) {
+                coil.compose.AsyncImage(
+                    model = coil.request.ImageRequest.Builder(context)
+                        .data(avatarUrl)
+                        .crossfade(true)
+                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .build(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                // Base64 fallback for backward compatibility
+                val bitmap = remember(avatarUrl) { base64ToImageBitmap(avatarUrl) }
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
         }
     }
 }
@@ -1244,7 +1299,6 @@ private fun saveRunToDatabase(
     closedPoints: List<Point>,
     onSuccess: (Double) -> Unit
 ) {
-
     scope.launch(Dispatchers.IO) {
         try {
             val dateDebut = java.time.Instant.ofEpochMilli(runStartTime).toString()
@@ -1254,43 +1308,35 @@ private fun saveRunToDatabase(
 
             // Format coordinates array for PostGIS: "longitude latitude"
             val pointsArray = closedPoints.map { "${it.longitude()} ${it.latitude()}" }
+            val lastPt = closedPoints.lastOrNull()
 
-            // Call RPC function to insert course and optionally territory
-            val params = kotlinx.serialization.json.buildJsonObject {
-                put("p_user_id", kotlinx.serialization.json.JsonPrimitive(userId.toString()))
-                put("p_date_debut", kotlinx.serialization.json.JsonPrimitive(dateDebut))
-                put("p_date_fin", kotlinx.serialization.json.JsonPrimitive(dateFin))
-                put("p_distance_totale", kotlinx.serialization.json.JsonPrimitive(distanceKm))
-                put("p_duree_secondes", kotlinx.serialization.json.JsonPrimitive(durationSec))
-                put("p_est_bouclee", kotlinx.serialization.json.JsonPrimitive(isLoop))
-                put("p_points", kotlinx.serialization.json.JsonArray(pointsArray.map { kotlinx.serialization.json.JsonPrimitive(it) }))
-            }
-            supabase.postgrest.rpc("enregistrer_course", params)
+            val pendingRun = PendingRun(
+                userId = userId,
+                dateDebut = dateDebut,
+                dateFin = dateFin,
+                distanceKm = distanceKm,
+                durationSec = durationSec,
+                isLoop = isLoop,
+                points = pointsArray,
+                lastLatitude = lastPt?.latitude(),
+                lastLongitude = lastPt?.longitude()
+            )
 
-            if (closedPoints.isNotEmpty()) {
-                val lastPt = closedPoints.last()
-                try {
-                    supabase.postgrest["profiles"].update(
-                        mapOf(
-                            "latitude" to lastPt.latitude(),
-                            "longitude" to lastPt.longitude()
-                        )
-                    ) {
-                        filter { eq("id", userId) }
-                    }
-                } catch (ex: Exception) {
-                    android.util.Log.e("Arpent", "Failed to update profile location", ex)
-                }
-            }
+            // Save to local offline queue first
+            PendingRunsQueue.enqueue(context, pendingRun)
 
+            // Compute estimated area for immediate UI update
             val areaKm2 = estimateAreaKm2(closedPoints)
             withContext(Dispatchers.Main) {
                 onSuccess(areaKm2)
             }
+
+            // Sync with remote database in background
+            PendingRunsQueue.syncPendingRuns(context, supabase)
         } catch (e: Exception) {
-            android.util.Log.e("Arpent", "Erreur d'enregistrement dans la base de données", e)
+            android.util.Log.e("Arpent", "Erreur d'enregistrement local de la course", e)
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "Erreur base de données : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Erreur d'enregistrement : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1342,6 +1388,32 @@ fun ConquestMapScreen(
 
     // Store references to drawn objects
     val activePathPoints = remember { mutableStateListOf<Point>() }
+
+    val gpsPoints by LocationTrackerState.points.collectAsStateWithLifecycle()
+    val gpsDistance by LocationTrackerState.distance.collectAsStateWithLifecycle()
+    val gpsSpeed by LocationTrackerState.currentSpeed.collectAsStateWithLifecycle()
+
+    LaunchedEffect(gpsPoints) {
+        if (isRealRunActive) {
+            activePathPoints.clear()
+            activePathPoints.addAll(gpsPoints)
+            gpsPoints.lastOrNull()?.let {
+                currentPosition = it
+            }
+        }
+    }
+
+    LaunchedEffect(gpsDistance) {
+        if (isRealRunActive) {
+            runDistance = gpsDistance
+        }
+    }
+
+    LaunchedEffect(gpsSpeed) {
+        if (isRealRunActive) {
+            currentSpeed = gpsSpeed
+        }
+    }
 
     // Mapbox Viewport State
     val mapViewportState = rememberMapViewportState {
@@ -1503,34 +1575,22 @@ fun ConquestMapScreen(
     // GPS Location listener using standard LocationManager
     val locationManager = remember { context.getSystemService(Context.LOCATION_SERVICE) as LocationManager }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, isRealRunActive) {
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 val point = Point.fromLngLat(location.longitude, location.latitude)
-                if (isRealRunActive) {
-                    val prevPoint = activePathPoints.lastOrNull()
-                    if (prevPoint == null || prevPoint != point) {
-                        if (prevPoint != null) {
-                            runDistance += calculateDistance(prevPoint, point)
-                        }
-                        activePathPoints.add(point)
-                    }
-                    currentPosition = point
-                    currentSpeed = if (location.hasSpeed()) location.speed * 3.6 else 0.0
-                } else {
-                    currentPosition = point
-                    if (isFirstLocationUpdate) {
-                        isFirstLocationUpdate = false
-                        mapViewportState.flyTo(
-                            CameraOptions.Builder()
-                                .center(point)
-                                .zoom(16.5)
-                                .pitch(60.0)
-                                .bearing(30.0)
-                                .build(),
-                            mapAnimationOptions { duration(1000L) }
-                        )
-                    }
+                currentPosition = point
+                if (isFirstLocationUpdate) {
+                    isFirstLocationUpdate = false
+                    mapViewportState.flyTo(
+                        CameraOptions.Builder()
+                            .center(point)
+                            .zoom(16.5)
+                            .pitch(60.0)
+                            .bearing(30.0)
+                            .build(),
+                        mapAnimationOptions { duration(1000L) }
+                    )
                 }
             }
             @Deprecated("Deprecated in Java")
@@ -1540,8 +1600,8 @@ fun ConquestMapScreen(
         }
 
         try {
-            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (!isRealRunActive && (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)
             ) {
                 val lastKnownGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                 val lastKnownNetwork = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
@@ -1906,6 +1966,11 @@ fun ConquestMapScreen(
                         isRealRunActive = false
                         currentSpeed = 0.0
 
+                        val serviceIntent = Intent(context, LocationTrackingService::class.java).apply {
+                            action = LocationTrackingService.ACTION_STOP
+                        }
+                        context.startService(serviceIntent)
+
                         val isLoop = activePathPoints.size >= 3 && calculateDistance(activePathPoints.first(), activePathPoints.last()) <= 35.0
                         val closedPoints = if (isLoop && activePathPoints.first() != activePathPoints.last()) {
                             activePathPoints.toList() + activePathPoints[0]
@@ -1942,6 +2007,16 @@ fun ConquestMapScreen(
                         runStartTime = null
                     } else {
                         // Start real run
+                        LocationTrackerState.startNewRun()
+                        val serviceIntent = Intent(context, LocationTrackingService::class.java).apply {
+                            action = LocationTrackingService.ACTION_START
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(serviceIntent)
+                        } else {
+                            context.startService(serviceIntent)
+                        }
+
                         isRealRunActive = true
                         sessionGainedArea = 0.0
                         runDistance = 0.0
@@ -2867,22 +2942,30 @@ fun ProfileScreen(
         val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
             contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
         ) { uri: android.net.Uri? ->
-            uri?.let {
-                val base64 = uriToBase64(context, it)
-                if (base64 != null) {
-                    scope.launch {
-                        try {
-                            withContext(Dispatchers.IO) {
+            uri?.let { selectedUri ->
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
+                            if (bytes != null) {
+                                val bucket = supabase.storage.from("Images")
+                                val filename = "${userId}.jpg"
+                                bucket.upload(filename, bytes) {
+                                    upsert = true
+                                }
+                                val publicUrl = bucket.publicUrl(filename)
+                                val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+                                
                                 supabase.postgrest["profiles"].update(
-                                    mapOf("avatar_url" to base64)
+                                    mapOf("avatar_url" to finalUrl)
                                 ) {
                                     filter { eq("id", userId) }
                                 }
                             }
-                            onStatsUpdated()
-                        } catch (e: Exception) {
-                            android.util.Log.e("Arpent", "Failed to update avatar", e)
                         }
+                        onStatsUpdated()
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to update avatar", e)
                     }
                 }
             }
@@ -3313,10 +3396,7 @@ fun GuildeScreen(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let {
-            val base64 = uriToBase64(context, it)
-            if (base64 != null) {
-                newClanAvatarBase64 = base64
-            }
+            newClanAvatarBase64 = it.toString()
         }
     }
 
@@ -4117,7 +4197,8 @@ fun GuildeScreen(
                                                         mapOf(
                                                             "nom" to newClanName.trim(),
                                                             "couleur_hex" to newClanColor,
-                                                            "avatar_url" to newClanAvatarBase64
+                                                            "avatar_url" to null,
+                                                            "chef_id" to userId
                                                         )
                                                     ) {
                                                         select()
@@ -4127,6 +4208,31 @@ fun GuildeScreen(
                                                     val createdGuildId = guildObj?.get("id")?.jsonPrimitive?.content
                                                     
                                                     if (createdGuildId != null) {
+                                                        var finalAvatarUrl: String? = null
+                                                        val localUriStr = newClanAvatarBase64
+                                                        if (localUriStr != null && (localUriStr.startsWith("content://") || localUriStr.startsWith("file://"))) {
+                                                            try {
+                                                                val bytes = context.contentResolver.openInputStream(android.net.Uri.parse(localUriStr))?.use { it.readBytes() }
+                                                                if (bytes != null) {
+                                                                    val bucket = supabase.storage.from("Images")
+                                                                    val filename = "guild_${createdGuildId}.jpg"
+                                                                    bucket.upload(filename, bytes) {
+                                                                        upsert = true
+                                                                    }
+                                                                    val publicUrl = bucket.publicUrl(filename)
+                                                                    finalAvatarUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+                                                                    
+                                                                    supabase.postgrest["guildes"].update(
+                                                                        mapOf("avatar_url" to finalAvatarUrl)
+                                                                    ) {
+                                                                        filter { eq("id", createdGuildId) }
+                                                                    }
+                                                                }
+                                                            } catch (e: Exception) {
+                                                                android.util.Log.e("Arpent", "Failed to upload guild avatar", e)
+                                                            }
+                                                        }
+
                                                         supabase.postgrest["profiles"].update(
                                                             mapOf("guilde_id" to createdGuildId)
                                                         ) {

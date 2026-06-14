@@ -39,13 +39,24 @@ android {
         buildConfigField("String", "MAPBOX_PUBLIC_TOKEN", "\"$mapboxToken\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "${System.getProperty("user.home")}/androidsport-release.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: "sport-key"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+        }
+    }
+
     buildTypes {
         release {
             optimization {
                 enable = false
             }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -54,6 +65,10 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+base {
+    archivesName.set("arpentio")
 }
 
 kotlin {
@@ -86,11 +101,13 @@ dependencies {
     // Supabase & Ktor & Serialization
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.auth)
     implementation(libs.ktor.client.android)
     implementation(libs.kotlinx.serialization.json)
 
-    // MapLibre SDK
-    implementation(libs.maplibre.sdk)
+    // Mapbox SDK & Compose Extension
+    implementation(libs.mapbox.sdk)
+    implementation(libs.mapbox.compose)
 
     // Tooling support (Previews)
     debugImplementation(libs.androidx.compose.ui.tooling)

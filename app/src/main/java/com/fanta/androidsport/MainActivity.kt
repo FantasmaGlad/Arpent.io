@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,37 +39,505 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import com.fanta.androidsport.ui.theme.ActiveOrange
 import com.fanta.androidsport.ui.theme.ElectricBlue
 import com.fanta.androidsport.ui.theme.NeonVolt
 import com.fanta.androidsport.ui.theme.SportAndroidTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.annotations.Polyline
-import org.maplibre.android.annotations.PolylineOptions
-import org.maplibre.android.annotations.Polygon
-import org.maplibre.android.annotations.PolygonOptions
+import com.mapbox.geojson.Point
+import com.mapbox.maps.CameraOptions
+import com.mapbox.maps.extension.compose.MapboxMap
+import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
+import com.mapbox.maps.extension.compose.style.MapStyle
+import com.mapbox.maps.extension.compose.annotation.generated.PolylineAnnotation
+import com.mapbox.maps.extension.compose.annotation.generated.PolylineAnnotationState
+import com.mapbox.maps.extension.compose.annotation.generated.PolygonAnnotation
+import com.mapbox.maps.extension.compose.annotation.generated.PolygonAnnotationState
+import com.mapbox.maps.extension.compose.annotation.generated.CircleAnnotation
+import com.mapbox.maps.extension.compose.annotation.generated.CircleAnnotationState
+import com.mapbox.maps.plugin.animation.MapAnimationOptions.Companion.mapAnimationOptions
+import android.location.Location
+import android.location.LocationManager
+import android.location.LocationListener
+import android.content.Context
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.postgrest
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.serialization.json.*
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import java.io.File
+
+val supabase = createSupabaseClient(
+    supabaseUrl = BuildConfig.SUPABASE_URL,
+    supabaseKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+) {
+    install(Auth)
+    install(Postgrest)
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.mapbox.common.MapboxOptions.accessToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
         
-        // Initialize MapLibre Engine
-        MapLibre.getInstance(this)
-
         setContent {
             SportAndroidTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    ArpentMainScreen()
+                    ArpentApp()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ArpentApp() {
+    val sessionStatus by supabase.auth.sessionStatus.collectAsStateWithLifecycle(
+        initialValue = SessionStatus.Initializing
+    )
+
+    when (sessionStatus) {
+        is SessionStatus.Initializing -> {
+            LoadingScreen()
+        }
+        is SessionStatus.Authenticated -> {
+            ArpentMainScreen()
+        }
+        is SessionStatus.NotAuthenticated, is SessionStatus.RefreshFailure -> {
+            AuthScreen()
+        }
+    }
+}
+
+@Composable
+fun LoadingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF020617)))),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator(
+                color = NeonVolt,
+                strokeWidth = 4.dp,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Chargement d'Arpent...",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AuthScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var authMode by remember { mutableStateOf("landing") } // "landing", "guest", "signup", "login"
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var pseudonyme by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF020617))))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Glowing pulsing logo container
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .background(NeonVolt.copy(alpha = 0.1f))
+                    .border(2.dp, NeonVolt, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Terrain,
+                    contentDescription = null,
+                    tint = NeonVolt,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Brand Title
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "ARPENT",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp,
+                    letterSpacing = 3.sp,
+                    color = Color.White
+                )
+                Text(
+                    text = ".IO",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 32.sp,
+                    letterSpacing = 3.sp,
+                    color = NeonVolt
+                )
+            }
+
+            Text(
+                text = "Dominez votre ville. Un tracé à la fois.",
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
+            )
+
+            // Error Display Card
+            AnimatedVisibility(visible = errorMessage != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = ActiveOrange.copy(alpha = 0.15f)
+                    ),
+                    border = BorderStroke(1.dp, ActiveOrange)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = ActiveOrange
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = errorMessage ?: "",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            when (authMode) {
+                "landing" -> {
+                    Button(
+                        onClick = {
+                            errorMessage = null
+                            authMode = "guest"
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonVolt,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        Text(
+                            text = "CONTINUER COMME INVITÉ",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            errorMessage = null
+                            authMode = "signup"
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(alpha = 0.1f),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        Text(
+                            text = "CRÉER UN COMPTE",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = {
+                            errorMessage = null
+                            authMode = "login"
+                        }
+                    ) {
+                        Text(
+                            text = "Déjà un compte ? Se connecter",
+                            color = ElectricBlue,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+
+                "guest" -> {
+                    OutlinedTextField(
+                        value = pseudonyme,
+                        onValueChange = { pseudonyme = it },
+                        label = { Text("Pseudonyme") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonVolt,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                            focusedLabelColor = NeonVolt,
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = {
+                            if (pseudonyme.trim().isEmpty()) {
+                                errorMessage = "Veuillez entrer un pseudonyme."
+                                return@Button
+                            }
+                            isLoading = true
+                            errorMessage = null
+                            scope.launch {
+                                try {
+                                    // Sign in anonymously
+                                    supabase.auth.signInAnonymously()
+                                    
+                                    val userId = supabase.auth.currentUserOrNull()?.id
+                                    if (userId != null) {
+                                        // Update the user's profile with the custom pseudo
+                                        try {
+                                            supabase.postgrest["profiles"].update(
+                                                mapOf("pseudonyme" to pseudonyme.trim())
+                                            ) {
+                                                filter {
+                                                    eq("id", userId)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            // Unique constraint failure or other error
+                                            supabase.auth.signOut()
+                                            errorMessage = "Ce pseudonyme est déjà pris. Veuillez en choisir un autre."
+                                            isLoading = false
+                                            return@launch
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = "Erreur d'inscription anonyme : ${e.localizedMessage}"
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NeonVolt,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text(
+                                text = "COMMENCER L'AVENTURE",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = {
+                            authMode = "landing"
+                            errorMessage = null
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Text(
+                            text = "Retour",
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                "signup", "login" -> {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Adresse e-mail") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ElectricBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                            focusedLabelColor = ElectricBlue,
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Mot de passe") },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Masquer le mot de passe" else "Afficher le mot de passe",
+                                    tint = Color.White.copy(alpha = 0.6f)
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ElectricBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                            focusedLabelColor = ElectricBlue,
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = {
+                            if (email.trim().isEmpty() || password.trim().isEmpty()) {
+                                errorMessage = "Veuillez remplir tous les champs."
+                                return@Button
+                            }
+                            isLoading = true
+                            errorMessage = null
+                            scope.launch {
+                                try {
+                                    if (authMode == "signup") {
+                                        // Email Sign Up
+                                        supabase.auth.signUpWith(Email) {
+                                            this.email = email.trim()
+                                            this.password = password.trim()
+                                        }
+                                        // If signup is successful, show a success message or login automatically
+                                        val session = supabase.auth.currentSessionOrNull()
+                                        if (session == null) {
+                                            errorMessage = "Inscription réussie ! Vous pouvez maintenant vous connecter."
+                                        } else {
+                                            Toast.makeText(context, "Inscription réussie !", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        // Email Sign In
+                                        supabase.auth.signInWith(Email) {
+                                            this.email = email.trim()
+                                            this.password = password.trim()
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    errorMessage = "Erreur d'authentification : ${e.localizedMessage}"
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = ElectricBlue,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text(
+                                text = if (authMode == "signup") "CRÉER MON COMPTE" else "SE CONNECTER",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = {
+                            authMode = "landing"
+                            errorMessage = null
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Text(
+                            text = "Retour",
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             }
         }
@@ -80,6 +549,71 @@ class MainActivity : ComponentActivity() {
 fun ArpentMainScreen() {
     var navigationIndex by remember { mutableStateOf(0) }
     val context = LocalContext.current
+
+    var userPseudo by remember { mutableStateOf("Visiteur") }
+    var totalDistanceKm by remember { mutableStateOf(0.0) }
+    var allTimeAreaKm2 by remember { mutableStateOf(0.0) }
+    var currentAreaKm2 by remember { mutableStateOf(0.0) }
+    var userEmpireColor by remember { mutableStateOf("#00E676") }
+    var mapTargetPosition by remember { mutableStateOf<Point?>(null) }
+
+    val completedPolygons = remember { mutableStateListOf<List<Point>>() }
+
+    val scope = rememberCoroutineScope()
+
+    fun refreshStats() {
+        if (!isNetworkAvailable(context)) return
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return
+        scope.launch {
+            try {
+                // 1. Fetch profile
+                val profileRes = supabase.postgrest["profiles"].select {
+                    filter { eq("id", userId) }
+                }
+                val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
+                val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                userPseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.toString().take(8)}"
+                userEmpireColor = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
+
+                // 2. Fetch courses
+                val coursesRes = supabase.postgrest["courses"].select {
+                    filter { eq("utilisateur_id", userId) }
+                }
+                val coursesArray = kotlinx.serialization.json.Json.parseToJsonElement(coursesRes.data) as? kotlinx.serialization.json.JsonArray
+                var totalDist = 0.0
+                coursesArray?.forEach {
+                    val obj = it as? kotlinx.serialization.json.JsonObject
+                    totalDist += obj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                }
+                totalDistanceKm = totalDist
+
+                // 3. Fetch territories
+                val terrRes = supabase.postgrest["territoires"].select {
+                    filter { eq("utilisateur_id", userId) }
+                }
+                val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(terrRes.data) as? kotlinx.serialization.json.JsonArray
+                var totalAreaM2 = 0.0
+                terrArray?.forEach {
+                    val obj = it as? kotlinx.serialization.json.JsonObject
+                    totalAreaM2 += obj?.get("superficie_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                }
+                currentAreaKm2 = totalAreaM2 / 1_000_000.0
+                allTimeAreaKm2 = totalAreaM2 / 1_000_000.0
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Error fetching stats", e)
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        // Load from local storage immediately so there is zero delay/blank screen
+        val localPolys = loadTerritoriesLocally(context)
+        completedPolygons.clear()
+        completedPolygons.addAll(localPolys)
+
+        refreshStats()
+        syncTerritoriesFromDatabase(context, completedPolygons)
+    }
 
     // Required permissions depending on Android version
     val requiredPermissions = remember {
@@ -206,9 +740,29 @@ fun ArpentMainScreen() {
                     .padding(paddingValues)
             ) {
                 when (navigationIndex) {
-                    0 -> ConquestMapScreen()
-                    1 -> LeaderboardScreen()
-                    2 -> ProfileScreen()
+                    0 -> ConquestMapScreen(
+                        userPseudo = userPseudo,
+                        initialArea = currentAreaKm2,
+                        completedPolygons = completedPolygons,
+                        userEmpireColor = userEmpireColor,
+                        mapTargetPosition = mapTargetPosition,
+                        onMapTargetPositionHandled = { mapTargetPosition = null },
+                        onRunSaved = { refreshStats() }
+                    )
+                    1 -> LeaderboardScreen(
+                        onPlayerClick = { point ->
+                            mapTargetPosition = point
+                            navigationIndex = 0
+                        }
+                    )
+                    2 -> ProfileScreen(
+                        userPseudo = userPseudo,
+                        totalDistance = totalDistanceKm,
+                        allTimeArea = allTimeAreaKm2,
+                        currentArea = currentAreaKm2,
+                        userEmpireColor = userEmpireColor,
+                        onStatsUpdated = { refreshStats() }
+                    )
                 }
             }
         }
@@ -324,150 +878,562 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
 // CONQUEST / MAP SCREEN
 // ==========================================
 
+private fun calculateDistance(p1: Point, p2: Point): Double {
+    val r = 6371000.0 // Earth radius in meters
+    val lat1 = Math.toRadians(p1.latitude())
+    val lat2 = Math.toRadians(p2.latitude())
+    val dLat = Math.toRadians(p2.latitude() - p1.latitude())
+    val dLng = Math.toRadians(p2.longitude() - p1.longitude())
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1) * Math.cos(lat2) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return r * c // in meters
+}
+
+private fun estimateAreaKm2(points: List<Point>): Double {
+    if (points.size < 3) return 0.0
+    var area = 0.0
+    val refLat = points[0].latitude()
+    val cosLat = Math.cos(Math.toRadians(refLat))
+    val xy = points.map { p ->
+        val x = (p.longitude() - points[0].longitude()) * 111000.0 * cosLat
+        val y = (p.latitude() - points[0].latitude()) * 111000.0
+        Pair(x, y)
+    }
+    var j = xy.size - 1
+    for (i in xy.indices) {
+        area += (xy[j].first + xy[i].first) * (xy[j].second - xy[i].second)
+        j = i
+    }
+    val areaM2 = Math.abs(area) / 2.0
+    return areaM2 / 1_000_000.0 // convert m² to km²
+}
+
+private fun isNetworkAvailable(context: android.content.Context): Boolean {
+    val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+    if (cm != null) {
+        val activeNetwork = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
+        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+    return false
+}
+
+private fun saveTerritoriesLocally(context: android.content.Context, polygons: List<List<Point>>) {
+    try {
+        val file = File(context.filesDir, "local_territories.json")
+        val jsonArray = kotlinx.serialization.json.buildJsonArray {
+            polygons.forEach { poly ->
+                add(kotlinx.serialization.json.buildJsonArray {
+                    poly.forEach { pt ->
+                        add(kotlinx.serialization.json.buildJsonObject {
+                            put("lng", kotlinx.serialization.json.JsonPrimitive(pt.longitude()))
+                            put("lat", kotlinx.serialization.json.JsonPrimitive(pt.latitude()))
+                        })
+                    }
+                })
+            }
+        }
+        file.writeText(jsonArray.toString())
+        android.util.Log.d("Arpent", "Territoires sauvegardés en local: ${polygons.size} polygones.")
+    } catch (e: Exception) {
+        android.util.Log.e("Arpent", "Failed to save local territories", e)
+    }
+}
+
+private fun loadTerritoriesLocally(context: android.content.Context): List<List<Point>> {
+    try {
+        val file = File(context.filesDir, "local_territories.json")
+        if (!file.exists()) return emptyList()
+        val text = file.readText()
+        val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        val polygons = mutableListOf<List<Point>>()
+        jsonArray.forEach { polyEl ->
+            val pts = mutableListOf<Point>()
+            (polyEl as? kotlinx.serialization.json.JsonArray)?.forEach { ptEl ->
+                val obj = ptEl as? kotlinx.serialization.json.JsonObject
+                val lng = obj?.get("lng")?.jsonPrimitive?.doubleOrNull
+                val lat = obj?.get("lat")?.jsonPrimitive?.doubleOrNull
+                if (lng != null && lat != null) {
+                    pts.add(Point.fromLngLat(lng, lat))
+                }
+            }
+            if (pts.isNotEmpty()) {
+                polygons.add(pts)
+            }
+        }
+        android.util.Log.d("Arpent", "Territoires chargés du local: ${polygons.size} polygones.")
+        return polygons
+    } catch (e: Exception) {
+        android.util.Log.e("Arpent", "Failed to load local territories", e)
+        return emptyList()
+    }
+}
+
+private suspend fun syncTerritoriesFromDatabase(
+    context: android.content.Context,
+    completedPolygonsList: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>
+) {
+    val userId = supabase.auth.currentUserOrNull()?.id ?: return
+    if (!isNetworkAvailable(context)) {
+        android.util.Log.d("Arpent", "Pas de réseau détecté, synchronisation différée. Utilisation du cache local.")
+        return
+    }
+
+    try {
+        val result = supabase.postgrest["territoires"].select {
+            filter {
+                eq("utilisateur_id", userId)
+            }
+        }
+        val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(result.data) as? kotlinx.serialization.json.JsonArray
+        val dbPolygons = mutableListOf<List<Point>>()
+        terrArray?.forEach { element ->
+            val obj = element as? kotlinx.serialization.json.JsonObject
+            val ptsArray = obj?.get("points")?.jsonArray
+            if (ptsArray != null) {
+                val pts = ptsArray.mapNotNull { ptEl ->
+                    val str = ptEl.jsonPrimitive.content
+                    val parts = str.split(" ")
+                    if (parts.size == 2) {
+                        val lng = parts[0].toDoubleOrNull()
+                        val lat = parts[1].toDoubleOrNull()
+                        if (lng != null && lat != null) {
+                            Point.fromLngLat(lng, lat)
+                        } else null
+                    } else null
+                }
+                if (pts.isNotEmpty()) {
+                    dbPolygons.add(pts)
+                }
+            }
+        }
+
+        if (dbPolygons.isNotEmpty()) {
+            completedPolygonsList.clear()
+            completedPolygonsList.addAll(dbPolygons)
+            saveTerritoriesLocally(context, dbPolygons)
+            android.util.Log.d("Arpent", "Synchronisation avec la BDD réussie: ${dbPolygons.size} polygones.")
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("Arpent", "Error syncing territories from database", e)
+    }
+}
+
+private fun saveRunToDatabase(
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: android.content.Context,
+    runStartTime: Long,
+    runDistance: Double,
+    isLoop: Boolean,
+    closedPoints: List<Point>,
+    onSuccess: (Double) -> Unit
+) {
+    val userId = supabase.auth.currentUserOrNull()?.id
+    if (userId == null) {
+        Toast.makeText(context, "Utilisateur non connecté. Impossible d'enregistrer la course.", Toast.LENGTH_LONG).show()
+        return
+    }
+
+    scope.launch {
+        try {
+            val dateDebut = java.time.Instant.ofEpochMilli(runStartTime).toString()
+            val dateFin = java.time.Instant.now().toString()
+            val durationSec = ((System.currentTimeMillis() - runStartTime) / 1000.0)
+            val distanceKm = runDistance / 1000.0
+
+            // Format coordinates array for PostGIS: "longitude latitude"
+            val pointsArray = closedPoints.map { "${it.longitude()} ${it.latitude()}" }
+
+            // Call RPC function to insert course and optionally territory
+            val params = kotlinx.serialization.json.buildJsonObject {
+                put("p_user_id", kotlinx.serialization.json.JsonPrimitive(userId.toString()))
+                put("p_date_debut", kotlinx.serialization.json.JsonPrimitive(dateDebut))
+                put("p_date_fin", kotlinx.serialization.json.JsonPrimitive(dateFin))
+                put("p_distance_totale", kotlinx.serialization.json.JsonPrimitive(distanceKm))
+                put("p_duree_secondes", kotlinx.serialization.json.JsonPrimitive(durationSec))
+                put("p_est_bouclee", kotlinx.serialization.json.JsonPrimitive(isLoop))
+                put("p_points", kotlinx.serialization.json.JsonArray(pointsArray.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+            }
+            supabase.postgrest.rpc("enregistrer_course", params)
+
+            if (closedPoints.isNotEmpty()) {
+                val lastPt = closedPoints.last()
+                try {
+                    supabase.postgrest["profiles"].update(
+                        mapOf(
+                            "latitude" to lastPt.latitude(),
+                            "longitude" to lastPt.longitude()
+                        )
+                    ) {
+                        filter { eq("id", userId) }
+                    }
+                } catch (ex: Exception) {
+                    android.util.Log.e("Arpent", "Failed to update profile location", ex)
+                }
+            }
+
+            val areaKm2 = estimateAreaKm2(closedPoints)
+            onSuccess(areaKm2)
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Erreur d'enregistrement dans la base de données", e)
+            Toast.makeText(context, "Erreur base de données : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
 @Composable
-fun ConquestMapScreen() {
+fun ConquestMapScreen(
+    userPseudo: String,
+    initialArea: Double,
+    completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
+    userEmpireColor: String,
+    mapTargetPosition: Point?,
+    onMapTargetPositionHandled: () -> Unit,
+    onRunSaved: () -> Unit
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    // Map instances & simulation state variables
-    var maplibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
+    // Simulation state variables
     var isSimulatingRun by remember { mutableStateOf(false) }
     var simulationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
+    // Real run tracking states
+    var isRealRunActive by remember { mutableStateOf(false) }
+    var runStartTime by remember { mutableStateOf<Long?>(null) }
+    var runDistance by remember { mutableStateOf(0.0) }
+
     // Live statistics
-    var currentArea by remember { mutableStateOf(4.12) }
+    var currentArea by remember { mutableStateOf(initialArea) }
     var sessionGainedArea by remember { mutableStateOf(0.0) }
     var currentSpeed by remember { mutableStateOf(0.0) }
 
-    // Paris starting coordinates
-    val parisCenter = LatLng(48.8566, 2.3522)
-    var currentPosition by remember { mutableStateOf(parisCenter) }
-
-    // Store references to drawn objects to clear them later
-    var activePolyline by remember { mutableStateOf<Polyline?>(null) }
-    val completedPolygons = remember { mutableStateListOf<Polygon>() }
-
-    // Build the Mapbox style URL (HTTPS, MapLibre-compatible)
-    val token = BuildConfig.MAPBOX_PUBLIC_TOKEN
-    val styleUrl = remember {
-        if (token.isNotEmpty()) {
-            // Mapbox dark-v11 is a classic style fully compatible with MapLibre
-            // Note: custom style cmqe0myj4002c01qr2jd549n8 uses Mapbox Standard imports
-            // which MapLibre does not support, so we use dark-v11 as the base
-            "https://api.mapbox.com/styles/v1/mapbox/dark-v11?access_token=$token"
-        } else {
-            "https://tiles.openfreemap.org/styles/dark"
-        }
+    LaunchedEffect(initialArea) {
+        currentArea = initialArea
     }
 
-    // MapView Lifecycle Holder — created once, style set in factory
-    val mapView = remember {
-        MapView(context).apply {
-            onCreate(null)
-            getMapAsync { map ->
-                maplibreMap = map
+    // Parse user empire color
+    val parsedUserColor = remember(userEmpireColor) {
+        try { Color(android.graphics.Color.parseColor(userEmpireColor)) } catch (_: Exception) { Color(0xFF00E676) }
+    }
 
-                // Hide MapLibre logo and attribution
-                map.uiSettings.isLogoEnabled = false
-                map.uiSettings.isAttributionEnabled = false
+    // --- Other players data ---
+    data class OtherPlayerTerritory(
+        val playerId: String,
+        val pseudo: String,
+        val empireColor: Color,
+        val polygons: List<List<Point>>,
+        val markerPosition: Point?
+    )
+    var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
 
-                // Load the dark style
-                map.setStyle(styleUrl) { style ->
-                    // Initial Camera layout tilted at 60 degrees for a beautiful 3D view
-                    val cameraPosition = CameraPosition.Builder()
-                        .target(currentPosition)
-                        .zoom(16.2)
-                        .tilt(60.0) // 3D Tilt perspective angle
-                        .bearing(30.0)
-                        .build()
-                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 1200)
+    // Fetch other players' territories once on first composition
+    LaunchedEffect(Unit) {
+        // Sync current user's own territories first to handle fresh installs / reinstalls
+        try {
+            syncTerritoriesFromDatabase(context, completedPolygons)
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to sync own territories in map screen", e)
+        }
+
+        try {
+            val currentUserId = supabase.auth.currentUserOrNull()?.id?.toString()
+            // 1. Fetch all players from the leaderboard view
+            val lbResponse = supabase.postgrest["leaderboard"].select()
+            val lbJson = kotlinx.serialization.json.Json.parseToJsonElement(lbResponse.data) as? kotlinx.serialization.json.JsonArray ?: return@LaunchedEffect
+
+            // 2. Fetch all territories with their points
+            val terrResponse = supabase.postgrest["territoires"].select()
+            val terrJson = kotlinx.serialization.json.Json.parseToJsonElement(terrResponse.data) as? kotlinx.serialization.json.JsonArray ?: return@LaunchedEffect
+
+            // Group territories by user id
+            val terrByUser = mutableMapOf<String, MutableList<List<Point>>>()
+            terrJson.forEach { element ->
+                val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                val uId = obj["utilisateur_id"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                val pointsArr = obj["points"] as? kotlinx.serialization.json.JsonArray ?: return@forEach
+                val polygon = pointsArr.mapNotNull { pt ->
+                    val coords = pt.jsonPrimitive.content.split(" ")
+                    if (coords.size >= 2) {
+                        val lon = coords[0].toDoubleOrNull() ?: return@mapNotNull null
+                        val lat = coords[1].toDoubleOrNull() ?: return@mapNotNull null
+                        Point.fromLngLat(lon, lat)
+                    } else null
+                }
+                if (polygon.size >= 3) {
+                    terrByUser.getOrPut(uId) { mutableListOf() }.add(polygon)
                 }
             }
+
+            // Build OtherPlayerTerritory list (exclude current user)
+            val result = lbJson.mapNotNull { element ->
+                val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val pId = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                if (pId == currentUserId) return@mapNotNull null // skip self
+                val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
+                val colorStr = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                val lat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
+                val lon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
+                val empColor = try { Color(android.graphics.Color.parseColor(colorStr)) } catch (_: Exception) { Color(0xFF00E676) }
+                val marker = if (lat != null && lon != null) Point.fromLngLat(lon, lat) else null
+                val polys = terrByUser[pId] ?: emptyList()
+                // Only include players that have territory or a position
+                if (polys.isNotEmpty() || marker != null) {
+                    OtherPlayerTerritory(pId, pseudo, empColor, polys, marker)
+                } else null
+            }
+            otherPlayersTerritories = result
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to load other players territories", e)
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_STOP -> mapView.onStop()
-                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
-                else -> {}
-            }
+    // Paris starting coordinates
+    val parisCenter = Point.fromLngLat(2.3522, 48.8566)
+    var currentPosition by remember { mutableStateOf(parisCenter) }
+
+    // First location update flag
+    var isFirstLocationUpdate by remember { mutableStateOf(true) }
+
+    // Store references to drawn objects
+    val activePathPoints = remember { mutableStateListOf<Point>() }
+
+    // Mapbox Viewport State
+    val mapViewportState = rememberMapViewportState {
+        setCameraOptions {
+            center(parisCenter)
+            zoom(16.2)
+            pitch(60.0) // 3D Tilt perspective angle
+            bearing(30.0)
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
+    }
+
+    // Handle map target position from leaderboard click
+    LaunchedEffect(mapTargetPosition) {
+        if (mapTargetPosition != null) {
+            mapViewportState.flyTo(
+                CameraOptions.Builder()
+                    .center(mapTargetPosition)
+                    .zoom(15.0)
+                    .pitch(60.0)
+                    .bearing(0.0)
+                    .build(),
+                mapAnimationOptions { duration(2000L) }
+            )
+            onMapTargetPositionHandled()
+        }
+    }
+
+    // GPS Location listener using standard LocationManager
+    val locationManager = remember { context.getSystemService(Context.LOCATION_SERVICE) as LocationManager }
+
+    DisposableEffect(lifecycleOwner) {
+        val locationListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                val point = Point.fromLngLat(location.longitude, location.latitude)
+                if (isRealRunActive) {
+                    val prevPoint = activePathPoints.lastOrNull()
+                    if (prevPoint == null || prevPoint != point) {
+                        if (prevPoint != null) {
+                            runDistance += calculateDistance(prevPoint, point)
+                        }
+                        activePathPoints.add(point)
+                    }
+                    currentPosition = point
+                    currentSpeed = if (location.hasSpeed()) location.speed * 3.6 else 0.0
+                } else if (!isSimulatingRun) {
+                    currentPosition = point
+                    if (isFirstLocationUpdate) {
+                        isFirstLocationUpdate = false
+                        mapViewportState.flyTo(
+                            CameraOptions.Builder()
+                                .center(point)
+                                .zoom(16.5)
+                                .pitch(60.0)
+                                .bearing(30.0)
+                                .build(),
+                            mapAnimationOptions { duration(1000L) }
+                        )
+                    }
+                }
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+        }
+
+        try {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            ) {
+                val lastKnownGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                val lastKnownNetwork = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                val bestLocation = lastKnownGps ?: lastKnownNetwork
+                bestLocation?.let {
+                    val point = Point.fromLngLat(it.longitude, it.latitude)
+                    currentPosition = point
+                    if (isFirstLocationUpdate) {
+                        isFirstLocationUpdate = false
+                        mapViewportState.setCameraOptions {
+                            center(point)
+                            zoom(16.5)
+                            pitch(60.0)
+                            bearing(30.0)
+                        }
+                    }
+                }
+
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    3000L, // 3 seconds
+                    2f,    // 2 meters
+                    locationListener
+                )
+            }
+        } catch (e: SecurityException) {
+            // Permission not granted or disallowed
+        }
+
         onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
             simulationJob?.cancel()
+            try {
+                locationManager.removeUpdates(locationListener)
+            } catch (e: Exception) {
+                // Ignore
+            }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // MapView Interop Container
-        AndroidView(
-            factory = { mapView },
-            modifier = Modifier.fillMaxSize()
-        )
+        // MapboxMap Composable
+        MapboxMap(
+            modifier = Modifier.fillMaxSize(),
+            mapViewportState = mapViewportState,
+            logo = {},
+            attribution = {}
+        ) {
+            MapStyle(style = "mapbox://styles/fantasmaglad/cmqe0myj4002c01qr2jd549n8")
+
+            // Draw active polyline
+            if (activePathPoints.isNotEmpty()) {
+                val polylineState = remember {
+                    PolylineAnnotationState().apply {
+                        lineColor = Color(0xFF00E5FF)
+                        lineWidth = 6.0
+                    }
+                }
+                PolylineAnnotation(
+                    points = activePathPoints.toList(),
+                    polylineAnnotationState = polylineState
+                )
+            }
+
+            // Draw completed polygons (user's own territories)
+            completedPolygons.forEach { polygonPoints ->
+                val polygonState = remember(polygonPoints, parsedUserColor) {
+                    PolygonAnnotationState().apply {
+                        fillColor = parsedUserColor.copy(alpha = 0.25f)
+                        fillOutlineColor = parsedUserColor
+                    }
+                }
+                PolygonAnnotation(
+                    points = listOf(polygonPoints),
+                    polygonAnnotationState = polygonState
+                )
+            }
+
+            // Draw other players' territories
+            otherPlayersTerritories.forEach { player ->
+                player.polygons.forEach { polygonPoints ->
+                    val polygonState = remember(polygonPoints, player.empireColor) {
+                        PolygonAnnotationState().apply {
+                            fillColor = player.empireColor.copy(alpha = 0.20f)
+                            fillOutlineColor = player.empireColor
+                        }
+                    }
+                    PolygonAnnotation(
+                        points = listOf(polygonPoints),
+                        polygonAnnotationState = polygonState
+                    )
+                }
+
+                // Draw marker for each player with territory
+                if (player.markerPosition != null) {
+                    val circleState = remember(player.playerId) {
+                        CircleAnnotationState().apply {
+                            circleRadius = 10.0
+                            circleColor = player.empireColor
+                            circleStrokeWidth = 3.0
+                            circleStrokeColor = Color.White
+                        }
+                    }
+                    CircleAnnotation(
+                        point = player.markerPosition,
+                        circleAnnotationState = circleState
+                    )
+                }
+            }
+        }
 
         // --- OVERLAYS ---
 
         // 1. Top Conquest Status Indicator
-        Card(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(16.dp)
-                .widthIn(max = 340.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-            ),
-            border = BorderStroke(1.dp, if (isSimulatingRun) NeonVolt.copy(alpha = 0.6f) else Color.Transparent)
-        ) {
-            Row(
+        if (isSimulatingRun) {
+            Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .align(Alignment.TopCenter)
+                    .padding(16.dp)
+                    .widthIn(max = 340.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                ),
+                border = BorderStroke(1.dp, NeonVolt.copy(alpha = 0.6f))
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val pulseTransition = rememberInfiniteTransition(label = "pulse")
-                    val pulseAlpha by pulseTransition.animateFloat(
-                        initialValue = 0.3f,
-                        targetValue = 1.0f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(1000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "dot_alpha"
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val pulseTransition = rememberInfiniteTransition(label = "pulse")
+                        val pulseAlpha by pulseTransition.animateFloat(
+                            initialValue = 0.3f,
+                            targetValue = 1.0f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1000, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "dot_alpha"
+                        )
 
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isSimulatingRun) Color.Red.copy(alpha = pulseAlpha)
-                                else NeonVolt.copy(alpha = pulseAlpha)
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color.Red.copy(alpha = pulseAlpha))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Enregistrement Course",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     Text(
-                        text = if (isSimulatingRun) "Enregistrement Course" else "Mode Exploration",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "${"%.1f".format(currentSpeed)} km/h",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ElectricBlue
                     )
                 }
-                Text(
-                    text = if (isSimulatingRun) "${"%.1f".format(currentSpeed)} km/h" else "GPS Actif",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isSimulatingRun) ElectricBlue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
             }
         }
 
@@ -528,14 +1494,14 @@ fun ConquestMapScreen() {
             // Camera Centering Fab
             FloatingActionButton(
                 onClick = {
-                    maplibreMap?.let { map ->
-                        val cameraPosition = CameraPosition.Builder()
-                            .target(currentPosition)
+                    mapViewportState.flyTo(
+                        CameraOptions.Builder()
+                            .center(currentPosition)
                             .zoom(16.5)
                             .bearing(0.0)
-                            .build()
-                        map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 800)
-                    }
+                            .build(),
+                        mapAnimationOptions { duration(800L) }
+                    )
                     Toast.makeText(context, "Recentré sur votre position", Toast.LENGTH_SHORT).show()
                 },
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -551,12 +1517,17 @@ fun ConquestMapScreen() {
             FloatingActionButton(
                 onClick = {
                     is3D = !is3D
-                    maplibreMap?.let { map ->
-                        val currentCam = map.cameraPosition
-                        val newCam = CameraPosition.Builder(currentCam)
-                            .tilt(if (is3D) 60.0 else 0.0)
-                            .build()
-                        map.animateCamera(CameraUpdateFactory.newCameraPosition(newCam), 1000)
+                    val currentCamera = mapViewportState.cameraState
+                    if (currentCamera != null) {
+                        mapViewportState.flyTo(
+                            CameraOptions.Builder()
+                                .center(currentCamera.center)
+                                .zoom(currentCamera.zoom)
+                                .bearing(currentCamera.bearing)
+                                .pitch(if (is3D) 60.0 else 0.0)
+                                .build(),
+                            mapAnimationOptions { duration(1000L) }
+                        )
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -571,130 +1542,194 @@ fun ConquestMapScreen() {
                 )
             }
 
-            // Start capturing button (Core loop demo)
-            val buttonColor by animateColorAsState(
-                targetValue = if (isSimulatingRun) Color.Red else NeonVolt,
-                label = "btn_color"
+            // Temporary neighborhood tour simulation button (Test)
+            val testButtonColor by animateColorAsState(
+                targetValue = if (isSimulatingRun) Color.Red else ActiveOrange,
+                label = "test_btn_color"
             )
             FloatingActionButton(
                 onClick = {
-                    if (isSimulatingRun) {
+                    if (isRealRunActive) {
+                        Toast.makeText(context, "Course réelle active. Arrêtez-la d'abord.", Toast.LENGTH_SHORT).show()
+                    } else if (isSimulatingRun) {
                         // Stop simulation manually
                         simulationJob?.cancel()
                         isSimulatingRun = false
                         currentSpeed = 0.0
 
-                        // Draw mock final polygon captured
-                        maplibreMap?.let { map ->
-                            // Remove temp drawing line
-                            activePolyline?.let { map.removePolyline(it) }
-                            activePolyline = null
-
-                            // Draw a filled polygon showing captured zone
-                            val capturedPoints = listOf(
-                                parisCenter,
-                                LatLng(parisCenter.latitude + 0.002, parisCenter.longitude + 0.001),
-                                LatLng(parisCenter.latitude + 0.0015, parisCenter.longitude + 0.003),
-                                LatLng(parisCenter.latitude - 0.0005, parisCenter.longitude + 0.0025),
-                                parisCenter
-                            )
-                            val polyOpt = PolygonOptions()
-                                .addAll(capturedPoints)
-                                .fillColor(0x55CCFF00.toInt()) // Neon volt with transparency
-                                .strokeColor(0xFFCCFF00.toInt())
-                            
-                            val poly = map.addPolygon(polyOpt)
-                            completedPolygons.add(poly)
-
-                            currentArea += 0.14
-                            sessionGainedArea = 0.14
+                        if (activePathPoints.size >= 3) {
+                            val closedPoints = activePathPoints.toList() + activePathPoints[0]
+                            saveRunToDatabase(
+                                scope = scope,
+                                context = context,
+                                runStartTime = runStartTime ?: System.currentTimeMillis(),
+                                runDistance = runDistance,
+                                isLoop = true,
+                                closedPoints = closedPoints
+                            ) { areaKm2 ->
+                                completedPolygons.add(closedPoints)
+                                saveTerritoriesLocally(context, completedPolygons)
+                                currentArea += areaKm2
+                                sessionGainedArea = areaKm2
+                                Toast.makeText(context, "Simulation enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                                onRunSaved()
+                            }
+                        } else {
+                            Toast.makeText(context, "Simulation annulée (pas assez de points).", Toast.LENGTH_SHORT).show()
+                            activePathPoints.clear()
                         }
-                        Toast.makeText(context, "Parcelle bouclée : +0.14 km² !", Toast.LENGTH_LONG).show()
                     } else {
                         // Start simulation
                         isSimulatingRun = true
                         sessionGainedArea = 0.0
+                        runDistance = 0.0
+                        runStartTime = System.currentTimeMillis()
                         
-                        // Clear past visual lines
-                        maplibreMap?.let { map ->
-                            activePolyline?.let { map.removePolyline(it) }
-                            activePolyline = null
-                            completedPolygons.forEach { map.removePolygon(it) }
-                            completedPolygons.clear()
-                        }
+                        activePathPoints.clear()
 
-                        // Simulation coroutine loop
                         simulationJob = scope.launch {
-                            val pathPoints = mutableListOf<LatLng>()
-                            pathPoints.add(parisCenter)
+                            val startPoint = currentPosition
+                            activePathPoints.add(startPoint)
 
-                            // 10 simulated steps in a loop around center
+                            // 10 simulated steps in a neighborhood tour
                             val stepDelta = listOf(
-                                Pair(0.0005, 0.0003),
-                                Pair(0.0012, 0.0005),
-                                Pair(0.0020, 0.0010),
-                                Pair(0.0018, 0.0022),
-                                Pair(0.0015, 0.0030),
-                                Pair(0.0005, 0.0028),
-                                Pair(-0.0002, 0.0020),
-                                Pair(-0.0005, 0.0010),
-                                Pair(-0.0003, 0.0002),
-                                Pair(0.0, 0.0) // Back to start (closing loop)
+                                Pair(0.0003, 0.0001),
+                                Pair(0.0006, 0.0004),
+                                Pair(0.0007, 0.0009),
+                                Pair(0.0004, 0.0012),
+                                Pair(0.0000, 0.0013),
+                                Pair(-0.0004, 0.0011),
+                                Pair(-0.0006, 0.0007),
+                                Pair(-0.0005, 0.0002),
+                                Pair(-0.0002, 0.0000),
+                                Pair(0.0, 0.0) // Return to start point to close loop
                             )
 
                             var stepIndex = 0
+                            var lastPoint = startPoint
                             while (stepIndex < stepDelta.size && isSimulatingRun) {
-                                currentSpeed = 12.0 + (Math.random() * 3.0)
+                                currentSpeed = 10.0 + (Math.random() * 4.0)
                                 val delta = stepDelta[stepIndex]
-                                val newPos = LatLng(parisCenter.latitude + delta.first, parisCenter.longitude + delta.second)
+                                val newPos = Point.fromLngLat(
+                                    startPoint.longitude() + delta.second,
+                                    startPoint.latitude() + delta.first
+                                )
+                                runDistance += calculateDistance(lastPoint, newPos)
+                                lastPoint = newPos
                                 currentPosition = newPos
-                                pathPoints.add(newPos)
+                                activePathPoints.add(newPos)
 
-                                // Update camera to follow simulated user
-                                maplibreMap?.let { map ->
-                                    val cam = CameraPosition.Builder(map.cameraPosition)
-                                        .target(newPos)
-                                        .build()
-                                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 400)
-
-                                    // Remove old polyline and draw updated line
-                                    activePolyline?.let { map.removePolyline(it) }
-                                    val lineOpt = PolylineOptions()
-                                        .addAll(pathPoints)
-                                        .color(0xFF00E5FF.toInt()) // Electric blue line
-                                        .width(6f)
-                                    activePolyline = map.addPolyline(lineOpt)
-                                }
-
-                                sessionGainedArea += 0.012
+                                mapViewportState.easeTo(
+                                    CameraOptions.Builder().center(newPos).build(),
+                                    mapAnimationOptions { duration(500L) }
+                                )
                                 stepIndex++
                                 delay(1200)
                             }
 
-                            // Simulation reached the end (closed loop)
                             if (isSimulatingRun) {
-                                maplibreMap?.let { map ->
-                                    activePolyline?.let { map.removePolyline(it) }
-                                    activePolyline = null
-
-                                    val polyOpt = PolygonOptions()
-                                        .addAll(pathPoints)
-                                        .fillColor(0x55CCFF00.toInt()) // Volt color
-                                        .strokeColor(0xFFCCFF00.toInt())
-                                    
-                                    val poly = map.addPolygon(polyOpt)
-                                    completedPolygons.add(poly)
+                                val closedPoints = activePathPoints.toList()
+                                saveRunToDatabase(
+                                    scope = scope,
+                                    context = context,
+                                    runStartTime = runStartTime ?: System.currentTimeMillis(),
+                                    runDistance = runDistance,
+                                    isLoop = true,
+                                    closedPoints = closedPoints
+                                ) { areaKm2 ->
+                                    completedPolygons.add(closedPoints)
+                                    saveTerritoriesLocally(context, completedPolygons)
+                                    currentArea += areaKm2
+                                    sessionGainedArea = areaKm2
+                                    Toast.makeText(context, "Simulation terminée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                                    onRunSaved()
                                 }
-                                currentArea += 0.12
-                                sessionGainedArea = 0.12
                                 isSimulatingRun = false
                                 currentSpeed = 0.0
-                                Toast.makeText(context, "Boucle complétée avec succès ! Territoire capturé !", Toast.LENGTH_LONG).show()
+                                activePathPoints.clear()
                             }
                         }
                     }
                 },
-                containerColor = buttonColor,
+                containerColor = testButtonColor,
+                contentColor = Color.Black,
+                shape = CircleShape,
+                modifier = Modifier
+                    .size(52.dp)
+                    .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text(
+                        text = "Test",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Black
+                    )
+                }
+            }
+
+            // Real run capturing button (GPS active tracking)
+            val realButtonColor by animateColorAsState(
+                targetValue = if (isRealRunActive) Color.Red else NeonVolt,
+                label = "real_btn_color"
+            )
+            FloatingActionButton(
+                onClick = {
+                    if (isSimulatingRun) {
+                        Toast.makeText(context, "Simulation active. Arrêtez-la d'abord.", Toast.LENGTH_SHORT).show()
+                    } else if (isRealRunActive) {
+                        // Stop real run
+                        isRealRunActive = false
+                        currentSpeed = 0.0
+
+                        val isLoop = activePathPoints.size >= 3 && calculateDistance(activePathPoints.first(), activePathPoints.last()) <= 35.0
+                        val closedPoints = if (isLoop && activePathPoints.first() != activePathPoints.last()) {
+                            activePathPoints.toList() + activePathPoints[0]
+                        } else {
+                            activePathPoints.toList()
+                        }
+
+                        if (activePathPoints.isNotEmpty()) {
+                            saveRunToDatabase(
+                                scope = scope,
+                                context = context,
+                                runStartTime = runStartTime ?: System.currentTimeMillis(),
+                                runDistance = runDistance,
+                                isLoop = isLoop,
+                                closedPoints = closedPoints
+                            ) { areaKm2 ->
+                                if (isLoop) {
+                                    completedPolygons.add(closedPoints)
+                                    saveTerritoriesLocally(context, completedPolygons)
+                                    currentArea += areaKm2
+                                    sessionGainedArea = areaKm2
+                                    Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_LONG).show()
+                                }
+                                onRunSaved()
+                            }
+                        } else {
+                            Toast.makeText(context, "Course annulée (aucun point GPS enregistré).", Toast.LENGTH_SHORT).show()
+                        }
+                        activePathPoints.clear()
+                        runDistance = 0.0
+                        runStartTime = null
+                    } else {
+                        // Start real run
+                        isRealRunActive = true
+                        sessionGainedArea = 0.0
+                        runDistance = 0.0
+                        runStartTime = System.currentTimeMillis()
+
+                        activePathPoints.clear()
+
+                        // Initialize the first point if we have one
+                        activePathPoints.add(currentPosition)
+                        Toast.makeText(context, "Course réelle démarrée !", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                containerColor = realButtonColor,
                 contentColor = Color.Black,
                 shape = CircleShape,
                 modifier = Modifier
@@ -702,8 +1737,8 @@ fun ConquestMapScreen() {
                     .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape)
             ) {
                 Icon(
-                    imageVector = if (isSimulatingRun) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = "Simuler course",
+                    imageVector = if (isRealRunActive) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = "Démarrer course",
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -723,16 +1758,58 @@ data class GuildRank(
     val isUserGuild: Boolean = false
 )
 
+data class LeaderboardPlayer(
+    val id: String,
+    val pseudonyme: String,
+    val empireColor: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val totalAreaM2: Double
+)
+
 @Composable
-fun LeaderboardScreen() {
-    val guilds = remember { emptyList<GuildRank>() }
+fun LeaderboardScreen(
+    onPlayerClick: (Point) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val userId = remember { supabase.auth.currentUserOrNull()?.id }
+
+    var players by remember { mutableStateOf<List<LeaderboardPlayer>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val response = supabase.postgrest["leaderboard"].select()
+            val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray
+            val fetchedPlayers = jsonArray?.mapNotNull { element ->
+                val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur_${id.take(8)}"
+                val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00E676"
+                val lat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
+                val lon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
+                val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                LeaderboardPlayer(id, pseudo, color, lat, lon, areaM2)
+            } ?: emptyList()
+            players = fetchedPlayers
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Failed to fetch leaderboard", e)
+        } finally {
+            isLoading = false
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        if (guilds.isEmpty()) {
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = NeonVolt)
+            }
+        } else if (players.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -759,65 +1836,71 @@ fun LeaderboardScreen() {
                     }
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "Aucune guilde enregistrée",
+                        text = "Aucun joueur enregistré",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Rejoignez ou créez une guilde pour commencer la conquête du territoire !",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        textAlign = TextAlign.Center
-                    )
                 }
             }
         } else {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Afficher le rang de l'utilisateur connecté s'il est présent
+            val userIndex = players.indexOfFirst { it.id == userId?.toString() }
+            if (userIndex != -1) {
+                val me = players[userIndex]
+                val suffix = if (userIndex == 0) "er" else "ème"
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                    )
                 ) {
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(NeonVolt.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = NeonVolt)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "VOTRE GUILDE EST 3ème",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = NeonVolt
-                        )
-                        Text(
-                            text = "Les Arpenteurs • 34.98 km²",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        val parsedColor = remember(me.empireColor) {
+                            try { Color(android.graphics.Color.parseColor(me.empireColor)) } catch (e: Exception) { NeonVolt }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(parsedColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = parsedColor)
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "VOTRE CLASSEMENT : ${userIndex + 1}$suffix",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = parsedColor
+                            )
+                            val areaStr = if (me.totalAreaM2 >= 10000) {
+                                "%.4f km²".format(me.totalAreaM2 / 1_000_000.0)
+                            } else {
+                                "${me.totalAreaM2.toInt()} m²"
+                            }
+                            Text(
+                                text = "${me.pseudonyme} • $areaStr",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(20.dp))
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
             Text(
-                text = "Classement Régional",
+                text = "Classement des Conquérants",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -827,17 +1910,29 @@ fun LeaderboardScreen() {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(guilds) { guild ->
-                    val cardBg = if (guild.isUserGuild) {
+                itemsIndexed(players) { index, player ->
+                    val isMe = player.id == userId?.toString()
+                    val cardBg = if (isMe) {
                         MaterialTheme.colorScheme.surfaceVariant
                     } else {
                         MaterialTheme.colorScheme.surface
                     }
+                    val parsedColor = remember(player.empireColor) {
+                        try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { NeonVolt }
+                    }
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (player.latitude != null && player.longitude != null) {
+                                    onPlayerClick(Point.fromLngLat(player.longitude, player.latitude))
+                                } else {
+                                    Toast.makeText(context, "${player.pseudonyme} n'a pas de position sur la carte", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = cardBg),
-                        border = if (guild.isUserGuild) BorderStroke(1.dp, NeonVolt) else null
+                        border = if (isMe) BorderStroke(1.dp, parsedColor) else null
                     ) {
                         Row(
                             modifier = Modifier
@@ -847,32 +1942,52 @@ fun LeaderboardScreen() {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                val rank = index + 1
                                 Text(
-                                    text = "${guild.rank}",
+                                    text = "$rank",
                                     fontWeight = FontWeight.Black,
                                     style = MaterialTheme.typography.titleLarge,
                                     modifier = Modifier.width(36.dp),
-                                    color = if (guild.rank == 1) ActiveOrange else if (guild.rank == 2) ElectricBlue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    color = when (rank) {
+                                        1 -> ActiveOrange
+                                        2 -> ElectricBlue
+                                        3 -> Color(0xFFE91E63)
+                                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    }
                                 )
                                 Box(
                                     modifier = Modifier
-                                        .size(12.dp)
+                                        .size(32.dp)
                                         .clip(CircleShape)
-                                        .background(guild.color)
-                                )
+                                        .background(parsedColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val initial = player.pseudonyme.firstOrNull()?.toString()?.uppercase() ?: "J"
+                                    Text(
+                                        text = initial,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    text = guild.name,
-                                    fontWeight = if (guild.isUserGuild) FontWeight.Bold else FontWeight.Medium,
+                                    text = if (isMe) "${player.pseudonyme} (Vous)" else player.pseudonyme,
+                                    fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                            val areaStr = if (player.totalAreaM2 >= 10000) {
+                                "%.4f km²".format(player.totalAreaM2 / 1_000_000.0)
+                            } else {
+                                "${player.totalAreaM2.toInt()} m²"
+                            }
                             Text(
-                                text = "${guild.territorySqKm} km²",
+                                text = areaStr,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = if (guild.isUserGuild) NeonVolt else MaterialTheme.colorScheme.onSurface
+                                color = if (isMe) parsedColor else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -887,7 +2002,33 @@ fun LeaderboardScreen() {
 // ==========================================
 
 @Composable
-fun ProfileScreen() {
+fun ProfileScreen(
+    userPseudo: String,
+    totalDistance: Double,
+    allTimeArea: Double,
+    currentArea: Double,
+    userEmpireColor: String,
+    onStatsUpdated: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val userId = remember { supabase.auth.currentUserOrNull()?.id }
+
+    val parsedUserColor = remember(userEmpireColor) {
+        try {
+            Color(android.graphics.Color.parseColor(userEmpireColor))
+        } catch (e: Exception) {
+            NeonVolt
+        }
+    }
+
+    var isEditingPseudo by remember { mutableStateOf(false) }
+    var tempPseudo by remember { mutableStateOf(userPseudo) }
+
+    LaunchedEffect(userPseudo) {
+        tempPseudo = userPseudo
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -896,14 +2037,14 @@ fun ProfileScreen() {
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Premium Avatar Card for Guest
+        // Premium Avatar Card
         Box(
             modifier = Modifier
                 .size(90.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.sweepGradient(
-                        listOf(Color.Gray, Color.DarkGray, Color.LightGray, Color.Gray)
+                        listOf(ElectricBlue, parsedUserColor, ActiveOrange, ElectricBlue)
                     )
                 )
                 .padding(3.dp)
@@ -919,28 +2060,105 @@ fun ProfileScreen() {
                     imageVector = Icons.Default.Person,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    tint = parsedUserColor
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        if (isEditingPseudo) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            ) {
+                OutlinedTextField(
+                    value = tempPseudo,
+                    onValueChange = { tempPseudo = it },
+                    label = { Text("Modifier le pseudo") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonVolt,
+                        focusedLabelColor = NeonVolt,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (tempPseudo.trim().isEmpty()) {
+                            Toast.makeText(context, "Le pseudo ne peut pas être vide", Toast.LENGTH_SHORT).show()
+                            return@IconButton
+                        }
+                        if (userId != null) {
+                            scope.launch {
+                                try {
+                                    supabase.postgrest["profiles"].update(
+                                        mapOf("pseudonyme" to tempPseudo.trim())
+                                    ) {
+                                        filter { eq("id", userId) }
+                                    }
+                                    isEditingPseudo = false
+                                    onStatsUpdated()
+                                    Toast.makeText(context, "Pseudo mis à jour !", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Erreur : ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = "Confirmer", tint = NeonVolt)
+                }
+                IconButton(
+                    onClick = {
+                        tempPseudo = userPseudo
+                        isEditingPseudo = false
+                    }
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Annuler", tint = Color.Red)
+                }
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = userPseudo,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(onClick = { isEditingPseudo = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Modifier le pseudo",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
         Text(
-            text = "Visiteur",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Black,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = "Non connecté",
+            text = "Explorateur Actif",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Level details (Empty/Initial State)
+        // Level details based on captured area
+        val level = (allTimeArea * 10).toInt() + 1
+        val nextLevelXpNeeded = 100
+        val currentXp = ((allTimeArea * 1000) % 100).toInt()
+        val progress = currentXp.toFloat() / nextLevelXpNeeded.toFloat()
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -953,25 +2171,25 @@ fun ProfileScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Niveau 1",
+                        text = "Niveau $level",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                     )
                     Text(
-                        text = "0 / 100 XP",
+                        text = "$currentXp / $nextLevelXpNeeded XP",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
-                    progress = { 0.0f },
+                    progress = { progress },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                    color = NeonVolt,
                     trackColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                 )
             }
@@ -979,10 +2197,10 @@ fun ProfileScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Stats Grid (Zeroed out)
+        // Stats Grid
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Card(
                 modifier = Modifier.weight(1.0f),
@@ -990,11 +2208,14 @@ fun ProfileScreen() {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Distance", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                    Text("0.0 km", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                    Icon(Icons.Default.DirectionsRun, contentDescription = null, tint = ElectricBlue, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Distance", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("${"%.2f".format(totalDistance)} km", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 }
             }
             Card(
@@ -1003,46 +2224,112 @@ fun ProfileScreen() {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Boucles", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                    Text("0", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    Icon(Icons.Default.Public, contentDescription = null, tint = NeonVolt, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Empire All-Time", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("${"%.4f".format(allTimeArea)} km²", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                }
+            }
+            Card(
+                modifier = Modifier.weight(1.0f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Default.Map, contentDescription = null, tint = ActiveOrange, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Empire Actuel", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("${"%.4f".format(currentArea)} km²", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Guest Action Prompt
+        // Empire Custom Color Picker
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Rejoignez l'aventure",
+                    text = "COULEUR DE L'EMPIRE",
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Connectez-vous pour enregistrer votre progression et conquérir des territoires.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    textAlign = TextAlign.Center
+                Spacer(modifier = Modifier.height(12.dp))
+                val availableColors = listOf(
+                    Pair("Vert", "#00E676"),
+                    Pair("Bleu", "#00B0FF"),
+                    Pair("Violet", "#D500F9"),
+                    Pair("Orange", "#FF3D00"),
+                    Pair("Rose", "#FF4081"),
+                    Pair("Jaune", "#FFEA00")
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    availableColors.forEach { (name, hex) ->
+                        val itemColor = remember(hex) { Color(android.graphics.Color.parseColor(hex)) }
+                        val isSelected = hex.equals(userEmpireColor, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(itemColor)
+                                .border(
+                                    width = if (isSelected) 3.dp else 1.dp,
+                                    color = if (isSelected) Color.White else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    if (userId != null && !isSelected) {
+                                        scope.launch {
+                                            try {
+                                                supabase.postgrest["profiles"].update(
+                                                    mapOf("empire_color" to hex)
+                                                ) {
+                                                    filter { eq("id", userId) }
+                                                }
+                                                onStatsUpdated()
+                                                Toast.makeText(context, "Couleur mise à jour !", Toast.LENGTH_SHORT).show()
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Erreur: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Settings option card list
+        // Settings Option Card List (Clean, Premium look)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -1058,13 +2345,24 @@ fun ProfileScreen() {
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), thickness = 1.dp)
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                 ListItem(
-                    headlineContent = { Text("Mode éco-énergie") },
-                    supportingContent = { Text("Réduit la précision GPS pour préserver la batterie") },
+                    headlineContent = { Text("Se déconnecter", color = Color.Red, fontWeight = FontWeight.Bold) },
                     trailingContent = {
-                        var checked by remember { mutableStateOf(false) }
-                        Switch(checked = checked, onCheckedChange = { checked = it })
+                        Icon(
+                            imageVector = Icons.Default.ExitToApp,
+                            contentDescription = "Déconnexion",
+                            tint = Color.Red
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        scope.launch {
+                            try {
+                                supabase.auth.signOut()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Erreur de déconnexion", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )

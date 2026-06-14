@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SportCHeck"
+rootProject.name = "Arpent.io"
 include(":app")
  

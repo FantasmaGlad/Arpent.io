@@ -23,6 +23,7 @@ android {
     }
     val supabaseUrl = envProperties.getProperty("SUPABASE_URL") ?: ""
     val supabaseKey = envProperties.getProperty("SUPABASE_PUBLISHABLE_KEY") ?: ""
+    val mapboxToken = envProperties.getProperty("MAPBOX_PUBLIC_TOKEN") ?: ""
 
     defaultConfig {
         applicationId = "com.fanta.androidsport"
@@ -35,6 +36,7 @@ android {
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "MAPBOX_PUBLIC_TOKEN", "\"$mapboxToken\"")
     }
 
     buildTypes {
@@ -73,6 +75,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material.icons.extended)
     
     // Activity & Lifecycle & Navigation
     implementation(libs.androidx.activity.compose)
@@ -85,6 +88,9 @@ dependencies {
     implementation(libs.supabase.postgrest)
     implementation(libs.ktor.client.android)
     implementation(libs.kotlinx.serialization.json)
+
+    // MapLibre SDK
+    implementation(libs.maplibre.sdk)
 
     // Tooling support (Previews)
     debugImplementation(libs.androidx.compose.ui.tooling)

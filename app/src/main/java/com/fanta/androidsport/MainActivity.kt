@@ -2146,7 +2146,7 @@ fun LeaderboardScreen(
 
     val leaderboardColorScheme = lightColorScheme(
         background = Color.Transparent,
-        surface = Color.White.copy(alpha = 0.85f),
+        surface = Color.White.copy(alpha = 0.9f),
         onSurface = Color.Black,
         surfaceVariant = Color.White.copy(alpha = 0.95f),
         onSurfaceVariant = Color.Black,
@@ -2161,24 +2161,13 @@ fun LeaderboardScreen(
                 .background(Color.White.copy(alpha = 0.65f))
                 .padding(16.dp)
         ) {
-            // TabRow for Leaderboard
-            TabRow(
+            // Capsule Tab Selector
+            CapsuleTabSelector(
+                tabs = listOf("JOUEURS", "CLANS"),
                 selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = ActiveOrange,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("JOUEURS", fontWeight = FontWeight.Bold) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("CLANS", fontWeight = FontWeight.Bold) }
-                )
-            }
+                onTabSelected = { selectedTab = it },
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2201,13 +2190,13 @@ fun LeaderboardScreen(
                                 modifier = Modifier
                                     .size(90.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                    .background(Color.Black.copy(alpha = 0.05f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.EmojiEvents,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                    tint = Color.Black.copy(alpha = 0.3f),
                                     modifier = Modifier.size(48.dp)
                                 )
                             }
@@ -2216,7 +2205,7 @@ fun LeaderboardScreen(
                                 text = "Aucun joueur enregistré",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.Black
                             )
                         }
                     }
@@ -2228,15 +2217,16 @@ fun LeaderboardScreen(
                         val suffix = if (userIndex == 0) "er" else "ème"
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
+                            shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-                            )
+                                containerColor = Color.White.copy(alpha = 0.95f)
+                            ),
+                            border = BorderStroke(1.5.dp, NeonVolt)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(20.dp),
+                                    .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 val parsedColor = remember(me.empireColor) {
@@ -2250,12 +2240,12 @@ fun LeaderboardScreen(
                                         .border(2.dp, parsedColor, CircleShape)
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "VOTRE CLASSEMENT : ${userIndex + 1}$suffix",
-                                        style = MaterialTheme.typography.labelLarge,
+                                        text = me.pseudonyme,
+                                        style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = parsedColor
+                                        color = Color.Black
                                     )
                                     val areaStr = if (me.totalAreaM2 >= 10000) {
                                         "%.4f km²".format(me.totalAreaM2 / 1_000_000.0)
@@ -2263,10 +2253,23 @@ fun LeaderboardScreen(
                                         "${me.totalAreaM2.toInt()} m²"
                                     }
                                     Text(
-                                        text = "${me.pseudonyme} • $areaStr",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        text = areaStr,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Black.copy(alpha = 0.6f)
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color(0xFF0F1318))
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${userIndex + 1}$suffix",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Black,
+                                        color = NeonVolt
                                     )
                                 }
                             }
@@ -2275,11 +2278,14 @@ fun LeaderboardScreen(
                     }
 
                     Text(
-                        text = "Classement des Conquérants",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp),
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "CLASSEMENT DES CONQUÉRANTS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.sp,
+                            color = Color.Black.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.padding(bottom = 12.dp)
                     )
 
                     LazyColumn(
@@ -2289,9 +2295,9 @@ fun LeaderboardScreen(
                         itemsIndexed(players) { index, player ->
                             val isMe = player.id == userId?.toString()
                             val cardBg = if (isMe) {
-                                MaterialTheme.colorScheme.surfaceVariant
+                                Color.White.copy(alpha = 0.95f)
                             } else {
-                                MaterialTheme.colorScheme.surface
+                                Color.White.copy(alpha = 0.9f)
                             }
                             val parsedColor = remember(player.empireColor) {
                                 try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { NeonVolt }
@@ -2308,45 +2314,72 @@ fun LeaderboardScreen(
                                     },
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = cardBg),
-                                border = if (isMe) BorderStroke(1.dp, parsedColor) else null
+                                border = if (isMe) BorderStroke(1.5.dp, NeonVolt) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
+                                        .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
                                         val rank = index + 1
-                                        Text(
-                                            text = "$rank",
-                                            fontWeight = FontWeight.Black,
-                                            style = MaterialTheme.typography.titleLarge,
-                                            modifier = Modifier.width(36.dp),
-                                            color = when (rank) {
-                                                1 -> ActiveOrange
-                                                2 -> ElectricBlue
-                                                3 -> Color(0xFFE91E63)
-                                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                            }
-                                        )
+                                        val isTop3 = rank <= 3
+                                        val rankColor = when (rank) {
+                                            1 -> NeonVolt
+                                            2 -> ElectricBlue
+                                            3 -> ActiveOrange
+                                            else -> Color.Black.copy(alpha = 0.6f)
+                                        }
+                                        val circleBg = if (isTop3) Color(0xFF0F1318) else Color.Black.copy(alpha = 0.05f)
+                                        val circleText = if (isTop3) rankColor else Color.Black.copy(alpha = 0.8f)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(circleBg),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$rank",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 13.sp,
+                                                color = circleText
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         AvatarImage(
                                             avatarUrl = player.avatarUrl,
                                             modifier = Modifier
                                                 .size(40.dp)
-                                                .clip(CircleShape),
-                                            placeholderColor = parsedColor,
-                                            placeholderIcon = Icons.Default.Person
+                                                .clip(CircleShape)
+                                                .border(1.5.dp, parsedColor, CircleShape)
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column {
-                                            Text(
-                                                text = if (isMe) "${player.pseudonyme} (Vous)" else player.pseudonyme,
-                                                fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = player.pseudonyme,
+                                                    fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = Color.Black
+                                                )
+                                                if (isMe) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(50))
+                                                            .background(Color(0xFF0F1318))
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text("Vous", color = NeonVolt, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
                                             if (player.guildeNom != null) {
                                                 val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color.Gray }
                                                 Text(
@@ -2367,7 +2400,7 @@ fun LeaderboardScreen(
                                         text = areaStr,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyLarge,
-                                        color = if (isMe) parsedColor else MaterialTheme.colorScheme.onSurface
+                                        color = Color.Black
                                     )
                                 }
                             }
@@ -2391,13 +2424,13 @@ fun LeaderboardScreen(
                                 modifier = Modifier
                                     .size(90.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                    .background(Color.Black.copy(alpha = 0.05f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Shield,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                    tint = Color.Black.copy(alpha = 0.3f),
                                     modifier = Modifier.size(48.dp)
                                 )
                             }
@@ -2406,7 +2439,7 @@ fun LeaderboardScreen(
                                 text = "Aucun clan enregistré",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.Black
                             )
                         }
                     }
@@ -2422,32 +2455,34 @@ fun LeaderboardScreen(
                             }
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(24.dp),
+                                shape = RoundedCornerShape(20.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = parsedClanColor.copy(alpha = 0.15f)
-                                )
+                                    containerColor = Color.White.copy(alpha = 0.95f)
+                                ),
+                                border = BorderStroke(1.5.dp, NeonVolt)
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(20.dp),
+                                        .padding(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     AvatarImage(
                                         avatarUrl = myClan.avatarUrl,
                                         modifier = Modifier
                                             .size(48.dp)
-                                            .clip(CircleShape),
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, parsedClanColor, CircleShape),
                                         placeholderColor = parsedClanColor,
                                         placeholderIcon = Icons.Default.Shield
                                     )
                                     Spacer(modifier = Modifier.width(16.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "RANG DE VOTRE CLAN : ${myClanIndex + 1}$suffix",
-                                            style = MaterialTheme.typography.labelLarge,
+                                            text = myClan.nom,
+                                            style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = parsedClanColor
+                                            color = Color.Black
                                         )
                                         val areaStr = if (myClan.totalAreaM2 >= 10000) {
                                             "%.4f km²".format(myClan.totalAreaM2 / 1_000_000.0)
@@ -2455,10 +2490,23 @@ fun LeaderboardScreen(
                                             "${myClan.totalAreaM2.toInt()} m²"
                                         }
                                         Text(
-                                            text = "${myClan.nom} • $areaStr",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            text = areaStr,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.Black.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(Color(0xFF0F1318))
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${myClanIndex + 1}$suffix",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Black,
+                                            color = NeonVolt
                                         )
                                     }
                                 }
@@ -2468,11 +2516,14 @@ fun LeaderboardScreen(
                     }
 
                     Text(
-                        text = "Classement des Clans",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 12.dp),
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "CLASSEMENT DES CLANS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.sp,
+                            color = Color.Black.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.padding(bottom = 12.dp)
                     )
 
                     LazyColumn(
@@ -2482,9 +2533,9 @@ fun LeaderboardScreen(
                         itemsIndexed(clans) { index, clan ->
                             val isMyClan = clan.id == userGuildId
                             val cardBg = if (isMyClan) {
-                                MaterialTheme.colorScheme.surfaceVariant
+                                Color.White.copy(alpha = 0.95f)
                             } else {
-                                MaterialTheme.colorScheme.surface
+                                Color.White.copy(alpha = 0.9f)
                             }
                             val parsedClanColor = remember(clan.couleurHex) {
                                 try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { NeonVolt }
@@ -2493,45 +2544,74 @@ fun LeaderboardScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = cardBg),
-                                border = if (isMyClan) BorderStroke(1.dp, parsedClanColor) else null
+                                border = if (isMyClan) BorderStroke(1.5.dp, NeonVolt) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
+                                        .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
                                         val rank = index + 1
-                                        Text(
-                                            text = "$rank",
-                                            fontWeight = FontWeight.Black,
-                                            style = MaterialTheme.typography.titleLarge,
-                                            modifier = Modifier.width(36.dp),
-                                            color = when (rank) {
-                                                1 -> ActiveOrange
-                                                2 -> ElectricBlue
-                                                3 -> Color(0xFFE91E63)
-                                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                            }
-                                        )
+                                        val isTop3 = rank <= 3
+                                        val rankColor = when (rank) {
+                                            1 -> NeonVolt
+                                            2 -> ElectricBlue
+                                            3 -> ActiveOrange
+                                            else -> Color.Black.copy(alpha = 0.6f)
+                                        }
+                                        val circleBg = if (isTop3) Color(0xFF0F1318) else Color.Black.copy(alpha = 0.05f)
+                                        val circleText = if (isTop3) rankColor else Color.Black.copy(alpha = 0.8f)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(circleBg),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$rank",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 13.sp,
+                                                color = circleText
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         AvatarImage(
                                             avatarUrl = clan.avatarUrl,
                                             modifier = Modifier
                                                 .size(40.dp)
-                                                .clip(CircleShape),
+                                                .clip(CircleShape)
+                                                .border(1.5.dp, parsedClanColor, CircleShape),
                                             placeholderColor = parsedClanColor,
                                             placeholderIcon = Icons.Default.Shield
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column {
-                                            Text(
-                                                text = if (isMyClan) "${clan.nom} (Votre Clan)" else clan.nom,
-                                                fontWeight = FontWeight.Bold,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = clan.nom,
+                                                    fontWeight = if (isMyClan) FontWeight.Bold else FontWeight.Medium,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = Color.Black
+                                                )
+                                                if (isMyClan) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(50))
+                                                            .background(Color(0xFF0F1318))
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text("Votre Clan", color = NeonVolt, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
                                             Text(
                                                 text = "${clan.membreCount} membre(s)",
                                                 style = MaterialTheme.typography.labelSmall,
@@ -2548,13 +2628,52 @@ fun LeaderboardScreen(
                                         text = areaStr,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyLarge,
-                                        color = if (isMyClan) parsedClanColor else MaterialTheme.colorScheme.onSurface
+                                        color = Color.Black
                                     )
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun CapsuleTabSelector(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.05f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val isSelected = selectedTabIndex == index
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (isSelected) Color(0xFF0F1318) else Color.Transparent)
+                    .clickable { onTabSelected(index) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.5.sp,
+                    color = if (isSelected) NeonVolt else Color.Black.copy(alpha = 0.6f)
+                )
             }
         }
     }
@@ -3400,29 +3519,12 @@ fun GuildeScreen(
                 .background(Color.White.copy(alpha = 0.65f))
                 .padding(16.dp)
         ) {
-            // Tab Selector (Amis, Mon Clan, Clans)
-            TabRow(
+            CapsuleTabSelector(
+                tabs = listOf("AMIS", "MON CLAN", "CLANS"),
                 selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = NeonVolt,
+                onTabSelected = { selectedTab = it },
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("AMIS", fontWeight = FontWeight.Bold) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("MON CLAN", fontWeight = FontWeight.Bold) }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text("CLANS", fontWeight = FontWeight.Bold) }
-                )
-            }
+            )
             
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -3442,15 +3544,18 @@ fun GuildeScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                 shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, NeonVolt.copy(alpha = 0.3f))
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(
-                                        text = "Ajouter un ami",
+                                        text = "AJOUTER UN AMI",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
+                                        fontSize = 11.sp,
+                                        letterSpacing = 1.sp,
+                                        color = Color.Black.copy(alpha = 0.5f)
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
@@ -3458,15 +3563,20 @@ fun GuildeScreen(
                                         OutlinedTextField(
                                             value = friendPseudoInput,
                                             onValueChange = { friendPseudoInput = it; searchError = null },
-                                            placeholder = { Text("Pseudonyme") },
+                                            placeholder = { Text("Pseudonyme", color = Color.Black.copy(alpha = 0.4f)) },
                                             singleLine = true,
                                             modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(50),
                                             colors = OutlinedTextFieldDefaults.colors(
+                                                focusedContainerColor = Color.White.copy(alpha = 0.95f),
+                                                unfocusedContainerColor = Color.White.copy(alpha = 0.7f),
                                                 focusedBorderColor = NeonVolt,
-                                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
+                                                unfocusedBorderColor = Color.Black.copy(alpha = 0.06f),
+                                                focusedTextColor = Color.Black,
+                                                unfocusedTextColor = Color.Black
                                             )
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         Button(
                                             onClick = {
                                                 if (friendPseudoInput.trim().isEmpty()) return@Button
@@ -3512,36 +3622,38 @@ fun GuildeScreen(
                                                     }
                                                 }
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
-                                            shape = RoundedCornerShape(12.dp)
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F1318), contentColor = NeonVolt),
+                                            shape = RoundedCornerShape(50),
+                                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                                         ) {
-                                            Text("Ajouter", color = Color.Black)
+                                            Text("Ajouter", fontWeight = FontWeight.Bold)
                                         }
                                     }
                                     if (searchError != null) {
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Spacer(modifier = Modifier.height(6.dp))
                                         Text(searchError!!, color = Color.Red, fontSize = 12.sp)
                                     }
                                 }
                             }
                         }
-                        
-                        // Proximity suggestions
+                           // Proximity suggestions
                         if (suggestedFriends.isNotEmpty()) {
                             item {
                                 Text(
-                                    text = "Joueurs à proximité",
+                                    text = "JOUEURS À PROXIMITÉ",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = Color.Gray,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    fontSize = 11.sp,
+                                    letterSpacing = 1.sp,
+                                    color = Color.Black.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                                 )
                             }
                             items(suggestedFriends) { suggestion ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                    border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
@@ -3559,7 +3671,8 @@ fun GuildeScreen(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = suggestion.pseudo,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black
                                             )
                                             val distStr = if (suggestion.distanceMeters >= 1000.0) {
                                                 "À %.1f km".format(suggestion.distanceMeters / 1000.0)
@@ -3569,7 +3682,7 @@ fun GuildeScreen(
                                             Text(
                                                 text = distStr,
                                                 fontSize = 11.sp,
-                                                color = Color.Gray
+                                                color = Color.Black.copy(alpha = 0.5f)
                                             )
                                         }
                                         Button(
@@ -3592,11 +3705,11 @@ fun GuildeScreen(
                                                     }
                                                 }
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
-                                            shape = RoundedCornerShape(12.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F1318), contentColor = NeonVolt),
+                                            shape = RoundedCornerShape(50),
+                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                         ) {
-                                            Text("Ajouter", color = Color.Black, fontSize = 12.sp)
+                                            Text("Ajouter", color = NeonVolt, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -3607,18 +3720,20 @@ fun GuildeScreen(
                         if (pendingRequests.isNotEmpty()) {
                             item {
                                 Text(
-                                    text = "Demandes en attente",
+                                    text = "DEMANDES EN ATTENTE",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = Color.Gray,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    fontSize = 11.sp,
+                                    letterSpacing = 1.sp,
+                                    color = Color.Black.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                                 )
                             }
                             items(pendingRequests) { req ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                    border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
@@ -3632,6 +3747,7 @@ fun GuildeScreen(
                                         Text(
                                             text = req.pseudo,
                                             fontWeight = FontWeight.Bold,
+                                            color = Color.Black,
                                             modifier = Modifier.weight(1f)
                                         )
                                         IconButton(
@@ -3651,10 +3767,14 @@ fun GuildeScreen(
                                                         android.util.Log.e("Arpent", "Failed to accept friend", e)
                                                     }
                                                 }
-                                            }
+                                            },
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF0F1318).copy(alpha = 0.05f))
                                         ) {
-                                            Icon(Icons.Default.Check, contentDescription = "Accepter", tint = Color.Green)
+                                            Icon(Icons.Default.Check, contentDescription = "Accepter", tint = Color(0xFF00C853))
                                         }
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         IconButton(
                                             onClick = {
                                                 scope.launch(Dispatchers.IO) {
@@ -3670,9 +3790,12 @@ fun GuildeScreen(
                                                         android.util.Log.e("Arpent", "Failed to decline friend", e)
                                                     }
                                                 }
-                                            }
+                                            },
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF0F1318).copy(alpha = 0.05f))
                                         ) {
-                                            Icon(Icons.Default.Close, contentDescription = "Refuser", tint = Color.Red)
+                                            Icon(Icons.Default.Close, contentDescription = "Refuser", tint = Color(0xFFD50000))
                                         }
                                     }
                                 }
@@ -3682,11 +3805,12 @@ fun GuildeScreen(
                         // Friends list
                         item {
                             Text(
-                                text = "Mes amis (${friendsList.size})",
+                                text = "MES AMIS (${friendsList.size})",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(vertical = 4.dp)
+                                fontSize = 11.sp,
+                                letterSpacing = 1.sp,
+                                color = Color.Black.copy(alpha = 0.5f),
+                                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                             )
                         }
                         
@@ -3703,7 +3827,9 @@ fun GuildeScreen(
                             items(friendsList) { friend ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                    border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
@@ -3715,7 +3841,7 @@ fun GuildeScreen(
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column {
-                                            Text(text = friend.pseudo, fontWeight = FontWeight.Bold)
+                                            Text(text = friend.pseudo, fontWeight = FontWeight.Bold, color = Color.Black)
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Box(
@@ -3725,7 +3851,7 @@ fun GuildeScreen(
                                                         .background(try { Color(android.graphics.Color.parseColor(friend.color)) } catch(_: Exception) { Color.Green })
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
-                                                Text(text = "Empire", fontSize = 11.sp, color = Color.Gray)
+                                                Text(text = "Empire", fontSize = 11.sp, color = Color.Black.copy(alpha = 0.5f))
                                             }
                                         }
                                     }
@@ -3753,7 +3879,8 @@ fun GuildeScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(20.dp),
-                                border = BorderStroke(2.dp, parsedClanColor)
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1318)),
+                                border = BorderStroke(1.dp, parsedClanColor.copy(alpha = 0.4f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(20.dp),
@@ -3761,29 +3888,41 @@ fun GuildeScreen(
                                 ) {
                                     AvatarImage(
                                         avatarUrl = clanAvatar,
-                                        modifier = Modifier.size(64.dp),
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(CircleShape)
+                                            .border(2.dp, parsedClanColor, CircleShape),
                                         placeholderColor = parsedClanColor,
                                         placeholderIcon = Icons.Default.Shield
                                     )
                                     Spacer(modifier = Modifier.width(16.dp))
                                     Column {
-                                        Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                                        Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "${clanMembers.size} membre(s)", color = Color.Gray, fontSize = 14.sp)
+                                        Text(text = "${clanMembers.size} membre(s)", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
                                     }
                                 }
                             }
                         }
                         
                         item {
-                            Text(text = "Membres du clan", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                            Text(
+                                text = "MEMBRES DU CLAN",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = 1.sp,
+                                color = Color.Black.copy(alpha = 0.5f),
+                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                            )
                         }
                         
                         items(clanMembers) { member ->
+                            val isMe = member.id == userId
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f))
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = if (isMe) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.9f)),
+                                border = if (isMe) BorderStroke(1.5.dp, NeonVolt) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),
@@ -3791,16 +3930,32 @@ fun GuildeScreen(
                                 ) {
                                     AvatarImage(
                                         avatarUrl = member.avatarUrl,
-                                        modifier = Modifier.size(40.dp)
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, if (isMe) NeonVolt else Color.Black.copy(alpha = 0.1f), CircleShape)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
                                         text = member.pseudo,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
+                                        color = Color.Black,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    if (member.id == userId) {
-                                        Text("Vous", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    if (isMe) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(Color(0xFF0F1318))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "VOUS",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = NeonVolt
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -3827,11 +3982,15 @@ fun GuildeScreen(
                                         }
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFFEBEE),
+                                    contentColor = Color(0xFFC62828)
+                                ),
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(50)
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(vertical = 12.dp)
                             ) {
-                                Text("QUITTER LE CLAN", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("QUITTER LE CLAN", fontWeight = FontWeight.Bold, color = Color(0xFFC62828), letterSpacing = 1.sp)
                             }
                         }
                     }
@@ -3844,12 +4003,19 @@ fun GuildeScreen(
                         item {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, NeonVolt.copy(alpha = 0.3f))
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                             ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(text = "Créer un clan", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "CRÉER UN CLAN",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        letterSpacing = 1.sp,
+                                        color = Color.Black
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -3859,7 +4025,7 @@ fun GuildeScreen(
                                             modifier = Modifier
                                                 .size(56.dp)
                                                 .clip(CircleShape)
-                                                .background(Color.Gray.copy(alpha = 0.15f))
+                                                .background(Color(0xFF0F1318).copy(alpha = 0.08f))
                                                 .clickable { imageLauncher.launch("image/*") },
                                             contentAlignment = Alignment.Center
                                         ) {
@@ -3870,30 +4036,39 @@ fun GuildeScreen(
                                                 placeholderIcon = Icons.Default.Shield
                                             )
                                         }
-                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Spacer(modifier = Modifier.width(16.dp))
                                         Button(
                                             onClick = { imageLauncher.launch("image/*") },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color.Gray.copy(alpha = 0.2f), contentColor = Color.Black),
-                                            shape = RoundedCornerShape(8.dp)
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF0F1318).copy(alpha = 0.08f),
+                                                contentColor = Color.Black
+                                            ),
+                                            shape = RoundedCornerShape(50),
+                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                         ) {
-                                            Text("Choisir logo", fontSize = 12.sp)
+                                            Text("Choisir logo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                     }
                                     
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     OutlinedTextField(
                                         value = newClanName,
                                         onValueChange = { newClanName = it },
-                                        placeholder = { Text("Nom du clan") },
+                                        placeholder = { Text("Nom du clan", color = Color.Black.copy(alpha = 0.4f)) },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(50),
                                         colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.Black,
+                                            unfocusedTextColor = Color.Black,
+                                            focusedContainerColor = Color.White.copy(alpha = 0.95f),
+                                            unfocusedContainerColor = Color.White.copy(alpha = 0.7f),
                                             focusedBorderColor = NeonVolt,
-                                            unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
+                                            unfocusedBorderColor = Color.Black.copy(alpha = 0.06f)
                                         )
                                     )
                                     
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
@@ -3901,7 +4076,8 @@ fun GuildeScreen(
                                         Text(
                                             text = "Couleur du clan",
                                             fontSize = 12.sp,
-                                            color = Color.Gray,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.Black.copy(alpha = 0.6f),
                                             modifier = Modifier.weight(1f)
                                         )
                                         val parsedColor = remember(newClanColor) {
@@ -3912,11 +4088,11 @@ fun GuildeScreen(
                                                 .size(24.dp)
                                                 .clip(CircleShape)
                                                 .background(parsedColor)
-                                                .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                                .border(1.5.dp, Color.White, CircleShape)
                                         )
                                     }
                                     
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     val parsedColorForWheel = remember(newClanColor) {
                                         try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { Color(0xFFCCFF00) }
                                     }
@@ -3931,7 +4107,7 @@ fun GuildeScreen(
                                             .align(Alignment.CenterHorizontally)
                                     )
                                     
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(20.dp))
                                     Button(
                                         onClick = {
                                             if (newClanName.trim().isEmpty()) return@Button
@@ -3970,9 +4146,10 @@ fun GuildeScreen(
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
                                         shape = RoundedCornerShape(50),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(vertical = 12.dp)
                                     ) {
-                                        Text("CRÉER LE CLAN", fontWeight = FontWeight.Bold, color = Color.Black)
+                                        Text("CRÉER LE CLAN", fontWeight = FontWeight.Bold, color = Color.Black, letterSpacing = 1.sp)
                                     }
                                 }
                             }
@@ -3984,7 +4161,7 @@ fun GuildeScreen(
                             ) {
                                 Text(
                                     text = "Pour rejoindre un clan existant, allez sur l'onglet 'CLANS'.",
-                                    color = Color.Gray,
+                                    color = Color.Black.copy(alpha = 0.5f),
                                     fontSize = 13.sp,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
@@ -4012,13 +4189,18 @@ fun GuildeScreen(
                         OutlinedTextField(
                             value = clanSearchQuery,
                             onValueChange = { clanSearchQuery = it },
-                            placeholder = { Text("Rechercher un clan...") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                            placeholder = { Text("Rechercher un clan...", color = Color.Black.copy(alpha = 0.4f)) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Black.copy(alpha = 0.4f)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(50),
                             colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black,
+                                focusedContainerColor = Color.White.copy(alpha = 0.95f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.7f),
                                 focusedBorderColor = NeonVolt,
-                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
+                                unfocusedBorderColor = Color.Black.copy(alpha = 0.06f)
                             )
                         )
                         
@@ -4027,7 +4209,7 @@ fun GuildeScreen(
                                 modifier = Modifier.fillMaxWidth().weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Aucun clan trouvé.", color = Color.Gray, fontSize = 14.sp)
+                                Text("Aucun clan trouvé.", color = Color.Black.copy(alpha = 0.4f), fontSize = 14.sp)
                             }
                         } else {
                             LazyColumn(
@@ -4038,8 +4220,12 @@ fun GuildeScreen(
                                     val parsedCColor = remember(clan.color) {
                                         try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { NeonVolt }
                                     }
+                                    val isMyClan = clanId == clan.id
                                     Card(
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                        border = if (isMyClan) BorderStroke(1.5.dp, NeonVolt) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(12.dp),
@@ -4047,7 +4233,10 @@ fun GuildeScreen(
                                         ) {
                                             AvatarImage(
                                                 avatarUrl = clan.avatarUrl,
-                                                modifier = Modifier.size(40.dp),
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .border(1.5.dp, if (isMyClan) NeonVolt else Color.Black.copy(alpha = 0.1f), CircleShape),
                                                 placeholderColor = parsedCColor,
                                                 placeholderIcon = Icons.Default.Shield
                                             )
@@ -4055,16 +4244,18 @@ fun GuildeScreen(
                                             Text(
                                                 text = clan.nom,
                                                 fontWeight = FontWeight.Bold,
+                                                color = Color.Black,
                                                 modifier = Modifier.weight(1f)
                                             )
                                             if (clanId == null) {
+                                                val isCColorLight = (parsedCColor.red * 0.299f + parsedCColor.green * 0.587f + parsedCColor.blue * 0.114f) > 0.6f
                                                 Button(
                                                     onClick = {
                                                         scope.launch(Dispatchers.IO) {
                                                             try {
                                                                 supabase.postgrest["profiles"].update(
                                                                     mapOf("guilde_id" to clan.id)
-                                                                ) {
+                                                                 ) {
                                                                     filter { eq("id", userId) }
                                                                 }
                                                                 withContext(Dispatchers.Main) {
@@ -4078,18 +4269,29 @@ fun GuildeScreen(
                                                             }
                                                         }
                                                     },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = parsedCColor),
-                                                    shape = RoundedCornerShape(12.dp)
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = parsedCColor,
+                                                        contentColor = if (isCColorLight) Color.Black else Color.White
+                                                    ),
+                                                    shape = RoundedCornerShape(50),
+                                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                                                 ) {
-                                                    Text("Rejoindre", color = Color.White, fontSize = 12.sp)
+                                                     Text("Rejoindre", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                 }
-                                            } else if (clanId == clan.id) {
-                                                Text(
-                                                    text = "Votre clan",
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = parsedCColor,
-                                                    fontSize = 12.sp
-                                                )
+                                            } else if (isMyClan) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(50))
+                                                        .background(Color(0xFF0F1318))
+                                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "VOTRE CLAN",
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = NeonVolt,
+                                                        fontSize = 10.sp
+                                                     )
+                                                }
                                             }
                                         }
                                     }

@@ -20,4 +20,4 @@ local.properties
 .agents/
 skills-lock.json
 .claude/
-
+*.sql

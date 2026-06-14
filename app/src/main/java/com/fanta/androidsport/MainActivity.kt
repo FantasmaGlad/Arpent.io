@@ -754,8 +754,8 @@ fun ArpentMainScreen(userId: String) {
             },
             bottomBar = {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp
+                    containerColor = MaterialTheme.colorScheme.background,
+                    tonalElevation = 0.dp
                 ) {
                     NavigationBarItem(
                         selected = navigationIndex == 0,
@@ -765,9 +765,9 @@ fun ArpentMainScreen(userId: String) {
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = NeonVolt,
                             selectedTextColor = NeonVolt,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            indicatorColor = Color.Transparent
                         )
                     )
                     NavigationBarItem(
@@ -778,9 +778,9 @@ fun ArpentMainScreen(userId: String) {
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ElectricBlue,
                             selectedTextColor = ElectricBlue,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            indicatorColor = Color.Transparent
                         )
                     )
                     NavigationBarItem(
@@ -789,11 +789,11 @@ fun ArpentMainScreen(userId: String) {
                         icon = { Icon(Icons.Default.Group, contentDescription = "Guilde") },
                         label = { Text("Guilde") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFFE040FB),
-                            selectedTextColor = Color(0xFFE040FB),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                            selectedIconColor = NeonVolt,
+                            selectedTextColor = NeonVolt,
+                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            indicatorColor = Color.Transparent
                         )
                     )
                     NavigationBarItem(
@@ -804,9 +804,9 @@ fun ArpentMainScreen(userId: String) {
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ActiveOrange,
                             selectedTextColor = ActiveOrange,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            indicatorColor = Color.Transparent
                         )
                     )
                 }
@@ -1314,10 +1314,6 @@ fun ConquestMapScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    // Simulation state variables
-    var isSimulatingRun by remember { mutableStateOf(false) }
-    var simulationJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-
     // Real run tracking states
     var isRealRunActive by remember { mutableStateOf(false) }
     var runStartTime by remember { mutableStateOf<Long?>(null) }
@@ -1521,7 +1517,7 @@ fun ConquestMapScreen(
                     }
                     currentPosition = point
                     currentSpeed = if (location.hasSpeed()) location.speed * 3.6 else 0.0
-                } else if (!isSimulatingRun) {
+                } else {
                     currentPosition = point
                     if (isFirstLocationUpdate) {
                         isFirstLocationUpdate = false
@@ -1576,7 +1572,6 @@ fun ConquestMapScreen(
         }
 
         onDispose {
-            simulationJob?.cancel()
             try {
                 locationManager.removeUpdates(locationListener)
             } catch (e: Exception) {
@@ -1739,7 +1734,7 @@ fun ConquestMapScreen(
         // --- OVERLAYS ---
 
         // 1. Top Conquest Status Indicator
-        if (isSimulatingRun) {
+        if (isRealRunActive) {
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -1820,7 +1815,7 @@ fun ConquestMapScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 
-                if (isSimulatingRun || sessionGainedArea > 0.0) {
+                if (sessionGainedArea > 0.0) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -1899,134 +1894,6 @@ fun ConquestMapScreen(
                 )
             }
 
-            // Temporary neighborhood tour simulation button (Test)
-            val testButtonColor by animateColorAsState(
-                targetValue = if (isSimulatingRun) Color.Red else ActiveOrange,
-                label = "test_btn_color"
-            )
-            FloatingActionButton(
-                onClick = {
-                    if (isRealRunActive) {
-                        Toast.makeText(context, "Course réelle active. Arrêtez-la d'abord.", Toast.LENGTH_SHORT).show()
-                    } else if (isSimulatingRun) {
-                        // Stop simulation manually
-                        simulationJob?.cancel()
-                        isSimulatingRun = false
-                        currentSpeed = 0.0
-
-                        if (activePathPoints.size >= 3) {
-                            val closedPoints = activePathPoints.toList() + activePathPoints[0]
-                            saveRunToDatabase(
-                                userId = userId,
-                                scope = scope,
-                                context = context,
-                                runStartTime = runStartTime ?: System.currentTimeMillis(),
-                                runDistance = runDistance,
-                                isLoop = true,
-                                closedPoints = closedPoints
-                            ) { areaKm2 ->
-                                completedPolygons.add(closedPoints)
-                                saveTerritoriesLocally(context, completedPolygons)
-                                currentArea += areaKm2
-                                sessionGainedArea = areaKm2
-                                Toast.makeText(context, "Simulation enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
-                                onRunSaved()
-                            }
-                        } else {
-                            Toast.makeText(context, "Simulation annulée (pas assez de points).", Toast.LENGTH_SHORT).show()
-                            activePathPoints.clear()
-                        }
-                    } else {
-                        // Start simulation
-                        isSimulatingRun = true
-                        sessionGainedArea = 0.0
-                        runDistance = 0.0
-                        runStartTime = System.currentTimeMillis()
-                        
-                        activePathPoints.clear()
-
-                        simulationJob = scope.launch {
-                            val startPoint = currentPosition
-                            activePathPoints.add(startPoint)
-
-                            // 10 simulated steps in a neighborhood tour
-                            val stepDelta = listOf(
-                                Pair(0.0003, 0.0001),
-                                Pair(0.0006, 0.0004),
-                                Pair(0.0007, 0.0009),
-                                Pair(0.0004, 0.0012),
-                                Pair(0.0000, 0.0013),
-                                Pair(-0.0004, 0.0011),
-                                Pair(-0.0006, 0.0007),
-                                Pair(-0.0005, 0.0002),
-                                Pair(-0.0002, 0.0000),
-                                Pair(0.0, 0.0) // Return to start point to close loop
-                            )
-
-                            var stepIndex = 0
-                            var lastPoint = startPoint
-                            while (stepIndex < stepDelta.size && isSimulatingRun) {
-                                currentSpeed = 10.0 + (Math.random() * 4.0)
-                                val delta = stepDelta[stepIndex]
-                                val newPos = Point.fromLngLat(
-                                    startPoint.longitude() + delta.second,
-                                    startPoint.latitude() + delta.first
-                                )
-                                runDistance += calculateDistance(lastPoint, newPos)
-                                lastPoint = newPos
-                                currentPosition = newPos
-                                activePathPoints.add(newPos)
-
-                                mapViewportState.easeTo(
-                                    CameraOptions.Builder().center(newPos).build(),
-                                    mapAnimationOptions { duration(500L) }
-                                )
-                                stepIndex++
-                                delay(1200)
-                            }
-
-                            if (isSimulatingRun) {
-                                val closedPoints = activePathPoints.toList()
-                                saveRunToDatabase(
-                                    userId = userId,
-                                    scope = scope,
-                                    context = context,
-                                    runStartTime = runStartTime ?: System.currentTimeMillis(),
-                                    runDistance = runDistance,
-                                    isLoop = true,
-                                    closedPoints = closedPoints
-                                ) { areaKm2 ->
-                                    completedPolygons.add(closedPoints)
-                                    saveTerritoriesLocally(context, completedPolygons)
-                                    currentArea += areaKm2
-                                    sessionGainedArea = areaKm2
-                                    Toast.makeText(context, "Simulation terminée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
-                                    onRunSaved()
-                                }
-                                isSimulatingRun = false
-                                currentSpeed = 0.0
-                                activePathPoints.clear()
-                            }
-                        }
-                    }
-                },
-                containerColor = testButtonColor,
-                contentColor = Color.Black,
-                shape = CircleShape,
-                modifier = Modifier
-                    .size(52.dp)
-                    .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Text(
-                        text = "Test",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Black
-                    )
-                }
-            }
-
             // Real run capturing button (GPS active tracking)
             val realButtonColor by animateColorAsState(
                 targetValue = if (isRealRunActive) Color.Red else NeonVolt,
@@ -2034,9 +1901,7 @@ fun ConquestMapScreen(
             )
             FloatingActionButton(
                 onClick = {
-                    if (isSimulatingRun) {
-                        Toast.makeText(context, "Simulation active. Arrêtez-la d'abord.", Toast.LENGTH_SHORT).show()
-                    } else if (isRealRunActive) {
+                    if (isRealRunActive) {
                         // Stop real run
                         isRealRunActive = false
                         currentSpeed = 0.0
@@ -2172,7 +2037,7 @@ fun ConquestMapScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = { selectedPlayerStats = null }) {
-                        Text("FERMER", color = Color(0xFFE040FB), fontWeight = FontWeight.Bold)
+                        Text("FERMER", color = NeonVolt, fontWeight = FontWeight.Bold)
                     }
                 },
                 shape = RoundedCornerShape(20.dp),
@@ -2262,7 +2127,7 @@ fun LeaderboardScreen(
                     val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
                     val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                     val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
-                    val color = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#E040FB"
+                    val color = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#CCFF00"
                     val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
                     val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     val membreCount = obj["membre_count"]?.jsonPrimitive?.intOrNull ?: 0
@@ -2553,7 +2418,7 @@ fun LeaderboardScreen(
                             val myClan = clans[myClanIndex]
                             val suffix = if (myClanIndex == 0) "er" else "ème"
                             val parsedClanColor = remember(myClan.couleurHex) {
-                                try { Color(android.graphics.Color.parseColor(myClan.couleurHex)) } catch (_: Exception) { Color(0xFFE040FB) }
+                                try { Color(android.graphics.Color.parseColor(myClan.couleurHex)) } catch (_: Exception) { NeonVolt }
                             }
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -2622,7 +2487,7 @@ fun LeaderboardScreen(
                                 MaterialTheme.colorScheme.surface
                             }
                             val parsedClanColor = remember(clan.couleurHex) {
-                                try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { Color(0xFFE040FB) }
+                                try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { NeonVolt }
                             }
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -3271,7 +3136,7 @@ fun GuildeScreen(
                 imageVector = Icons.Default.Group,
                 contentDescription = null,
                 modifier = Modifier.size(72.dp),
-                tint = Color(0xFFE040FB)
+                tint = NeonVolt
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -3290,7 +3155,7 @@ fun GuildeScreen(
             Spacer(modifier = Modifier.height(24.dp))
             Button(
                 onClick = onBackToLogin,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB), contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
                 shape = RoundedCornerShape(50)
             ) {
                 Text("CRÉER UN COMPTE", fontWeight = FontWeight.Bold)
@@ -3319,13 +3184,11 @@ fun GuildeScreen(
     
     // Clan creation/joining forms
     var newClanName by remember { mutableStateOf("") }
-    var newClanColor by remember { mutableStateOf("#E040FB") }
+    var newClanColor by remember { mutableStateOf("#CCFF00") }
     var newClanAvatarBase64 by remember { mutableStateOf<String?>(null) }
     var clanSearchQuery by remember { mutableStateOf("") }
     var allClansList by remember { mutableStateOf<List<ClanItem>>(emptyList()) }
     var isClanLoading by remember { mutableStateOf(true) }
-    
-    val colorsList = listOf("#FF1744", "#D500F9", "#2979FF", "#00E676", "#FFEA00", "#FF9100")
 
     val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -3457,7 +3320,7 @@ fun GuildeScreen(
                     val guildArray = kotlinx.serialization.json.Json.parseToJsonElement(guildRes.data) as? kotlinx.serialization.json.JsonArray
                     val guildObj = guildArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
                     val nom = guildObj?.get("nom")?.jsonPrimitive?.contentOrNull ?: "Mon Clan"
-                    val col = guildObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull ?: "#E040FB"
+                    val col = guildObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull ?: "#CCFF00"
                     val av = guildObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
                     
                     // Fetch members
@@ -3491,7 +3354,7 @@ fun GuildeScreen(
                         val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
                         val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                         val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
-                        val col = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#E040FB"
+                        val col = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#CCFF00"
                         val av = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
                         ClanItem(id, nom, col, av)
                     } ?: emptyList()
@@ -3526,7 +3389,7 @@ fun GuildeScreen(
         onSurface = Color.Black,
         surfaceVariant = Color.White.copy(alpha = 0.95f),
         onSurfaceVariant = Color.Black,
-        secondaryContainer = Color(0xFFE040FB).copy(alpha = 0.15f),
+        secondaryContainer = NeonVolt.copy(alpha = 0.15f),
         onSecondaryContainer = Color.Black
     )
 
@@ -3541,7 +3404,7 @@ fun GuildeScreen(
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.Transparent,
-                contentColor = Color(0xFFE040FB),
+                contentColor = NeonVolt,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Tab(
@@ -3567,7 +3430,7 @@ fun GuildeScreen(
                 // AMIS TAB
                 if (isFriendsLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFFE040FB))
+                        CircularProgressIndicator(color = NeonVolt)
                     }
                 } else {
                     LazyColumn(
@@ -3579,7 +3442,7 @@ fun GuildeScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                 shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, Color(0xFFE040FB).copy(alpha = 0.3f))
+                                border = BorderStroke(1.dp, NeonVolt.copy(alpha = 0.3f))
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(
@@ -3599,7 +3462,7 @@ fun GuildeScreen(
                                             singleLine = true,
                                             modifier = Modifier.weight(1f),
                                             colors = OutlinedTextFieldDefaults.colors(
-                                                focusedBorderColor = Color(0xFFE040FB),
+                                                focusedBorderColor = NeonVolt,
                                                 unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
                                             )
                                         )
@@ -3649,10 +3512,10 @@ fun GuildeScreen(
                                                     }
                                                 }
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
-                                            Text("Ajouter", color = Color.White)
+                                            Text("Ajouter", color = Color.Black)
                                         }
                                     }
                                     if (searchError != null) {
@@ -3729,11 +3592,11 @@ fun GuildeScreen(
                                                     }
                                                 }
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                            colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
                                             shape = RoundedCornerShape(12.dp),
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                         ) {
-                                            Text("Ajouter", color = Color.White, fontSize = 12.sp)
+                                            Text("Ajouter", color = Color.Black, fontSize = 12.sp)
                                         }
                                     }
                                 }
@@ -3875,12 +3738,12 @@ fun GuildeScreen(
                 // MON CLAN TAB
                 if (isClanLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFFE040FB))
+                        CircularProgressIndicator(color = NeonVolt)
                     }
                 } else if (clanId != null) {
                     // User belongs to a clan
                     val parsedClanColor = remember(clanCouleur) {
-                        try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { Color(0xFFE040FB) }
+                        try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { NeonVolt }
                     }
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -3982,7 +3845,7 @@ fun GuildeScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, Color(0xFFE040FB).copy(alpha = 0.3f))
+                                border = BorderStroke(1.dp, NeonVolt.copy(alpha = 0.3f))
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(text = "Créer un clan", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -4025,34 +3888,48 @@ fun GuildeScreen(
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = Color(0xFFE040FB),
+                                            focusedBorderColor = NeonVolt,
                                             unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
                                         )
                                     )
                                     
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Text("Couleur du clan", fontSize = 12.sp, color = Color.Gray)
-                                    Spacer(modifier = Modifier.height(6.dp))
                                     Row(
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        colorsList.forEach { colorStr ->
-                                            val c = Color(android.graphics.Color.parseColor(colorStr))
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    .background(c)
-                                                    .border(
-                                                        width = if (newClanColor == colorStr) 3.dp else 0.dp,
-                                                        color = if (newClanColor == colorStr) Color.Black else Color.Transparent,
-                                                        shape = CircleShape
-                                                    )
-                                                    .clickable { newClanColor = colorStr }
-                                            )
+                                        Text(
+                                            text = "Couleur du clan",
+                                            fontSize = 12.sp,
+                                            color = Color.Gray,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        val parsedColor = remember(newClanColor) {
+                                            try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { Color(0xFFCCFF00) }
                                         }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .clip(CircleShape)
+                                                .background(parsedColor)
+                                                .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                        )
                                     }
+                                    
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    val parsedColorForWheel = remember(newClanColor) {
+                                        try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { Color(0xFFCCFF00) }
+                                    }
+                                    ColorWheel(
+                                        selectedColor = parsedColorForWheel,
+                                        onColorSelected = { color ->
+                                            val hex = String.format("#%06X", 0xFFFFFF and color.toArgb())
+                                            newClanColor = hex
+                                        },
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .align(Alignment.CenterHorizontally)
+                                    )
                                     
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Button(
@@ -4091,11 +3968,11 @@ fun GuildeScreen(
                                                 }
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
                                         shape = RoundedCornerShape(50),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text("CRÉER LE CLAN", fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("CRÉER LE CLAN", fontWeight = FontWeight.Bold, color = Color.Black)
                                     }
                                 }
                             }
@@ -4119,7 +3996,7 @@ fun GuildeScreen(
                 // CLANS TAB (Search & Explore clans)
                 if (isClanLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFFE040FB))
+                        CircularProgressIndicator(color = NeonVolt)
                     }
                 } else {
                     val filteredClans = remember(allClansList, clanSearchQuery) {
@@ -4140,7 +4017,7 @@ fun GuildeScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color(0xFFE040FB),
+                                focusedBorderColor = NeonVolt,
                                 unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f)
                             )
                         )
@@ -4159,7 +4036,7 @@ fun GuildeScreen(
                             ) {
                                 items(filteredClans) { clan ->
                                     val parsedCColor = remember(clan.color) {
-                                        try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { Color(0xFFE040FB) }
+                                        try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { NeonVolt }
                                     }
                                     Card(
                                         modifier = Modifier.fillMaxWidth()

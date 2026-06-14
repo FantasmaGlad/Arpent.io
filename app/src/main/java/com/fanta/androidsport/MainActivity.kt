@@ -2,6 +2,10 @@ package com.fanta.androidsport
 
 import android.os.Bundle
 import android.widget.Toast
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
@@ -77,98 +81,240 @@ fun ArpentMainScreen() {
     var navigationIndex by remember { mutableStateOf(0) }
     val context = LocalContext.current
 
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "ARPENT",
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = ".IO",
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp,
-                            color = NeonVolt
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        // Glowing status indicator dot
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(NeonVolt)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
+    // Required permissions depending on Android version
+    val requiredPermissions = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                android.Manifest.permission.POST_NOTIFICATIONS
             )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
+        } else {
+            arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        }
+    }
+
+    var permissionsGranted by remember {
+        mutableStateOf(requiredPermissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        })
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val fineGranted = results[android.Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = results[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        // Allow starting the map if at least one location permission is granted
+        if (fineGranted || coarseGranted) {
+            permissionsGranted = true
+        } else {
+            Toast.makeText(context, "L'accès à la localisation est obligatoire pour utiliser Arpent.io.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    if (permissionsGranted) {
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "ARPENT",
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 2.sp,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Text(
+                                text = ".IO",
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 2.sp,
+                                color = NeonVolt
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            // Glowing status indicator dot
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(NeonVolt)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp
+                ) {
+                    NavigationBarItem(
+                        selected = navigationIndex == 0,
+                        onClick = { navigationIndex = 0 },
+                        icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête") },
+                        label = { Text("Conquête") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NeonVolt,
+                            selectedTextColor = NeonVolt,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = navigationIndex == 1,
+                        onClick = { navigationIndex = 1 },
+                        icon = { Icon(Icons.Default.Star, contentDescription = "Classement") },
+                        label = { Text("Classement") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = ElectricBlue,
+                            selectedTextColor = ElectricBlue,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                    NavigationBarItem(
+                        selected = navigationIndex == 2,
+                        onClick = { navigationIndex = 2 },
+                        icon = { Icon(Icons.Default.Person, contentDescription = "Profil") },
+                        label = { Text("Profil") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = ActiveOrange,
+                            selectedTextColor = ActiveOrange,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    )
+                }
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
             ) {
-                NavigationBarItem(
-                    selected = navigationIndex == 0,
-                    onClick = { navigationIndex = 0 },
-                    icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête") },
-                    label = { Text("Conquête") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = NeonVolt,
-                        selectedTextColor = NeonVolt,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                )
-                NavigationBarItem(
-                    selected = navigationIndex == 1,
-                    onClick = { navigationIndex = 1 },
-                    icon = { Icon(Icons.Default.Star, contentDescription = "Classement") },
-                    label = { Text("Classement") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = ElectricBlue,
-                        selectedTextColor = ElectricBlue,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                )
-                NavigationBarItem(
-                    selected = navigationIndex == 2,
-                    onClick = { navigationIndex = 2 },
-                    icon = { Icon(Icons.Default.Person, contentDescription = "Profil") },
-                    label = { Text("Profil") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = ActiveOrange,
-                        selectedTextColor = ActiveOrange,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                )
+                when (navigationIndex) {
+                    0 -> ConquestMapScreen()
+                    1 -> LeaderboardScreen()
+                    2 -> ProfileScreen()
+                }
             }
         }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
+    } else {
+        PermissionRequestScreen(
+            onRequestPermissions = {
+                permissionLauncher.launch(requiredPermissions)
+            }
+        )
+    }
+}
+
+@Composable
+fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            when (navigationIndex) {
-                0 -> ConquestMapScreen()
-                1 -> LeaderboardScreen()
-                2 -> ProfileScreen()
+            // A beautiful glowing radar/location graphic
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .background(NeonVolt.copy(alpha = 0.15f))
+                    .border(2.dp, NeonVolt, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = null,
+                    tint = NeonVolt,
+                    modifier = Modifier.size(56.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Text(
+                text = "ARPENT.IO",
+                fontWeight = FontWeight.Black,
+                fontSize = 32.sp,
+                letterSpacing = 4.sp,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Autorisation Requise",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Pour conquérir les territoires, enregistrer vos courses et interagir avec la carte 3D, Arpent.io a besoin de vos autorisations système.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(
+                onClick = onRequestPermissions,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NeonVolt,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                Text(
+                    text = "AUTORISER L'ACCÈS",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    letterSpacing = 1.sp
+                )
             }
         }
     }

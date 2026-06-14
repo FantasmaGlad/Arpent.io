@@ -46,11 +46,11 @@ BEGIN
         UPDATE public.profiles 
         SET total_area_m2 = total_area_m2 + new.superficie_m2
         WHERE id = new.utilisateur_id;
-    ELIF (TG_OP = 'DELETE') THEN
+    ELSIF (TG_OP = 'DELETE') THEN
         UPDATE public.profiles 
         SET total_area_m2 = greatest(0.0, total_area_m2 - old.superficie_m2)
         WHERE id = old.utilisateur_id;
-    ELIF (TG_OP = 'UPDATE') THEN
+    ELSIF (TG_OP = 'UPDATE') THEN
         UPDATE public.profiles 
         SET total_area_m2 = greatest(0.0, total_area_m2 - old.superficie_m2 + new.superficie_m2)
         WHERE id = new.utilisateur_id;

@@ -21,3 +21,8 @@ local.properties
 skills-lock.json
 .claude/
 *.sql
+.mcp.json
+.kotlin/
+.venv/
+web-admin/AGENTS.md
+web-admin/CLAUDE.md

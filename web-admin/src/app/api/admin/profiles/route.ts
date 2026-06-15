@@ -1,0 +1,95 @@
+import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
+
+// Helper function to check if the caller is the authorized admin
+async function verifyAdmin(request: Request) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return false;
+  }
+  const token = authHeader.split(' ')[1];
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  
+  if (error || !user) {
+    return false;
+  }
+  
+  return user.email === 'clement.barillot3901@gmail.com';
+}
+
+export async function PUT(request: Request) {
+  const isAdmin = await verifyAdmin(request);
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const { userId, pseudonyme, avatarUrl } = await request.json();
+
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+    }
+
+    const updates: any = {};
+    if (pseudonyme !== undefined) updates.pseudonyme = pseudonyme;
+    if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
+
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true, profile: data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const isAdmin = await verifyAdmin(request);
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+
+  if (!userId) {
+    return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+  }
+
+  try {
+    // 1. Get profile to find if there is an avatar file to clean up
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('avatar_url')
+      .eq('id', userId)
+      .single();
+
+    // 2. Delete user from auth.users (which cascades to profiles, courses, territoires, etc.)
+    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 400 });
+    }
+
+    // 3. Clean up avatar in storage if it exists
+    if (profile?.avatar_url) {
+      // Extract file name from URL (usually ends with <userId>.jpg)
+      const parts = profile.avatar_url.split('/');
+      const fileName = parts[parts.length - 1];
+      if (fileName) {
+        await supabaseAdmin.storage.from('Images').remove([fileName]);
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

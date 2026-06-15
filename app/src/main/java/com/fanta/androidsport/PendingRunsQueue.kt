@@ -26,7 +26,13 @@ data class PendingRun(
     val isLoop: Boolean,
     val points: List<String>,
     val lastLatitude: Double?,
-    val lastLongitude: Double?
+    val lastLongitude: Double?,
+    val vitesseMoyenne: Double = 0.0,
+    val vitesseMax: Double = 0.0,
+    val allureMoyenne: Double = 0.0,
+    val caloriesEstimees: Double = 0.0,
+    val denivelePositif: Double = 0.0,
+    val deniveleNegatif: Double = 0.0
 )
 
 object PendingRunsQueue {
@@ -103,6 +109,12 @@ object PendingRunsQueue {
                     put("p_duree_secondes", JsonPrimitive(run.durationSec))
                     put("p_est_bouclee", JsonPrimitive(run.isLoop))
                     put("p_points", JsonArray(run.points.map { JsonPrimitive(it) }))
+                    put("p_vitesse_moyenne", JsonPrimitive(run.vitesseMoyenne))
+                    put("p_vitesse_max", JsonPrimitive(run.vitesseMax))
+                    put("p_allure_moyenne", JsonPrimitive(run.allureMoyenne))
+                    put("p_calories_estimees", JsonPrimitive(run.caloriesEstimees))
+                    put("p_denivele_positif", JsonPrimitive(run.denivelePositif))
+                    put("p_denivele_negatif", JsonPrimitive(run.deniveleNegatif))
                 }
 
                 supabase.postgrest.rpc("enregistrer_course", params)

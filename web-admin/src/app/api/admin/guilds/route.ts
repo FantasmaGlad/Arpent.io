@@ -33,7 +33,26 @@ export async function PUT(request: Request) {
     const updates: any = {};
     if (nom !== undefined) updates.nom = nom;
     if (couleurHex !== undefined) updates.couleur_hex = couleurHex;
-    if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
+    if (avatarUrl !== undefined) {
+      updates.avatar_url = avatarUrl;
+      if (avatarUrl === null) {
+        // Fetch old avatar to delete from storage
+        const { data: guild } = await supabaseAdmin
+          .from('guildes')
+          .select('avatar_url')
+          .eq('id', guildId)
+          .single();
+        if (guild?.avatar_url) {
+          const parts = guild.avatar_url.split('/');
+          const fileName = parts[parts.length - 1];
+          if (fileName) {
+            // Remove cache busting query param if present
+            const cleanFileName = fileName.split('?')[0];
+            await supabaseAdmin.storage.from('Images').remove([cleanFileName]);
+          }
+        }
+      }
+    }
     if (chefId !== undefined) updates.chef_id = chefId === '' ? null : chefId;
 
     const { data, error } = await supabaseAdmin
@@ -89,7 +108,8 @@ export async function DELETE(request: Request) {
       const parts = guild.avatar_url.split('/');
       const fileName = parts[parts.length - 1];
       if (fileName) {
-        await supabaseAdmin.storage.from('Images').remove([fileName]);
+        const cleanFileName = fileName.split('?')[0];
+        await supabaseAdmin.storage.from('Images').remove([cleanFileName]);
       }
     }
 

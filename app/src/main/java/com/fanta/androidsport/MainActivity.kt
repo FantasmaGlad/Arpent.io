@@ -1937,7 +1937,7 @@ fun ConquestMapScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "${"%.2f".format(currentArea)} km²",
+                    text = "${"%.3f".format(currentArea)} km²",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.onSurface
@@ -2165,11 +2165,8 @@ fun ConquestMapScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Superficie conquise :", color = Color.Black)
-                            val areaStr = if (player.totalAreaM2 >= 10000.0) {
-                                "%.4f km²".format(player.totalAreaM2 / 1_000_000.0)
-                            } else {
-                                "${player.totalAreaM2.toInt()} m²"
-                            }
+                            val areaStr = "%.3f"
+                                .format(player.totalAreaM2 / 1_000_000.0) + " km²"
                             Text(
                                 text = areaStr,
                                 fontWeight = FontWeight.Bold,
@@ -2416,11 +2413,8 @@ fun LeaderboardScreen(
                                             )
                                         }
                                     }
-                                    val areaStr = if (me.totalAreaM2 >= 10000) {
-                                        "%.4f km²".format(me.totalAreaM2 / 1_000_000.0)
-                                    } else {
-                                        "${me.totalAreaM2.toInt()} m²"
-                                    }
+                                    val areaStr = "%.3f"
+                                        .format(me.totalAreaM2 / 1_000_000.0) + " km²"
                                     Text(
                                         text = areaStr,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -2568,11 +2562,8 @@ fun LeaderboardScreen(
                                             }
                                         }
                                     }
-                                    val areaStr = if (player.totalAreaM2 >= 10000) {
-                                        "%.4f km²".format(player.totalAreaM2 / 1_000_000.0)
-                                    } else {
-                                        "${player.totalAreaM2.toInt()} m²"
-                                    }
+                                    val areaStr = "%.3f"
+                                        .format(player.totalAreaM2 / 1_000_000.0) + " km²"
                                     Text(
                                         text = areaStr,
                                         fontWeight = FontWeight.Bold,
@@ -2671,11 +2662,8 @@ fun LeaderboardScreen(
                                                 )
                                             }
                                         }
-                                        val areaStr = if (myClan.totalAreaM2 >= 10000) {
-                                            "%.4f km²".format(myClan.totalAreaM2 / 1_000_000.0)
-                                        } else {
-                                            "${myClan.totalAreaM2.toInt()} m²"
-                                        }
+                                        val areaStr = "%.3f"
+                                            .format(myClan.totalAreaM2 / 1_000_000.0) + " km²"
                                         Text(
                                             text = areaStr,
                                             style = MaterialTheme.typography.bodyMedium,
@@ -2814,11 +2802,8 @@ fun LeaderboardScreen(
                                             )
                                         }
                                     }
-                                    val areaStr = if (clan.totalAreaM2 >= 10000) {
-                                        "%.4f km²".format(clan.totalAreaM2 / 1_000_000.0)
-                                    } else {
-                                        "${clan.totalAreaM2.toInt()} m²"
-                                    }
+                                    val areaStr = "%.3f"
+                                        .format(clan.totalAreaM2 / 1_000_000.0) + " km²"
                                     Text(
                                         text = areaStr,
                                         fontWeight = FontWeight.Bold,
@@ -3604,7 +3589,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Empire All-Time", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), textAlign = TextAlign.Center)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("${"%.4f".format(allTimeArea)} km²", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    Text("${"%.3f".format(allTimeArea)} km²", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
             }
             Card(
@@ -3620,7 +3605,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Empire Actuel", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), textAlign = TextAlign.Center)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("${"%.4f".format(currentArea)} km²", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    Text("${"%.3f".format(currentArea)} km²", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
             }
         }

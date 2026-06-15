@@ -318,7 +318,7 @@ export default function ClansPage() {
                   <div>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Empire</span>
                     <p style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '2px' }}>
-                      {area.toLocaleString('fr-FR')} m²
+                      {(area / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
                     </p>
                   </div>
                 </div>
@@ -419,7 +419,7 @@ export default function ClansPage() {
               <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 600 }}>Territoire Contrôlé</span>
                 <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '4px' }}>
-                  {guildArea.toLocaleString('fr-FR')} m²
+                  {(guildArea / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
                 </p>
               </div>
               <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>

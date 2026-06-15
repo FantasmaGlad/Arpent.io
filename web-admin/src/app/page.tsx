@@ -416,7 +416,7 @@ export default function DashboardPage() {
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>Superficie Totale</p>
             <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>
-              {totalArea.toLocaleString('fr-FR')} m²
+              {(totalArea / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
             </p>
           </div>
         </div>
@@ -461,7 +461,7 @@ export default function DashboardPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.04)', paddingBottom: '8px' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Superficie :</span>
-                <span style={{ fontWeight: 600, color: 'var(--text-white)' }}>{selectedTerritory.superficie.toLocaleString('fr-FR')} m²</span>
+                <span style={{ fontWeight: 600, color: 'var(--text-white)' }}>{(selectedTerritory.superficie / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²</span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '4px' }}>

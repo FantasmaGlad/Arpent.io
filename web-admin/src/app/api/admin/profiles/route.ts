@@ -32,7 +32,26 @@ export async function PUT(request: Request) {
 
     const updates: any = {};
     if (pseudonyme !== undefined) updates.pseudonyme = pseudonyme;
-    if (avatarUrl !== undefined) updates.avatar_url = avatarUrl;
+    if (avatarUrl !== undefined) {
+      updates.avatar_url = avatarUrl;
+      if (avatarUrl === null) {
+        // Fetch old avatar to delete from storage
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('avatar_url')
+          .eq('id', userId)
+          .single();
+        if (profile?.avatar_url) {
+          const parts = profile.avatar_url.split('/');
+          const fileName = parts[parts.length - 1];
+          if (fileName) {
+            // Remove cache busting query param if present
+            const cleanFileName = fileName.split('?')[0];
+            await supabaseAdmin.storage.from('Images').remove([cleanFileName]);
+          }
+        }
+      }
+    }
 
     const { data, error } = await supabaseAdmin
       .from('profiles')
@@ -84,7 +103,8 @@ export async function DELETE(request: Request) {
       const parts = profile.avatar_url.split('/');
       const fileName = parts[parts.length - 1];
       if (fileName) {
-        await supabaseAdmin.storage.from('Images').remove([fileName]);
+        const cleanFileName = fileName.split('?')[0];
+        await supabaseAdmin.storage.from('Images').remove([cleanFileName]);
       }
     }
 

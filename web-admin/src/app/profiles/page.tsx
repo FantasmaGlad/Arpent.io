@@ -278,7 +278,7 @@ export default function ProfilesPage() {
                   <th>Tag</th>
                   <th>Clan</th>
                   <th>Grade</th>
-                  <th>Zone Conquise (m²)</th>
+                  <th>Zone Conquise (km²)</th>
                   <th>Inscription</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -333,7 +333,7 @@ export default function ProfilesPage() {
                         )}
                       </td>
                       <td style={{ fontWeight: 700, color: 'var(--neon-volt)' }}>
-                        {p.total_area_m2.toLocaleString('fr-FR')} m²
+                        {(p.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
                       </td>
                       <td>
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
@@ -465,7 +465,7 @@ export default function ProfilesPage() {
               <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 600 }}>Surface Territoriale</span>
                 <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '4px' }}>
-                  {selectedProfile.total_area_m2.toLocaleString('fr-FR')} m²
+                  {(selectedProfile.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
                 </p>
               </div>
               <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>

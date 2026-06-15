@@ -13,7 +13,10 @@ import {
   User,
   Save,
   Image as ImageIcon,
-  MapPin
+  MapPin,
+  Sparkles,
+  ChevronRight,
+  ShieldAlert
 } from 'lucide-react';
 
 interface Guild {
@@ -32,12 +35,14 @@ interface Profile {
   tag: string | null;
   guilde_id: string | null;
   grade: string | null;
+  avatar_url: string | null;
 }
 
 interface Territory {
   id: string;
   guilde_id: string | null;
   superficie_m2: number;
+  points: string[];
 }
 
 export default function ClansPage() {
@@ -45,12 +50,19 @@ export default function ClansPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Filters and sorting
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('total_area_desc');
 
   // Selected clan details modal
   const [selectedGuild, setSelectedGuild] = useState<Guild | null>(null);
   const [guildMembers, setGuildMembers] = useState<Profile[]>([]);
-  const [guildArea, setGuildArea] = useState(0);
+  const [guildTerritories, setGuildTerritories] = useState<Territory[]>([]);
+  
+  // Tab inside modal
+  const [activeTab, setActiveTab] = useState<'generale' | 'membres' | 'territoires'>('generale');
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
 
   // Edit fields
   const [isEditing, setIsEditing] = useState(false);
@@ -72,8 +84,8 @@ export default function ClansPage() {
         { data: territoriesData }
       ] = await Promise.all([
         supabase.from('guildes').select('*').order('date_creation', { ascending: false }),
-        supabase.from('profiles').select('id, pseudonyme, tag, guilde_id, grade'),
-        supabase.from('territoires').select('id, guilde_id, superficie_m2')
+        supabase.from('profiles').select('id, pseudonyme, tag, guilde_id, grade, avatar_url'),
+        supabase.from('territoires').select('id, guilde_id, superficie_m2, points')
       ]);
 
       setGuilds((guildsData || []) as Guild[]);
@@ -90,20 +102,19 @@ export default function ClansPage() {
   useEffect(() => {
     if (!selectedGuild) return;
 
-    // Filter members
+    // Filter members and territories
     const members = profiles.filter(p => p.guilde_id === selectedGuild.id);
     setGuildMembers(members);
 
-    // Sum area of territories owned by this clan
-    const area = territories
-      .filter(t => t.guilde_id === selectedGuild.id)
-      .reduce((acc, curr) => acc + curr.superficie_m2, 0);
-    setGuildArea(area);
+    const guildTerrs = territories.filter(t => t.guilde_id === selectedGuild.id);
+    setGuildTerritories(guildTerrs);
 
     setIsEditing(false);
     setNewNom(selectedGuild.nom);
     setNewCouleur(selectedGuild.couleur_hex);
     setMessage(null);
+    setActiveTab('generale');
+    setMemberSearchTerm('');
   }, [selectedGuild, profiles, territories]);
 
   const handleUpdateGuild = async () => {
@@ -185,7 +196,7 @@ export default function ClansPage() {
   };
 
   const handleDeleteGuild = async (guildId: string) => {
-    if (!confirm("Voulez-vous vraiment supprimer ce clan ?\n\nTous ses membres deviendront autonomes, et les territoires conquis par ce clan ne lui seront plus rattachés.\n\nCette action est irréversible. Continuer ?")) {
+    if (!confirm("Voulez-vous vraiment dissoudre ce clan ?\n\nTous ses membres deviendront autonomes, et les territoires conquis par ce clan ne lui seront plus rattachés.\n\nCette action est irréversible. Continuer ?")) {
       return;
     }
 
@@ -210,9 +221,7 @@ export default function ClansPage() {
       setSelectedGuild(null);
       setGuilds(prev => prev.filter(g => g.id !== guildId));
       
-      // Update local profiles association
       setProfiles(prev => prev.map(p => p.guilde_id === guildId ? { ...p, guilde_id: null } : p));
-      // Update local territories association
       setTerritories(prev => prev.map(t => t.guilde_id === guildId ? { ...t, guilde_id: null } : t));
     } catch (err: any) {
       alert(`Erreur : ${err.message}`);
@@ -221,13 +230,62 @@ export default function ClansPage() {
     }
   };
 
-  // Filter guilds
-  const filteredGuilds = guilds.filter(g => {
-    const name = g.nom.toLowerCase();
-    const tag = (g.tag || '').toLowerCase();
-    const search = searchTerm.toLowerCase();
-    return name.includes(search) || tag.includes(search);
+  // Redirect to dashboard centered on specific territory
+  const centerTerritoryOnMap = (t: Territory) => {
+    const pointStr = t.points?.[0];
+    if (pointStr) {
+      const parts = pointStr.trim().split(' ');
+      if (parts.length >= 2) {
+        const lng = parseFloat(parts[0]);
+        const lat = parseFloat(parts[1]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          localStorage.setItem('map_center_lat', lat.toString());
+          localStorage.setItem('map_center_lng', lng.toString());
+          window.location.href = '/';
+        }
+      }
+    }
+  };
+
+  // Filter and sort guilds list
+  const filteredGuilds = guilds
+    .filter(g => {
+      const name = g.nom.toLowerCase();
+      const tag = (g.tag || '').toLowerCase();
+      const search = searchTerm.toLowerCase();
+      return name.includes(search) || tag.includes(search);
+    })
+    .sort((a, b) => {
+      const getGuildArea = (gid: string) => territories.filter(t => t.guilde_id === gid).reduce((acc, curr) => acc + curr.superficie_m2, 0);
+      const getGuildMembers = (gid: string) => profiles.filter(p => p.guilde_id === gid).length;
+
+      if (sortBy === 'nom') {
+        return a.nom.localeCompare(b.nom);
+      } else if (sortBy === 'total_area_desc') {
+        return getGuildArea(b.id) - getGuildArea(a.id);
+      } else if (sortBy === 'total_area_asc') {
+        return getGuildArea(a.id) - getGuildArea(b.id);
+      } else if (sortBy === 'members_desc') {
+        return getGuildMembers(b.id) - getGuildMembers(a.id);
+      } else if (sortBy === 'members_asc') {
+        return getGuildMembers(a.id) - getGuildMembers(b.id);
+      } else if (sortBy === 'date_creation_desc') {
+        return new Date(b.date_creation).getTime() - new Date(a.date_creation).getTime();
+      } else if (sortBy === 'date_creation_asc') {
+        return new Date(a.date_creation).getTime() - new Date(b.date_creation).getTime();
+      }
+      return 0;
+    });
+
+  // Filter members inside the selected clan modal
+  const filteredGuildMembers = guildMembers.filter(m => {
+    const pseudo = (m.pseudonyme || '').toLowerCase();
+    const tag = (m.tag || '').toLowerCase();
+    const s = memberSearchTerm.toLowerCase();
+    return pseudo.includes(s) || tag.includes(s);
   });
+
+  const totalGuildAreaM2 = guildTerritories.reduce((acc, curr) => acc + curr.superficie_m2, 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -239,27 +297,46 @@ export default function ClansPage() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginTop: '4px' }}>Modération des empires et guildes militaires d'Arpent.io</p>
       </div>
 
-      {/* Search Bar */}
-      <div className="glass-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <Search size={20} style={{ color: 'var(--text-muted)' }} />
-        <input 
-          type="text" 
-          placeholder="Rechercher par nom ou tag (#)..." 
-          className="input-field"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ border: 'none', background: 'transparent', padding: '0', fontSize: '1rem' }}
-        />
+      {/* Filter and search bar */}
+      <div className="glass-card" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <Search size={20} style={{ color: 'var(--text-muted)' }} />
+          <input 
+            type="text" 
+            placeholder="Rechercher un clan par nom ou tag (#)..." 
+            className="input-field"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ border: 'none', background: 'transparent', padding: '0', fontSize: '1rem', width: '100%' }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <select 
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="input-field"
+            style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+          >
+            <option value="total_area_desc">Empire territorial (Max)</option>
+            <option value="total_area_asc">Empire territorial (Min)</option>
+            <option value="members_desc">Membres (Max)</option>
+            <option value="members_asc">Membres (Min)</option>
+            <option value="date_creation_desc">Créations récentes</option>
+            <option value="date_creation_asc">Créations anciennes</option>
+            <option value="nom">Nom du clan (A-Z)</option>
+          </select>
+        </div>
       </div>
 
       {/* Clans Grid */}
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Chargement des guildes territoriales...
+          Scan des réseaux de communication des clans...
         </div>
       ) : filteredGuilds.length === 0 ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Aucun clan ne correspond à votre recherche.
+          Aucun empire n'a été repéré sur ces coordonnées.
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
@@ -282,42 +359,42 @@ export default function ClansPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {g.avatar_url ? (
-                      <img src={g.avatar_url} alt="" className="avatar" />
+                      <img src={g.avatar_url} alt="" className="avatar" style={{ borderColor: g.couleur_hex }} />
                     ) : (
-                      <div className="avatar avatar-placeholder" style={{ color: g.couleur_hex }}>
+                      <div className="avatar avatar-placeholder" style={{ color: g.couleur_hex, borderColor: g.couleur_hex }}>
                         {g.nom.substring(0, 2).toUpperCase()}
                       </div>
                     )}
                     <div>
-                      <h3 style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-white)' }}>{g.nom}</h3>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--electric-blue)', fontFamily: 'monospace', fontWeight: 600, marginTop: '2px' }}>
+                      <h3 style={{ fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-white)' }}>{g.nom}</h3>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--electric-blue)', fontFamily: 'monospace', fontWeight: 700, marginTop: '2px' }}>
                         {g.tag || ''}
                       </p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                        <User size={12} /> Chef : {leader?.pseudonyme || 'Inconnu'}
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                        <User size={12} style={{ color: g.couleur_hex }} /> Chef : {leader?.pseudonyme || 'Inconnu'}
                       </p>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button className="btn-icon" onClick={() => setSelectedGuild(g)} title="Inspecter le clan">
-                      <Swords size={14} style={{ color: 'var(--electric-blue)' }} />
+                    <button className="btn-icon" onClick={() => setSelectedGuild(g)} title="Inspecter le clan" style={{ color: 'var(--electric-blue)' }}>
+                      <Swords size={16} />
                     </button>
-                    <button className="btn-icon" onClick={() => handleDeleteGuild(g.id)} title="Supprimer le clan">
-                      <Trash2 size={14} style={{ color: 'var(--active-orange)' }} />
+                    <button className="btn-icon" onClick={() => handleDeleteGuild(g.id)} title="Dissoudre le clan" style={{ color: 'var(--active-orange)' }}>
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'rgba(15, 19, 24, 0.3)', padding: '12px', borderRadius: '8px' }}>
                   <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Membres</span>
-                    <p style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>
-                      <Users size={14} style={{ marginRight: '6px', color: 'var(--electric-blue)' }} /> {membersCount}
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Effectif</span>
+                    <p style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Users size={14} style={{ color: 'var(--electric-blue)' }} /> {membersCount}
                     </p>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Empire</span>
-                    <p style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '2px' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Domaine</span>
+                    <p style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '2px' }}>
                       {(area / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
                     </p>
                   </div>
@@ -328,72 +405,96 @@ export default function ClansPage() {
         </div>
       )}
 
-      {/* Inspector Modal */}
+      {/* Inspector Modal with Custom Tabs */}
       {selectedGuild && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ border: `1px solid ${selectedGuild.couleur_hex}` }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+          <div className="modal-content glass-card" style={{ 
+            border: `1px solid ${selectedGuild.couleur_hex}`,
+            maxWidth: '650px',
+            padding: '0',
+            overflow: 'hidden'
+          }}>
+            
+            {/* Header Banner */}
+            <div style={{
+              background: `linear-gradient(135deg, rgba(15, 19, 24, 0.9) 0%, rgba(30, 36, 44, 0.9) 100%)`,
+              padding: '24px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 {selectedGuild.avatar_url ? (
-                  <img src={selectedGuild.avatar_url} alt="" className="avatar avatar-large" />
+                  <img src={selectedGuild.avatar_url} alt="" className="avatar avatar-large" style={{ borderColor: selectedGuild.couleur_hex }} />
                 ) : (
-                  <div className="avatar avatar-large avatar-placeholder" style={{ color: selectedGuild.couleur_hex, fontSize: '1.8rem' }}>
+                  <div className="avatar avatar-large avatar-placeholder" style={{ color: selectedGuild.couleur_hex, borderColor: selectedGuild.couleur_hex }}>
                     {selectedGuild.nom.substring(0, 2).toUpperCase()}
                   </div>
                 )}
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     {isEditing ? (
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <input 
                           type="text" 
                           className="input-field" 
                           value={newNom}
                           onChange={(e) => setNewNom(e.target.value)}
-                          style={{ padding: '6px 12px', fontSize: '1.25rem', width: '200px' }}
+                          style={{ padding: '4px 10px', fontSize: '1.1rem', width: '180px' }}
                         />
                         <input 
                           type="color" 
                           value={newCouleur}
                           onChange={(e) => setNewCouleur(e.target.value)}
-                          style={{ width: '40px', height: '40px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          style={{ width: '32px', height: '32px', border: 'none', background: 'transparent', cursor: 'pointer' }}
                         />
+                        <button className="btn btn-primary" onClick={handleUpdateGuild} disabled={actionLoading} style={{ padding: '6px 12px' }}>
+                          <Save size={14} />
+                        </button>
                       </div>
                     ) : (
-                      <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>{selectedGuild.nom}</h2>
-                    )}
-
-                    {isEditing ? (
-                      <button className="btn-icon" onClick={handleUpdateGuild} disabled={actionLoading}>
-                        <Save size={16} style={{ color: 'var(--neon-volt)' }} />
-                      </button>
-                    ) : (
-                      <button className="btn-icon" onClick={() => setIsEditing(true)}>
-                        <Edit2 size={14} style={{ color: 'var(--text-muted)' }} />
-                      </button>
+                      <>
+                        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-white)' }}>{selectedGuild.nom}</h2>
+                        <button className="btn-icon" onClick={() => setIsEditing(true)} style={{ padding: '4px' }}>
+                          <Edit2 size={12} style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                      </>
                     )}
                   </div>
-                  <p style={{ color: 'var(--electric-blue)', fontSize: '0.95rem', marginTop: '4px', fontFamily: 'monospace', fontWeight: 700 }}>
-                    {selectedGuild.tag || 'Aucun tag'}
-                  </p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px', fontFamily: 'monospace' }}>
-                    ID: {selectedGuild.id}
+                  <p style={{ color: 'var(--electric-blue)', fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 700, marginTop: '2px' }}>
+                    TAG CLAN: {selectedGuild.tag || 'NON DÉFINI'}
                   </p>
                 </div>
               </div>
-              <button className="btn-icon" onClick={() => setSelectedGuild(null)}>
-                <X size={20} />
+              
+              <button 
+                onClick={() => setSelectedGuild(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem'
+                }}
+              >
+                ×
               </button>
             </div>
 
-            {/* Notification message */}
+            {/* Notification messages */}
             {message && (
               <div style={{
+                margin: '16px 24px 0 24px',
                 padding: '10px 16px',
                 borderRadius: '8px',
-                marginBottom: '16px',
-                fontSize: '0.9rem',
+                fontSize: '0.85rem',
                 backgroundColor: message.type === 'success' ? 'rgba(204, 255, 0, 0.1)' : 'rgba(255, 109, 0, 0.1)',
                 border: message.type === 'success' ? '1px solid var(--neon-volt)' : '1px solid var(--active-orange)',
                 color: message.type === 'success' ? 'var(--neon-volt)' : 'var(--active-orange)'
@@ -402,84 +503,255 @@ export default function ClansPage() {
               </div>
             )}
 
-            {/* Guild Actions Panel */}
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-              {selectedGuild.avatar_url && (
-                <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
-                  <ImageIcon size={14} /> Supprimer l'emblème
-                </button>
-              )}
-              <button className="btn btn-danger" onClick={() => handleDeleteGuild(selectedGuild.id)} disabled={actionLoading} style={{ padding: '8px 16px', fontSize: '0.85rem', marginLeft: 'auto' }}>
-                <Trash2 size={14} /> Dissoudre le clan
+            {/* Tabs Row */}
+            <div style={{ 
+              display: 'flex', 
+              background: 'rgba(15, 19, 24, 0.6)', 
+              borderBottom: '1px solid var(--border-color)',
+              padding: '0 24px'
+            }}>
+              <button 
+                onClick={() => setActiveTab('generale')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'generale' ? '2px solid var(--electric-blue)' : '2px solid transparent',
+                  color: activeTab === 'generale' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Général
+              </button>
+              <button 
+                onClick={() => setActiveTab('membres')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'membres' ? '2px solid var(--electric-blue)' : '2px solid transparent',
+                  color: activeTab === 'membres' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Membres ({guildMembers.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('territoires')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'territoires' ? '2px solid var(--electric-blue)' : '2px solid transparent',
+                  color: activeTab === 'territoires' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Territoires ({guildTerritories.length})
               </button>
             </div>
 
-            {/* Stats Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
-              <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 600 }}>Territoire Contrôlé</span>
-                <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '4px' }}>
-                  {(guildArea / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
-                </p>
-              </div>
-              <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 600 }}>Date de création</span>
-                <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-white)', marginTop: '4px' }}>
-                  {new Date(selectedGuild.date_creation).toLocaleDateString('fr-FR')}
-                </p>
-              </div>
-            </div>
+            {/* Modal Body */}
+            <div style={{ padding: '24px', maxHeight: '500px', overflowY: 'auto' }}>
+              
+              {/* TAB 1: GENERAL */}
+              {activeTab === 'generale' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  {/* Action buttons */}
+                  <div style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    {selectedGuild.avatar_url && (
+                      <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                        <ImageIcon size={12} /> Supprimer l'emblème
+                      </button>
+                    )}
+                    <button className="btn btn-danger" onClick={() => handleDeleteGuild(selectedGuild.id)} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem', marginLeft: 'auto' }}>
+                      <Trash2 size={12} /> Dissoudre le clan
+                    </button>
+                  </div>
 
-            {/* Member List */}
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Users size={18} style={{ color: 'var(--electric-blue)' }} /> Liste des Membres Actifs ({guildMembers.length})
-              </h3>
+                  {/* Summary details */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>UUID de Guilde</span>
+                        <p style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px', wordBreak: 'break-all' }}>{selectedGuild.id}</p>
+                      </div>
 
-              {guildMembers.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', padding: '16px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center' }}>
-                  Cette guilde ne contient aucune recrue pour le moment.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto', paddingRight: '8px' }}>
-                  {guildMembers.map((m) => (
-                    <div 
-                      key={m.id}
-                      style={{
-                        background: 'rgba(255, 255, 255, 0.02)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        padding: '12px 16px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{
-                          width: '8px',
-                          height: '8px',
-                          borderRadius: '50%',
-                          backgroundColor: selectedGuild.couleur_hex
-                        }} />
-                        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{m.pseudonyme || 'Recrue'}</span>
-                        {m.grade === 'chef' ? (
-                          <span style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '12px', backgroundColor: 'rgba(255, 215, 0, 0.15)', color: '#FFD700', border: '1px solid #FFD700', fontWeight: 700 }}>👑 Chef</span>
-                        ) : m.grade === 'adjoint' ? (
-                          <span style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '12px', backgroundColor: 'rgba(192, 192, 192, 0.15)', color: '#C0C0C0', border: '1px solid #C0C0C0', fontWeight: 700 }}>⚔️ Adjoint</span>
-                        ) : (
-                          <span style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', fontWeight: 600 }}>Membre</span>
-                        )}
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Date de fondation</span>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-white)', marginTop: '2px' }}>
+                          {new Date(selectedGuild.date_creation).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
                     </div>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--electric-blue)', fontFamily: 'monospace', fontWeight: 600 }}>
-                      {m.tag || `ID: ${m.id.substring(0, 8)}...`}
-                    </span>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Couleur de Guilde</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                          <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '3px', backgroundColor: selectedGuild.couleur_hex }} />
+                          <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)' }}>{selectedGuild.couleur_hex}</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Commandant en Chef</span>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-white)', marginTop: '2px', fontWeight: 'bold' }}>
+                          {profiles.find(p => p.id === selectedGuild.chef_id)?.pseudonyme || 'Inconnu / Aucun'}
+                        </p>
+                      </div>
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Territory totals */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Territoire Clanique</span>
+                      <p style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '4px' }}>
+                        {(totalGuildAreaM2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
+                      </p>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Secteurs Conquis</span>
+                      <p style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--electric-blue)', marginTop: '4px' }}>
+                        {guildTerritories.length}
+                      </p>
+                    </div>
+                  </div>
+
                 </div>
               )}
+
+              {/* TAB 2: MEMBERS */}
+              {activeTab === 'membres' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  
+                  {/* Search inside members */}
+                  <div className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 16px' }}>
+                    <Search size={16} style={{ color: 'var(--text-muted)' }} />
+                    <input 
+                      type="text" 
+                      placeholder="Filtrer les membres..." 
+                      className="input-field" 
+                      value={memberSearchTerm}
+                      onChange={(e) => setMemberSearchTerm(e.target.value)}
+                      style={{ border: 'none', background: 'transparent', padding: '0', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  {filteredGuildMembers.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px' }}>Aucun soldat ne correspond.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {filteredGuildMembers.map((m) => (
+                        <div 
+                          key={m.id}
+                          style={{
+                            background: 'rgba(15, 19, 24, 0.2)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '10px 14px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {m.avatar_url ? (
+                              <img src={m.avatar_url} alt="" className="avatar" style={{ width: '28px', height: '28px' }} />
+                            ) : (
+                              <div className="avatar avatar-placeholder" style={{ width: '28px', height: '28px', fontSize: '0.75rem' }}>
+                                {m.pseudonyme?.substring(0, 2).toUpperCase() || 'SO'}
+                              </div>
+                            )}
+                            <div>
+                              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-white)' }}>{m.pseudonyme || 'Recrue'}</span>
+                              <span style={{ marginLeft: '8px', fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{m.tag || ''}</span>
+                            </div>
+                          </div>
+
+                          <div>
+                            {m.grade === 'chef' ? (
+                              <span style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '12px', backgroundColor: 'rgba(255, 215, 0, 0.15)', color: '#FFD700', border: '1px solid #FFD700', fontWeight: 700 }}>👑 Chef</span>
+                            ) : m.grade === 'adjoint' ? (
+                              <span style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '12px', backgroundColor: 'rgba(192, 192, 192, 0.15)', color: '#C0C0C0', border: '1px solid #C0C0C0', fontWeight: 700 }}>⚔️ Adjoint</span>
+                            ) : (
+                              <span style={{ fontSize: '0.7rem', padding: '1px 8px', borderRadius: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Membre</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+              {/* TAB 3: TERRITORIES */}
+              {activeTab === 'territoires' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  
+                  {guildTerritories.length === 0 ? (
+                    <div style={{ padding: '32px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Ce clan ne possède aucun territoire enregistré sur la carte.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {guildTerritories.map((t, index) => (
+                        <div 
+                          key={t.id}
+                          style={{
+                            background: 'rgba(15, 19, 24, 0.2)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px 16px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <div>
+                            <p style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-white)' }}>Secteur #{index + 1}</p>
+                            <p style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)', marginTop: '2px' }}>ID: {t.id.substring(0, 8)}...</p>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <span style={{ fontWeight: 800, color: 'var(--neon-volt)', fontSize: '0.95rem' }}>
+                              {(t.superficie_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
+                            </span>
+                            
+                            {t.points && t.points.length > 0 && (
+                              <button 
+                                className="btn-icon" 
+                                title="Localiser sur la carte"
+                                onClick={() => centerTerritoryOnMap(t)}
+                                style={{ color: 'var(--electric-blue)' }}
+                              >
+                                <MapPin size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+              )}
+
             </div>
           </div>
         </div>

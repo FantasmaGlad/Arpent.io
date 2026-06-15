@@ -14,8 +14,24 @@ import {
   User,
   ShieldAlert,
   Save,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Award,
+  Flame,
+  MapPin,
+  Sparkles,
+  Users,
+  Compass,
+  ChevronRight
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip
+} from 'recharts';
 
 interface Profile {
   id: string;
@@ -27,12 +43,16 @@ interface Profile {
   empire_color: string;
   date_inscription: string;
   grade: string | null;
+  share_location: boolean;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface Guild {
   id: string;
   nom: string;
   couleur_hex: string;
+  tag: string | null;
 }
 
 interface Course {
@@ -47,7 +67,6 @@ interface Course {
   calories_estimees: number;
   denivele_positif: number;
   denivele_negatif: number;
-  points_gps_count: number;
 }
 
 export default function ProfilesPage() {
@@ -55,11 +74,26 @@ export default function ProfilesPage() {
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [mounted, setMounted] = useState(false);
+  
+  // Advanced filters and sorting
+  const [clanFilter, setClanFilter] = useState('all');
+  const [gradeFilter, setGradeFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('total_area_desc');
 
   // Selected profile details modal
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
+
+  // Tabs for player inspector modal
+  const [activeTab, setActiveTab] = useState<'dossier' | 'amis' | 'entrainement'>('dossier');
+  const [friends, setFriends] = useState<any[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
+
+  // Modal filters
+  const [minDistance, setMinDistance] = useState<number>(0);
+  const [loopOnlyFilter, setLoopOnlyFilter] = useState<'all' | 'loops' | 'noloops'>('all');
 
   // Edit fields
   const [isEditing, setIsEditing] = useState(false);
@@ -68,6 +102,7 @@ export default function ProfilesPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     fetchData();
   }, []);
 
@@ -79,7 +114,7 @@ export default function ProfilesPage() {
         { data: guildsData }
       ] = await Promise.all([
         supabase.from('profiles').select('*').order('total_area_m2', { ascending: false }),
-        supabase.from('guildes').select('id, nom, couleur_hex')
+        supabase.from('guildes').select('id, nom, couleur_hex, tag')
       ]);
 
       setProfiles((profilesData || []) as Profile[]);
@@ -91,31 +126,61 @@ export default function ProfilesPage() {
     }
   }
 
-  // Fetch courses when a profile is selected
+  // Fetch details (courses & friends) when a profile is selected
   useEffect(() => {
     if (!selectedProfile) return;
 
-    async function fetchCourses() {
+    async function fetchDetails() {
       setLoadingCourses(true);
+      setLoadingFriends(true);
+      setFriends([]);
       try {
-        const { data, error } = await supabase
+        // 1. Fetch courses
+        const { data: coursesData, error: coursesError } = await supabase
           .from('courses')
           .select('*')
           .eq('utilisateur_id', selectedProfile!.id)
           .order('date_debut', { ascending: false });
 
-        if (error) throw error;
-        setCourses((data || []) as Course[]);
+        if (coursesError) throw coursesError;
+        setCourses((coursesData || []) as Course[]);
+
+        // 2. Fetch friends from public.amis where relationship status is 'accepte'
+        const { data: amisData, error: amisError } = await supabase
+          .from('amis')
+          .select('demandeur_id, destinataire_id')
+          .or(`demandeur_id.eq.${selectedProfile!.id},destinataire_id.eq.${selectedProfile!.id}`)
+          .eq('statut', 'accepte');
+
+        if (amisError) throw amisError;
+
+        const friendIds = (amisData || []).map(a => 
+          a.demandeur_id === selectedProfile!.id ? a.destinataire_id : a.demandeur_id
+        );
+
+        if (friendIds.length > 0) {
+          const { data: friendProfiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, pseudonyme, tag, avatar_url, empire_color, total_area_m2')
+            .in('id', friendIds);
+
+          if (profilesError) throw profilesError;
+          setFriends(friendProfiles || []);
+        }
       } catch (err) {
-        console.error('Error fetching courses:', err);
+        console.error('Error fetching details:', err);
       } finally {
         setLoadingCourses(false);
+        setLoadingFriends(false);
       }
     }
 
-    fetchCourses();
+    fetchDetails();
     setIsEditing(false);
     setNewPseudonyme(selectedProfile.pseudonyme || '');
+    setActiveTab('dossier');
+    setMinDistance(0);
+    setLoopOnlyFilter('all');
   }, [selectedProfile]);
 
   const handleUpdateProfile = async () => {
@@ -146,7 +211,6 @@ export default function ProfilesPage() {
 
       setMessage({ type: 'success', text: 'Profil mis à jour avec succès.' });
       
-      // Update local state
       const updatedProfile = { ...selectedProfile, pseudonyme: newPseudonyme };
       setSelectedProfile(updatedProfile);
       setProfiles(prev => prev.map(p => p.id === selectedProfile.id ? updatedProfile : p));
@@ -197,7 +261,7 @@ export default function ProfilesPage() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm("ATTENTION : Cette action supprimera définitivement le compte d'authentification du joueur, son profil, ses territoires conquis, et ses sessions de course.\n\nCette action est irréversible. Voulez-vous continuer ?")) {
+    if (!confirm("ATTENTION : Cette action supprimera définitivement le compte d'authentification du joueur, son profil, ses territoires conquis, et ses sessions de course.\n\nCette action est irréversible. Continuer ?")) {
       return;
     }
 
@@ -228,13 +292,79 @@ export default function ProfilesPage() {
     }
   };
 
+  // Center player on main Map page
+  const centerPlayerOnMap = (lat: number, lng: number) => {
+    localStorage.setItem('map_center_lat', lat.toString());
+    localStorage.setItem('map_center_lng', lng.toString());
+    window.location.href = '/';
+  };
+
   // Filter profiles
-  const filteredProfiles = profiles.filter(p => {
-    const pseudo = (p.pseudonyme || '').toLowerCase();
-    const tag = (p.tag || '').toLowerCase();
-    const search = searchTerm.toLowerCase();
-    return pseudo.includes(search) || tag.includes(search);
+  const filteredProfiles = profiles
+    .filter(p => {
+      const pseudo = (p.pseudonyme || '').toLowerCase();
+      const tag = (p.tag || '').toLowerCase();
+      const search = searchTerm.toLowerCase();
+      const matchesSearch = pseudo.includes(search) || tag.includes(search);
+      
+      const matchesClan = clanFilter === 'all' || p.guilde_id === clanFilter;
+      
+      const matchesGrade = gradeFilter === 'all' || 
+        (gradeFilter === 'autonome' && !p.guilde_id) ||
+        (gradeFilter === 'chef' && p.grade === 'chef') ||
+        (gradeFilter === 'adjoint' && p.grade === 'adjoint') ||
+        (gradeFilter === 'membre' && p.guilde_id && p.grade !== 'chef' && p.grade !== 'adjoint');
+        
+      return matchesSearch && matchesClan && matchesGrade;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'pseudonyme') {
+        const nameA = (a.pseudonyme || '').toLowerCase();
+        const nameB = (b.pseudonyme || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      } else if (sortBy === 'total_area_desc') {
+        return b.total_area_m2 - a.total_area_m2;
+      } else if (sortBy === 'total_area_asc') {
+        return a.total_area_m2 - b.total_area_m2;
+      } else if (sortBy === 'date_inscription_desc') {
+        return new Date(b.date_inscription).getTime() - new Date(a.date_inscription).getTime();
+      } else if (sortBy === 'date_inscription_asc') {
+        return new Date(a.date_inscription).getTime() - new Date(b.date_inscription).getTime();
+      }
+      return 0;
+    });
+
+  // Filter courses in modal
+  const filteredCourses = courses.filter(c => {
+    const distKm = c.distance_totale / 1000;
+    const matchesDistance = distKm >= minDistance;
+    const matchesLoop = loopOnlyFilter === 'all' || 
+      (loopOnlyFilter === 'loops' && c.est_bouclee) ||
+      (loopOnlyFilter === 'noloops' && !c.est_bouclee);
+    return matchesDistance && matchesLoop;
   });
+
+  const chartData = [...filteredCourses].reverse().map(c => ({
+    date: new Date(c.date_debut).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }),
+    distance: parseFloat((c.distance_totale / 1000).toFixed(2)),
+    duration: parseFloat((c.duree_secondes / 60).toFixed(1))
+  }));
+
+  // Cumulative course stats
+  const totalRuns = courses.length;
+  const totalDistanceKm = courses.reduce((acc, c) => acc + c.distance_totale, 0) / 1000;
+  const totalDurationSec = courses.reduce((acc, c) => acc + c.duree_secondes, 0);
+  const avgSpeed = courses.length > 0 ? courses.reduce((acc, c) => acc + (c.vitesse_moyenne || 0), 0) / courses.length : 0;
+  const totalCalories = courses.reduce((acc, c) => acc + (c.calories_estimees || 0), 0);
+  const totalElevationPos = courses.reduce((acc, c) => acc + (c.denivele_positif || 0), 0);
+
+  const formatDurationText = (sec: number) => {
+    const hrs = Math.floor(sec / 3600);
+    const mins = Math.floor((sec % 3600) / 60);
+    const remainingSecs = sec % 60;
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m ${remainingSecs}s`;
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -243,62 +373,115 @@ export default function ProfilesPage() {
       {/* Header */}
       <div>
         <h1 className="title-cyber" style={{ fontSize: '2rem' }}>Gestion des Profils</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginTop: '4px' }}>Modération des joueurs, historique des courses et statistiques globales</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginTop: '4px' }}>Surveillance des recrues, historique d'entraînement et modération</p>
       </div>
 
-      {/* Search Bar */}
-      <div className="glass-card" style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <Search size={20} style={{ color: 'var(--text-muted)' }} />
-        <input 
-          type="text" 
-          placeholder="Rechercher par pseudo ou tag (#)..." 
-          className="input-field"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ border: 'none', background: 'transparent', padding: '0', fontSize: '1rem' }}
-        />
+      {/* Command Search and Filters */}
+      <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '14px' }}>
+          <Search size={20} style={{ color: 'var(--text-muted)' }} />
+          <input 
+            type="text" 
+            placeholder="Rechercher une recrue par pseudo ou tag (#)..." 
+            className="input-field"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ border: 'none', background: 'transparent', padding: '0', fontSize: '1rem' }}
+          />
+        </div>
+
+        {/* Dropdown filters row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Empire / Clan</span>
+            <select 
+              value={clanFilter}
+              onChange={(e) => setClanFilter(e.target.value)}
+              className="input-field"
+              style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+            >
+              <option value="all">Tous les clans</option>
+              {guilds.map(g => (
+                <option key={g.id} value={g.id}>{g.nom}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Grade Militaire</span>
+            <select 
+              value={gradeFilter}
+              onChange={(e) => setGradeFilter(e.target.value)}
+              className="input-field"
+              style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+            >
+              <option value="all">Tous les grades</option>
+              <option value="chef">👑 Chefs de Clan</option>
+              <option value="adjoint">⚔️ Adjoints</option>
+              <option value="membre">Membres ordinaires</option>
+              <option value="autonome">Soldats Autonomes</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Trier l'Annuaire</span>
+            <select 
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="input-field"
+              style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+            >
+              <option value="total_area_desc">Superficie conquise (Max)</option>
+              <option value="total_area_asc">Superficie conquise (Min)</option>
+              <option value="date_inscription_desc">Derniers enrôlés</option>
+              <option value="date_inscription_asc">Premiers enrôlés</option>
+              <option value="pseudonyme">Pseudonyme (A-Z)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Profiles Table */}
       <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            Chargement de l'annuaire des recrues...
+            Initialisation des bases de données de recrues...
           </div>
         ) : filteredProfiles.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            Aucun joueur ne correspond à votre recherche.
+            Aucun soldat ne correspond à ces critères.
           </div>
         ) : (
           <div className="table-container">
             <table className="cyber-table">
               <thead>
                 <tr>
-                  <th>Joueur</th>
-                  <th>Tag</th>
+                  <th>Recrue</th>
+                  <th>Identifiant</th>
                   <th>Clan</th>
                   <th>Grade</th>
-                  <th>Zone Conquise (km²)</th>
-                  <th>Inscription</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th>Surface Contrôlée (km²)</th>
+                  <th>Enrôlement</th>
+                  <th style={{ textAlign: 'right' }}>Dossier</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProfiles.map((p) => {
                   const guild = guilds.find(g => g.id === p.guilde_id);
+                  const color = guild?.couleur_hex || p.empire_color || 'var(--text-muted)';
                   return (
                     <tr key={p.id}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           {p.avatar_url ? (
-                            <img src={p.avatar_url} alt={p.pseudonyme || ''} className="avatar" />
+                            <img src={p.avatar_url} alt="" className="avatar" style={{ borderColor: color }} />
                           ) : (
-                            <div className="avatar avatar-placeholder">
-                              {p.pseudonyme ? p.pseudonyme.substring(0, 2).toUpperCase() : 'U'}
+                            <div className="avatar avatar-placeholder" style={{ borderColor: color, color: color }}>
+                              {p.pseudonyme ? p.pseudonyme.substring(0, 2).toUpperCase() : 'SO'}
                             </div>
                           )}
                           <div>
-                            <span style={{ fontWeight: 600, color: 'var(--text-white)' }}>
+                            <span style={{ fontWeight: 700, color: 'var(--text-white)' }}>
                               {p.pseudonyme || 'Recrue Anonyme'}
                             </span>
                             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
@@ -314,8 +497,8 @@ export default function ProfilesPage() {
                       </td>
                       <td>
                         {guild ? (
-                          <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: guild.couleur_hex, border: `1px solid ${guild.couleur_hex}` }}>
-                            {guild.nom}
+                          <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: color, border: `1px solid ${color}` }}>
+                            {guild.nom} <span style={{ fontFamily: 'monospace', fontSize: '0.7rem', opacity: 0.8, marginLeft: '4px' }}>{guild.tag}</span>
                           </span>
                         ) : (
                           <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Autonome</span>
@@ -333,7 +516,7 @@ export default function ProfilesPage() {
                         )}
                       </td>
                       <td style={{ fontWeight: 700, color: 'var(--neon-volt)' }}>
-                        {(p.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
+                        {(p.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
                       </td>
                       <td>
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
@@ -344,17 +527,19 @@ export default function ProfilesPage() {
                         <div style={{ display: 'inline-flex', gap: '8px' }}>
                           <button 
                             className="btn-icon" 
-                            title="Inspecter le profil"
+                            title="Ouvrir dossier militaire"
                             onClick={() => setSelectedProfile(p)}
+                            style={{ color: 'var(--electric-blue)' }}
                           >
-                            <Activity size={16} style={{ color: 'var(--electric-blue)' }} />
+                            <Activity size={16} />
                           </button>
                           <button 
                             className="btn-icon" 
-                            title="Supprimer le joueur"
+                            title="Bannir le joueur"
                             onClick={() => handleDeleteUser(p.id)}
+                            style={{ color: 'var(--active-orange)' }}
                           >
-                            <Trash2 size={16} style={{ color: 'var(--active-orange)' }} />
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </td>
@@ -367,79 +552,89 @@ export default function ProfilesPage() {
         )}
       </div>
 
-      {/* Inspector Modal */}
+      {/* Inspector Modal with Custom Tabs */}
       {selectedProfile && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ border: `1px solid ${selectedProfile.empire_color || 'var(--electric-blue)'}` }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+          <div className="modal-content glass-card" style={{ 
+            border: `1px solid ${selectedProfile.empire_color || 'var(--electric-blue)'}`,
+            maxWidth: '700px',
+            padding: '0',
+            overflow: 'hidden'
+          }}>
+            {/* Banner Header */}
+            <div style={{
+              background: `linear-gradient(135deg, rgba(15, 19, 24, 0.9) 0%, rgba(30, 36, 44, 0.9) 100%)`,
+              padding: '24px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 {selectedProfile.avatar_url ? (
-                  <img src={selectedProfile.avatar_url} alt="" className="avatar avatar-large" />
+                  <img src={selectedProfile.avatar_url} alt="" className="avatar avatar-large" style={{ borderColor: selectedProfile.empire_color }} />
                 ) : (
-                  <div className="avatar avatar-large avatar-placeholder" style={{ fontSize: '1.8rem' }}>
-                    {selectedProfile.pseudonyme ? selectedProfile.pseudonyme.substring(0, 2).toUpperCase() : 'U'}
+                  <div className="avatar avatar-large avatar-placeholder" style={{ borderColor: selectedProfile.empire_color, color: selectedProfile.empire_color }}>
+                    {selectedProfile.pseudonyme ? selectedProfile.pseudonyme.substring(0, 2).toUpperCase() : 'SO'}
                   </div>
                 )}
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     {isEditing ? (
-                      <input 
-                        type="text" 
-                        className="input-field" 
-                        value={newPseudonyme}
-                        onChange={(e) => setNewPseudonyme(e.target.value)}
-                        style={{ padding: '6px 12px', fontSize: '1.25rem', width: '200px' }}
-                      />
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input 
+                          type="text" 
+                          className="input-field" 
+                          value={newPseudonyme}
+                          onChange={(e) => setNewPseudonyme(e.target.value)}
+                          style={{ padding: '4px 10px', fontSize: '1.1rem', width: '180px' }}
+                        />
+                        <button className="btn btn-primary" onClick={handleUpdateProfile} disabled={actionLoading} style={{ padding: '6px 12px' }}>
+                          <Save size={14} />
+                        </button>
+                      </div>
                     ) : (
-                      <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>{selectedProfile.pseudonyme || 'Recrue'}</h2>
-                    )}
-
-                    {isEditing ? (
-                      <button className="btn-icon" onClick={handleUpdateProfile} disabled={actionLoading}>
-                        <Save size={16} style={{ color: 'var(--neon-volt)' }} />
-                      </button>
-                    ) : (
-                      <button className="btn-icon" onClick={() => setIsEditing(true)}>
-                        <Edit2 size={14} style={{ color: 'var(--text-muted)' }} />
-                      </button>
+                      <>
+                        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-white)' }}>{selectedProfile.pseudonyme || 'Recrue'}</h2>
+                        <button className="btn-icon" onClick={() => setIsEditing(true)} style={{ padding: '4px' }}>
+                          <Edit2 size={12} style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                      </>
                     )}
                   </div>
-                  <p style={{ color: 'var(--electric-blue)', fontSize: '0.95rem', marginTop: '4px', fontFamily: 'monospace', fontWeight: 700 }}>
-                    {selectedProfile.tag || 'Aucun tag'}
+                  <p style={{ color: 'var(--electric-blue)', fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 700, marginTop: '2px' }}>
+                    TAG: {selectedProfile.tag || 'NON DÉFINI'}
                   </p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px', fontFamily: 'monospace' }}>
-                    ID: {selectedProfile.id}
-                  </p>
-                  {selectedProfile.grade && selectedProfile.guilde_id && (
-                    <span style={{
-                      display: 'inline-block',
-                      marginTop: '6px',
-                      padding: '2px 10px',
-                      borderRadius: '20px',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      backgroundColor: selectedProfile.grade === 'chef' ? 'rgba(255, 215, 0, 0.15)' : selectedProfile.grade === 'adjoint' ? 'rgba(192, 192, 192, 0.15)' : 'rgba(255,255,255,0.05)',
-                      color: selectedProfile.grade === 'chef' ? '#FFD700' : selectedProfile.grade === 'adjoint' ? '#C0C0C0' : 'var(--text-muted)',
-                      border: `1px solid ${selectedProfile.grade === 'chef' ? '#FFD700' : selectedProfile.grade === 'adjoint' ? '#C0C0C0' : 'var(--border-color)'}`,
-                    }}>
-                      {selectedProfile.grade === 'chef' ? '👑 Chef' : selectedProfile.grade === 'adjoint' ? '⚔️ Adjoint' : 'Membre'}
-                    </span>
-                  )}
                 </div>
               </div>
-              <button className="btn-icon" onClick={() => setSelectedProfile(null)}>
-                <X size={20} />
+              
+              <button 
+                onClick={() => setSelectedProfile(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem'
+                }}
+              >
+                ×
               </button>
             </div>
 
-            {/* Notification message */}
+            {/* Notification messages inside modal */}
             {message && (
               <div style={{
+                margin: '16px 24px 0 24px',
                 padding: '10px 16px',
                 borderRadius: '8px',
-                marginBottom: '16px',
-                fontSize: '0.9rem',
+                fontSize: '0.85rem',
                 backgroundColor: message.type === 'success' ? 'rgba(204, 255, 0, 0.1)' : 'rgba(255, 109, 0, 0.1)',
                 border: message.type === 'success' ? '1px solid var(--neon-volt)' : '1px solid var(--active-orange)',
                 color: message.type === 'success' ? 'var(--neon-volt)' : 'var(--active-orange)'
@@ -448,106 +643,393 @@ export default function ProfilesPage() {
               </div>
             )}
 
-            {/* Profile actions panel */}
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-              {selectedProfile.avatar_url && (
-                <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
-                  <ImageIcon size={14} /> Supprimer l'avatar
-                </button>
-              )}
-              <button className="btn btn-danger" onClick={() => handleDeleteUser(selectedProfile.id)} disabled={actionLoading} style={{ padding: '8px 16px', fontSize: '0.85rem', marginLeft: 'auto' }}>
-                <Trash2 size={14} /> Bannir le joueur
+            {/* Modal Tabs Panel */}
+            <div style={{ 
+              display: 'flex', 
+              background: 'rgba(15, 19, 24, 0.6)', 
+              borderBottom: '1px solid var(--border-color)',
+              padding: '0 24px'
+            }}>
+              <button 
+                onClick={() => setActiveTab('dossier')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'dossier' ? '2px solid var(--electric-blue)' : '2px solid transparent',
+                  color: activeTab === 'dossier' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Dossier Militaire
+              </button>
+              <button 
+                onClick={() => setActiveTab('amis')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'amis' ? '2px solid var(--electric-blue)' : '2px solid transparent',
+                  color: activeTab === 'amis' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Compagnons ({friends.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('entrainement')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'entrainement' ? '2px solid var(--electric-blue)' : '2px solid transparent',
+                  color: activeTab === 'entrainement' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 20px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Entraînements ({courses.length})
               </button>
             </div>
 
-            {/* Stats Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
-              <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 600 }}>Surface Territoriale</span>
-                <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '4px' }}>
-                  {(selectedProfile.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} km²
-                </p>
-              </div>
-              <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 600 }}>Date d'enrôlement</span>
-                <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-white)', marginTop: '4px' }}>
-                  {new Date(selectedProfile.date_inscription).toLocaleDateString('fr-FR')}
-                </p>
-              </div>
-            </div>
+            {/* Modal Body Container */}
+            <div style={{ padding: '24px', maxHeight: '550px', overflowY: 'auto' }}>
+              
+              {/* TAB 1: MILITARY DOSSIER */}
+              {activeTab === 'dossier' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  {/* Account Actions */}
+                  <div style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    {selectedProfile.avatar_url && (
+                      <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+                        <ImageIcon size={12} /> Réinitialiser l'avatar
+                      </button>
+                    )}
+                    <button className="btn btn-danger" onClick={() => handleDeleteUser(selectedProfile.id)} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem', marginLeft: 'auto' }}>
+                      <Trash2 size={12} /> Exclure le joueur définitivement
+                    </button>
+                  </div>
 
-            {/* Run History */}
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Clock size={18} style={{ color: 'var(--electric-blue)' }} /> Historique des Sessions de Course
-              </h3>
+                  {/* Double column details */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <h4 style={{ fontSize: '0.9rem', color: 'var(--electric-blue)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>Identité Réseau</h4>
+                      
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>UUID Database</span>
+                        <p style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px', wordBreak: 'break-all' }}>{selectedProfile.id}</p>
+                      </div>
 
-              {loadingCourses ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Chargement du journal d'entraînement...</p>
-              ) : courses.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', padding: '16px', border: '1px dashed var(--border-color)', borderRadius: '8px', textAlign: 'center' }}>
-                  Aucune course enregistrée pour cette recrue.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '250px', overflowY: 'auto', paddingRight: '8px' }}>
-                  {courses.map((c) => {
-                    const durationMin = Math.floor(c.duree_secondes / 60);
-                    const durationSec = Math.floor(c.duree_secondes % 60);
-                    const distKm = c.distance_totale / 1000;
-                    return (
-                      <div 
-                        key={c.id}
-                        style={{
-                          background: 'rgba(15, 19, 24, 0.2)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '8px',
-                          padding: '14px 16px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <div>
-                            <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                              Course du {new Date(c.date_debut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </p>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              Statut : {c.est_bouclee ? (
-                                <span style={{ color: 'var(--neon-volt)' }}>Terminée (Boucle)</span>
-                              ) : (
-                                <span style={{ color: 'var(--active-orange)' }}>Incomplète</span>
-                              )}
-                            </p>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <p style={{ fontWeight: 700, color: 'var(--electric-blue)', fontSize: '1.1rem' }}>{distKm.toFixed(2)} km</p>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              {durationMin}m {durationSec}s
-                            </p>
-                          </div>
-                        </div>
-                        {/* Strava-like metrics */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-                          <div style={{ textAlign: 'center' }}>
-                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vit. Moy</p>
-                            <p style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--neon-volt)' }}>{(c.vitesse_moyenne || 0).toFixed(1)} km/h</p>
-                          </div>
-                          <div style={{ textAlign: 'center' }}>
-                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Allure</p>
-                            <p style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--electric-blue)' }}>{(c.allure_moyenne || 0).toFixed(1)} min/km</p>
-                          </div>
-                          <div style={{ textAlign: 'center' }}>
-                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Calories</p>
-                            <p style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--active-orange)' }}>{Math.round(c.calories_estimees || 0)} kcal</p>
-                          </div>
-                          <div style={{ textAlign: 'center' }}>
-                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>D+/D-</p>
-                            <p style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-white)' }}>+{Math.round(c.denivele_positif || 0)}/-{Math.round(c.denivele_negatif || 0)}m</p>
-                          </div>
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Date d'enrôlement</span>
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-white)', marginTop: '2px' }}>
+                          {new Date(selectedProfile.date_inscription).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Couleur Empire (Hex)</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                          <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '3px', backgroundColor: selectedProfile.empire_color || '#CCFF00' }} />
+                          <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)' }}>{selectedProfile.empire_color || '#CCFF00'}</span>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <h4 style={{ fontSize: '0.9rem', color: 'var(--electric-blue)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '6px' }}>Positionnement GPS</h4>
+                      
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Partage Position</span>
+                        <p style={{ fontSize: '0.9rem', fontWeight: 'bold', color: selectedProfile.share_location ? 'var(--neon-volt)' : 'var(--active-orange)', marginTop: '2px' }}>
+                          {selectedProfile.share_location ? 'AUTORISÉ (ACTIVE)' : 'VERROUILLÉ (OFFLINE)'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Dernières Coordonnées GPS</span>
+                        <p style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px' }}>
+                          {selectedProfile.latitude && selectedProfile.longitude ? (
+                            `${selectedProfile.latitude.toFixed(6)}, ${selectedProfile.longitude.toFixed(6)}`
+                          ) : (
+                            'Aucune coordonnée enregistrée'
+                          )}
+                        </p>
+                      </div>
+
+                      {selectedProfile.share_location && selectedProfile.latitude && selectedProfile.longitude && (
+                        <button 
+                          className="btn btn-secondary" 
+                          onClick={() => centerPlayerOnMap(selectedProfile.latitude!, selectedProfile.longitude!)}
+                          style={{ width: '100%', marginTop: '8px', padding: '8px 12px', fontSize: '0.8rem' }}
+                        >
+                          <MapPin size={12} /> Centrer sur la carte globale
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Empire Area Section */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'rgba(15, 19, 24, 0.4)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', marginTop: '10px' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Territoriale</span>
+                      <p style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '4px' }}>
+                        {(selectedProfile.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
+                      </p>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Grade Clan</span>
+                      <p style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-white)', marginTop: '4px' }}>
+                        {selectedProfile.grade === 'chef' ? '👑 Commandant (Chef)' : selectedProfile.grade === 'adjoint' ? '⚔️ Officier (Adjoint)' : selectedProfile.guilde_id ? 'Membre Actif' : 'Soldat Autonome'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* TAB 2: SOCIAL NETWORK (FRIENDS) */}
+              {activeTab === 'amis' && (
+                <div>
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Users size={18} style={{ color: 'var(--electric-blue)' }} /> Liste d'Amis ({friends.length})
+                  </h4>
+
+                  {loadingFriends ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Scan du réseau de communications...</p>
+                  ) : friends.length === 0 ? (
+                    <div style={{ padding: '32px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Ce soldat n'a pas encore établi de communications amicales sur le réseau.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      {friends.map(f => (
+                        <div 
+                          key={f.id}
+                          style={{
+                            background: 'rgba(15, 19, 24, 0.3)',
+                            border: `1px solid ${f.empire_color || 'var(--border-color)'}`,
+                            borderRadius: '8px',
+                            padding: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px'
+                          }}
+                        >
+                          {f.avatar_url ? (
+                            <img src={f.avatar_url} alt="" className="avatar" style={{ width: '36px', height: '36px', borderColor: f.empire_color }} />
+                          ) : (
+                            <div className="avatar avatar-placeholder" style={{ width: '36px', height: '36px', borderColor: f.empire_color, color: f.empire_color, fontSize: '0.8rem' }}>
+                              {f.pseudonyme?.substring(0, 2).toUpperCase() || 'SO'}
+                            </div>
+                          )}
+                          <div style={{ minWidth: 0, flexGrow: 1 }}>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-white)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
+                              {f.pseudonyme || 'Recrue'}
+                            </span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                              {f.tag || ''}
+                            </span>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <p style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--neon-volt)' }}>
+                              {(f.total_area_m2 / 1000000).toFixed(3)} km²
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: TRAINING SESSIONS AND STATS */}
+              {activeTab === 'entrainement' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  
+                  {/* Cumulative stats block */}
+                  <div>
+                    <h4 style={{ fontSize: '0.95rem', color: 'var(--electric-blue)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>Rapport d'Activité Cumulé</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                      <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Courses</span>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{totalRuns}</p>
+                      </div>
+                      <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Distance Totale</span>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--electric-blue)', marginTop: '2px' }}>{totalDistanceKm.toFixed(2)} km</p>
+                      </div>
+                      <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Temps Total</span>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '2px' }}>{formatDurationText(totalDurationSec)}</p>
+                      </div>
+                      <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vitesse Moyenne</span>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{avgSpeed.toFixed(1)} km/h</p>
+                      </div>
+                      <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Calories</span>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--active-orange)', marginTop: '2px' }}>{Math.round(totalCalories)} kcal</p>
+                      </div>
+                      <div style={{ background: 'rgba(15, 19, 24, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dénivelé Positif</span>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--neon-volt)', marginTop: '2px' }}>+{Math.round(totalElevationPos)}m</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Graphic Performance */}
+                  <div>
+                    <h4 style={{ fontSize: '0.95rem', color: 'var(--electric-blue)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>Performances des Courses (Distance & Temps)</h4>
+                    <div className="glass-card" style={{ padding: '16px', background: 'rgba(15, 19, 24, 0.4)', borderRadius: '8px', minHeight: '220px' }}>
+                      {mounted && chartData.length > 0 ? (
+                        <div style={{ width: '100%', height: 220 }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                              <YAxis yAxisId="left" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} unit=" km" />
+                              <YAxis yAxisId="right" orientation="right" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} unit=" min" />
+                              <Tooltip 
+                                contentStyle={{ background: '#1E242C', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                                labelStyle={{ color: '#FFFFFF', fontWeight: 'bold' }}
+                              />
+                              <Line yAxisId="left" type="monotone" dataKey="distance" name="Distance" stroke="var(--electric-blue)" strokeWidth={3} dot={{ fill: 'var(--electric-blue)', strokeWidth: 1, r: 3 }} activeDot={{ r: 5 }} />
+                              <Line yAxisId="right" type="monotone" dataKey="duration" name="Durée" stroke="var(--neon-volt)" strokeWidth={3} dot={{ fill: 'var(--neon-volt)', strokeWidth: 1, r: 3 }} activeDot={{ r: 5 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                          Aucune donnée de performance à afficher.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Search and Filters on runs */}
+                  <div style={{ 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: '8px', 
+                    padding: '12px 16px', 
+                    background: 'rgba(15, 19, 24, 0.2)',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '16px'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Distance Min (km)</span>
+                      <input 
+                        type="number" 
+                        step="0.5"
+                        min="0"
+                        value={minDistance || ''}
+                        onChange={(e) => setMinDistance(parseFloat(e.target.value) || 0)}
+                        className="input-field"
+                        style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Type de course</span>
+                      <select 
+                        value={loopOnlyFilter}
+                        onChange={(e: any) => setLoopOnlyFilter(e.target.value)}
+                        className="input-field"
+                        style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+                      >
+                        <option value="all">Toutes les courses</option>
+                        <option value="loops">Bouclées uniquement</option>
+                        <option value="noloops">Incomplètes uniquement</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Course list */}
+                  <div>
+                    <h4 style={{ fontSize: '0.95rem', color: 'var(--electric-blue)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>Historique des sessions ({filteredCourses.length})</h4>
+                    
+                    {loadingCourses ? (
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Scan du journal d'entraînement...</p>
+                    ) : filteredCourses.length === 0 ? (
+                      <div style={{ padding: '24px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Aucune course ne correspond aux filtres appliqués.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {filteredCourses.map((c) => {
+                          const durationMin = Math.floor(c.duree_secondes / 60);
+                          const durationSec = Math.floor(c.duree_secondes % 60);
+                          const distKm = c.distance_totale / 1000;
+                          return (
+                            <div 
+                              key={c.id}
+                              style={{
+                                background: 'rgba(15, 19, 24, 0.2)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '8px',
+                                padding: '14px 16px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <div>
+                                  <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                                    Course du {new Date(c.date_debut).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </p>
+                                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                    Statut : {c.est_bouclee ? (
+                                      <span style={{ color: 'var(--neon-volt)' }}>Terminée (Boucle)</span>
+                                    ) : (
+                                      <span style={{ color: 'var(--active-orange)' }}>Incomplète</span>
+                                    )}
+                                  </p>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <p style={{ fontWeight: 800, color: 'var(--electric-blue)', fontSize: '1.05rem' }}>{distKm.toFixed(2)} km</p>
+                                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                    {durationMin}m {durationSec}s
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+                                <div style={{ textAlign: 'center' }}>
+                                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vit. Moy</p>
+                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--neon-volt)' }}>{(c.vitesse_moyenne || 0).toFixed(1)} km/h</p>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Allure</p>
+                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--electric-blue)' }}>{(c.allure_moyenne || 0).toFixed(1)} min/km</p>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Calories</p>
+                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--active-orange)' }}>{Math.round(c.calories_estimees || 0)} kcal</p>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                  <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>D+/D-</p>
+                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-white)' }}>+{Math.round(c.denivele_positif || 0)}/-{Math.round(c.denivele_negatif || 0)}m</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+
             </div>
           </div>
         </div>

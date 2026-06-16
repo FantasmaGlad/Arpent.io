@@ -35,15 +35,6 @@ interface Guild {
   avatar_url: string | null;
 }
 
-interface Territory {
-  id: string;
-  utilisateur_id: string;
-  guilde_id: string | null;
-  superficie_m2: number;
-  points: string[];
-  derniere_mise_a_jour: string;
-}
-
 interface TerritoryGeoJSON {
   id: string;
   utilisateur_id: string;
@@ -65,7 +56,6 @@ export default function MapPage() {
   // State
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [guilds, setGuilds] = useState<Guild[]>([]);
-  const [territories, setTerritories] = useState<Territory[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTerritory, setSelectedTerritory] = useState<any>(null);
   const [geoTerritories, setGeoTerritories] = useState<TerritoryGeoJSON[]>([]);
@@ -76,21 +66,17 @@ export default function MapPage() {
       try {
         const [
           { data: profilesData },
-          { data: guildsData },
-          { data: territoriesData }
+          { data: guildsData }
         ] = await Promise.all([
           supabase.from('profiles').select('*'),
-          supabase.from('guildes').select('*'),
-          supabase.from('territoires').select('*')
+          supabase.from('guildes').select('*')
         ]);
 
         const profilesList = (profilesData || []) as Profile[];
         const guildsList = (guildsData || []) as Guild[];
-        const territoriesList = (territoriesData || []) as Territory[];
 
         setProfiles(profilesList);
         setGuilds(guildsList);
-        setTerritories(territoriesList);
 
         // Fetch GeoJSON territories via RPC
         try {
@@ -127,13 +113,7 @@ export default function MapPage() {
 
     const territoryChannel = supabase.channel('territories-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'territoires' }, () => {
-        // Reload territories on change
-        supabase.from('territoires').select('*').then(({ data }) => {
-          if (data) {
-            setTerritories(data as Territory[]);
-          }
-        });
-        // Also refresh GeoJSON
+        // Refresh GeoJSON
         supabase.rpc('get_territoires_geojson').then(({ data }) => {
           if (data) setGeoTerritories(data as TerritoryGeoJSON[]);
         });

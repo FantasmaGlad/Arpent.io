@@ -75,9 +75,10 @@ interface CourseWithProfile {
 }
 
 export default function StatsPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [guilds, setGuilds] = useState<Guild[]>([]);
-  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [profilesCount, setProfilesCount] = useState(0);
+  const [guildsCount, setGuildsCount] = useState(0);
+  const [territoriesCount, setTerritoriesCount] = useState(0);
+  const [topUsersData, setTopUsersData] = useState<any[]>([]);
   const [courses, setCourses] = useState<CourseWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeChartTab, setActiveChartTab] = useState<'users' | 'activity'>('users');
@@ -88,87 +89,69 @@ export default function StatsPage() {
     setMounted(true);
   }, []);
 
-  // Initial fetch
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [
-          { data: profilesData },
-          { data: guildsData },
-          { data: territoriesData },
-          { data: coursesData }
-        ] = await Promise.all([
-          supabase.from('profiles').select('*'),
-          supabase.from('guildes').select('*'),
-          supabase.from('territoires').select('*'),
-          supabase.from('courses')
-            .select('*, profiles(pseudonyme, avatar_url, empire_color, tag)')
-            .order('date_debut', { ascending: false })
-            .limit(15)
-        ]);
+  // Fetch all stat counters and lightweight top data
+  async function loadData() {
+    try {
+      const [
+        { count: countP },
+        { data: topP },
+        { count: countG },
+        { data: terrsData },
+        { data: coursesData }
+      ] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('pseudonyme, total_area_m2').order('total_area_m2', { ascending: false }).limit(5),
+        supabase.from('guildes').select('*', { count: 'exact', head: true }),
+        supabase.from('territoires').select('superficie_m2'),
+        supabase.from('courses')
+          .select('*, profiles(pseudonyme, avatar_url, empire_color, tag)')
+          .order('date_debut', { ascending: false })
+          .limit(15)
+      ]);
 
-        const profilesList = (profilesData || []) as Profile[];
-        const guildsList = (guildsData || []) as Guild[];
-        const territoriesList = (territoriesData || []) as Territory[];
-        const coursesList = (coursesData || []) as any[];
+      setProfilesCount(countP || 0);
+      setGuildsCount(countG || 0);
 
-        setProfiles(profilesList);
-        setGuilds(guildsList);
-        setTerritories(territoriesList);
-        setCourses(coursesList);
+      const terrs = (terrsData || []) as { superficie_m2: number }[];
+      setTerritoriesCount(terrs.length);
+      const total = terrs.reduce((acc, curr) => acc + curr.superficie_m2, 0);
+      setTotalArea(total);
 
-        // Calc total area
-        const total = territoriesList.reduce((acc, curr) => acc + curr.superficie_m2, 0);
-        setTotalArea(total);
-      } catch (err) {
-        console.error('Error fetching stats page data:', err);
-      } finally {
-        setLoading(false);
-      }
+      const topUsers = (topP || []).map(p => ({
+        name: p.pseudonyme || 'Inconnu',
+        area: parseFloat((p.total_area_m2 / 1000000).toFixed(4)),
+        color: '#CCFF00'
+      }));
+      setTopUsersData(topUsers);
+
+      setCourses((coursesData || []) as CourseWithProfile[]);
+    } catch (err) {
+      console.error('Error fetching stats page data:', err);
+    } finally {
+      setLoading(false);
     }
+  }
 
+  // Initial fetch and real-time subscription setup
+  useEffect(() => {
     loadData();
 
     // Subscribe to real-time updates for coordinates, territories, and courses
     const profileChannel = supabase.channel('profiles-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
-        const newProfile = payload.new as Profile;
-        if (!newProfile || !newProfile.id) return;
-        setProfiles(prev => {
-          const index = prev.findIndex(p => p.id === newProfile.id);
-          if (index !== -1) {
-            const updated = [...prev];
-            updated[index] = newProfile;
-            return updated;
-          }
-          return [...prev, newProfile];
-        });
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        loadData();
       })
       .subscribe();
 
     const territoryChannel = supabase.channel('territories-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'territoires' }, () => {
-        // Reload territories on change
-        supabase.from('territoires').select('*').then(({ data }) => {
-          if (data) {
-            setTerritories(data as Territory[]);
-            const total = (data as Territory[]).reduce((acc, curr) => acc + curr.superficie_m2, 0);
-            setTotalArea(total);
-          }
-        });
+        loadData();
       })
       .subscribe();
 
     const coursesChannel = supabase.channel('courses-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'courses' }, async (payload) => {
-        const { data: newCourse, error } = await supabase
-          .from('courses')
-          .select('*, profiles(pseudonyme, avatar_url, empire_color, tag)')
-          .eq('id', payload.new.id)
-          .single();
-        if (newCourse && !error) {
-          setCourses(prev => [newCourse as CourseWithProfile, ...prev.slice(0, 14)]);
-        }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'courses' }, () => {
+        loadData();
       })
       .subscribe();
 
@@ -178,19 +161,6 @@ export default function StatsPage() {
       supabase.removeChannel(coursesChannel);
     };
   }, []);
-
-  // Aggregated charts computations
-  const getTopUsersData = () => {
-    return [...profiles]
-      .filter(p => p.total_area_m2 > 0)
-      .sort((a, b) => b.total_area_m2 - a.total_area_m2)
-      .slice(0, 5)
-      .map(p => ({
-        name: p.pseudonyme || 'Inconnu',
-        area: parseFloat((p.total_area_m2 / 1000000).toFixed(4)),
-        color: '#CCFF00'
-      }));
-  };
 
   const getDailyActivityData = () => {
     const dates: { [key: string]: number } = {};
@@ -217,7 +187,6 @@ export default function StatsPage() {
     }));
   };
 
-  const topUsersData = getTopUsersData();
   const dailyActivityData = getDailyActivityData();
 
   if (loading) {
@@ -283,7 +252,7 @@ export default function StatsPage() {
           </div>
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>Utilisateurs Inscrits</p>
-            <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{profiles.length}</p>
+            <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{profilesCount}</p>
           </div>
         </div>
 
@@ -298,7 +267,7 @@ export default function StatsPage() {
           </div>
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>Groupes Actifs</p>
-            <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{guilds.length}</p>
+            <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{guildsCount}</p>
           </div>
         </div>
 
@@ -313,7 +282,7 @@ export default function StatsPage() {
           </div>
           <div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>Zones Enregistrées</p>
-            <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{territories.length}</p>
+            <p style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{territoriesCount}</p>
           </div>
         </div>
 

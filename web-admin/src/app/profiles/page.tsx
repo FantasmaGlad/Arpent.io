@@ -71,12 +71,18 @@ export default function ProfilesPage() {
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [mounted, setMounted] = useState(false);
   
   // Advanced filters and sorting
   const [clanFilter, setClanFilter] = useState('all');
   const [gradeFilter, setGradeFilter] = useState('all');
   const [sortBy, setSortBy] = useState('total_area_desc');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 10;
 
   // Selected profile details modal
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
@@ -98,24 +104,84 @@ export default function ProfilesPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // Debounce search term to limit queries
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Reset to page 1 on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, clanFilter, gradeFilter, sortBy]);
+
+  // Initial load: mount state and guilds fetch
   useEffect(() => {
     setMounted(true);
-    fetchData();
+    fetchGuilds();
   }, []);
 
-  async function fetchData() {
+  // Fetch paginated profiles whenever filters, search, or page changes
+  useEffect(() => {
+    if (mounted) {
+      fetchProfiles();
+    }
+  }, [currentPage, debouncedSearch, clanFilter, gradeFilter, sortBy, mounted]);
+
+  async function fetchGuilds() {
+    try {
+      const { data } = await supabase.from('guildes').select('id, nom, couleur_hex, tag');
+      setGuilds((data || []) as Guild[]);
+    } catch (err) {
+      console.error('Error fetching guilds:', err);
+    }
+  }
+
+  async function fetchProfiles() {
     setLoading(true);
     try {
-      const [
-        { data: profilesData },
-        { data: guildsData }
-      ] = await Promise.all([
-        supabase.from('profiles').select('*').order('total_area_m2', { ascending: false }),
-        supabase.from('guildes').select('id, nom, couleur_hex, tag')
-      ]);
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
 
-      setProfiles((profilesData || []) as Profile[]);
-      setGuilds((guildsData || []) as Guild[]);
+      let query = supabase.from('profiles').select('*', { count: 'exact' });
+
+      if (debouncedSearch) {
+        query = query.or(`pseudonyme.ilike.%${debouncedSearch}%,tag.ilike.%${debouncedSearch}%`);
+      }
+      if (clanFilter !== 'all') {
+        query = query.eq('guilde_id', clanFilter);
+      }
+      if (gradeFilter === 'autonome') {
+        query = query.is('guilde_id', null);
+      } else if (gradeFilter === 'chef') {
+        query = query.eq('grade', 'chef');
+      } else if (gradeFilter === 'adjoint') {
+        query = query.eq('grade', 'adjoint');
+      } else if (gradeFilter === 'membre') {
+        query = query.not('guilde_id', 'is', null)
+                     .or('grade.is.null,grade.neq.chef')
+                     .or('grade.is.null,grade.neq.adjoint');
+      }
+
+      if (sortBy === 'pseudonyme') {
+        query = query.order('pseudonyme', { ascending: true });
+      } else if (sortBy === 'total_area_desc') {
+        query = query.order('total_area_m2', { ascending: false });
+      } else if (sortBy === 'total_area_asc') {
+        query = query.order('total_area_m2', { ascending: true });
+      } else if (sortBy === 'date_inscription_desc') {
+        query = query.order('date_inscription', { ascending: false });
+      } else if (sortBy === 'date_inscription_asc') {
+        query = query.order('date_inscription', { ascending: true });
+      }
+
+      const { data, count, error } = await query.range(from, to);
+      if (error) throw error;
+
+      setProfiles((data || []) as Profile[]);
+      setTotalCount(count || 0);
     } catch (err) {
       console.error('Error fetching profiles:', err);
     } finally {
@@ -282,6 +348,7 @@ export default function ProfilesPage() {
       alert('Utilisateur supprimé avec succès.');
       setSelectedProfile(null);
       setProfiles(prev => prev.filter(p => p.id !== userId));
+      setTotalCount(prev => Math.max(0, prev - 1));
     } catch (err: any) {
       alert(`Erreur : ${err.message}`);
     } finally {
@@ -318,41 +385,6 @@ export default function ProfilesPage() {
     localStorage.setItem('map_center_lng', lng.toString());
     window.location.href = '/';
   };
-
-  // Filter profiles
-  const filteredProfiles = profiles
-    .filter(p => {
-      const pseudo = (p.pseudonyme || '').toLowerCase();
-      const tag = (p.tag || '').toLowerCase();
-      const search = searchTerm.toLowerCase();
-      const matchesSearch = pseudo.includes(search) || tag.includes(search);
-      
-      const matchesClan = clanFilter === 'all' || p.guilde_id === clanFilter;
-      
-      const matchesGrade = gradeFilter === 'all' || 
-        (gradeFilter === 'autonome' && !p.guilde_id) ||
-        (gradeFilter === 'chef' && p.grade === 'chef') ||
-        (gradeFilter === 'adjoint' && p.grade === 'adjoint') ||
-        (gradeFilter === 'membre' && p.guilde_id && p.grade !== 'chef' && p.grade !== 'adjoint');
-        
-      return matchesSearch && matchesClan && matchesGrade;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'pseudonyme') {
-        const nameA = (a.pseudonyme || '').toLowerCase();
-        const nameB = (b.pseudonyme || '').toLowerCase();
-        return nameA.localeCompare(nameB);
-      } else if (sortBy === 'total_area_desc') {
-        return b.total_area_m2 - a.total_area_m2;
-      } else if (sortBy === 'total_area_asc') {
-        return a.total_area_m2 - b.total_area_m2;
-      } else if (sortBy === 'date_inscription_desc') {
-        return new Date(b.date_inscription).getTime() - new Date(a.date_inscription).getTime();
-      } else if (sortBy === 'date_inscription_asc') {
-        return new Date(a.date_inscription).getTime() - new Date(b.date_inscription).getTime();
-      }
-      return 0;
-    });
 
   // Filter courses in modal
   const filteredCourses = courses.filter(c => {
@@ -467,108 +499,144 @@ export default function ProfilesPage() {
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             Chargement de la base des utilisateurs...
           </div>
-        ) : filteredProfiles.length === 0 ? (
+        ) : profiles.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             Aucun utilisateur ne correspond à ces critères.
           </div>
         ) : (
-          <div className="table-container">
-            <table className="cyber-table">
-              <thead>
-                <tr>
-                  <th>Utilisateur</th>
-                  <th>Tag</th>
-                  <th>Groupe / Équipe</th>
-                  <th>Rôle</th>
-                  <th>Surface Couverte (km²)</th>
-                  <th>Inscription</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProfiles.map((p) => {
-                  const guild = guilds.find(g => g.id === p.guilde_id);
-                  const color = 'var(--primary-green)';
-                  return (
-                    <tr key={p.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          {p.avatar_url ? (
-                            <img src={p.avatar_url} alt="" className="avatar" style={{ borderColor: color }} />
-                          ) : (
-                            <div className="avatar avatar-placeholder" style={{ borderColor: color, color: color }}>
-                              {p.pseudonyme ? p.pseudonyme.substring(0, 2).toUpperCase() : 'US'}
+          <>
+            <div className="table-container">
+              <table className="cyber-table">
+                <thead>
+                  <tr>
+                    <th>Utilisateur</th>
+                    <th>Tag</th>
+                    <th>Groupe / Équipe</th>
+                    <th>Rôle</th>
+                    <th>Surface Couverte (km²)</th>
+                    <th>Inscription</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profiles.map((p) => {
+                    const guild = guilds.find(g => g.id === p.guilde_id);
+                    const color = 'var(--primary-green)';
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {p.avatar_url ? (
+                              <img src={p.avatar_url} alt="" className="avatar" style={{ borderColor: color }} />
+                            ) : (
+                              <div className="avatar avatar-placeholder" style={{ borderColor: color, color: color }}>
+                                {p.pseudonyme ? p.pseudonyme.substring(0, 2).toUpperCase() : 'US'}
+                              </div>
+                            )}
+                            <div>
+                              <span style={{ fontWeight: 700, color: 'var(--text-white)' }}>
+                                {p.pseudonyme || 'Utilisateur Anonyme'}
+                              </span>
+                              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                ID: {p.id.substring(0, 8)}...
+                              </p>
                             </div>
-                          )}
-                          <div>
-                            <span style={{ fontWeight: 700, color: 'var(--text-white)' }}>
-                              {p.pseudonyme || 'Utilisateur Anonyme'}
-                            </span>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                              ID: {p.id.substring(0, 8)}...
-                            </p>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--primary-green)', fontWeight: 600 }}>
-                          {p.tag || '—'}
-                        </span>
-                      </td>
-                      <td>
-                        {guild ? (
-                          <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>
-                            {guild.nom} <span style={{ fontFamily: 'monospace', fontSize: '0.7rem', opacity: 0.8, marginLeft: '4px' }}>{guild.tag}</span>
+                        </td>
+                        <td>
+                          <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--primary-green)', fontWeight: 600 }}>
+                            {p.tag || '—'}
                           </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Indépendant</span>
-                        )}
-                      </td>
-                      <td>
-                        {p.grade === 'chef' ? (
-                          <span className="badge" style={{ backgroundColor: 'rgba(204, 255, 0, 0.05)', color: 'var(--primary-green)', border: '1px solid var(--primary-green)' }}>Responsable</span>
-                        ) : p.grade === 'adjoint' ? (
-                          <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>Adjoint</span>
-                        ) : p.guilde_id ? (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Membre</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--text-white)' }}>
-                        {(p.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
-                      </td>
-                      <td>
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                          {new Date(p.date_inscription).toLocaleDateString('fr-FR')}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: '8px' }}>
-                          <button 
-                            className="btn-icon" 
-                            title="Ouvrir la fiche utilisateur"
-                            onClick={() => setSelectedProfile(p)}
-                            style={{ color: 'var(--primary-green)' }}
-                          >
-                            <Activity size={16} />
-                          </button>
-                          <button 
-                            className="btn-icon" 
-                            title="Supprimer l'utilisateur"
-                            onClick={() => handleDeleteUser(p.id)}
-                            style={{ color: '#FF4B4B' }}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td>
+                          {guild ? (
+                            <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>
+                              {guild.nom} <span style={{ fontFamily: 'monospace', fontSize: '0.7rem', opacity: 0.8, marginLeft: '4px' }}>{guild.tag}</span>
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Indépendant</span>
+                          )}
+                        </td>
+                        <td>
+                          {p.grade === 'chef' ? (
+                            <span className="badge" style={{ backgroundColor: 'rgba(204, 255, 0, 0.05)', color: 'var(--primary-green)', border: '1px solid var(--primary-green)' }}>Responsable</span>
+                          ) : p.grade === 'adjoint' ? (
+                            <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>Adjoint</span>
+                          ) : p.guilde_id ? (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Membre</span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ fontWeight: 700, color: 'var(--text-white)' }}>
+                          {(p.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
+                        </td>
+                        <td>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                            {new Date(p.date_inscription).toLocaleDateString('fr-FR')}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px' }}>
+                            <button 
+                              className="btn-icon" 
+                              title="Ouvrir la fiche utilisateur"
+                              onClick={() => setSelectedProfile(p)}
+                              style={{ color: 'var(--primary-green)' }}
+                            >
+                              <Activity size={16} />
+                            </button>
+                            <button 
+                              className="btn-icon" 
+                              title="Supprimer l'utilisateur"
+                              onClick={() => handleDeleteUser(p.id)}
+                              style={{ color: '#FF4B4B' }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '16px 24px', 
+              borderTop: '1px solid var(--border-color)',
+              background: 'rgba(0, 0, 0, 0.2)',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Affichage de {totalCount > 0 ? (currentPage - 1) * pageSize + 1 : 0} à {Math.min(currentPage * pageSize, totalCount)} sur {totalCount} utilisateurs
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                >
+                  Précédent
+                </button>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / pageSize), prev + 1))}
+                  disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                  style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                >
+                  Suivant
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 

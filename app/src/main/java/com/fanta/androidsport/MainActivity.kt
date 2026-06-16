@@ -537,7 +537,17 @@ fun AuthScreen() {
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    errorMessage = "Erreur d'authentification : ${e.localizedMessage}"
+                                    val msg = e.message ?: ""
+                                    errorMessage = if (authMode == "login" && (
+                                                msg.contains("invalid login credentials", ignoreCase = true) ||
+                                                msg.contains("invalid_credentials", ignoreCase = true) ||
+                                                msg.contains("invalid_grant", ignoreCase = true) ||
+                                                msg.contains("invalid email or password", ignoreCase = true)
+                                            )) {
+                                        "Mot de passe erroné"
+                                    } else {
+                                        "Erreur d'authentification : ${e.localizedMessage}"
+                                    }
                                 } finally {
                                     isLoading = false
                                 }

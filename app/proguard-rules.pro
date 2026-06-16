@@ -20,7 +20,9 @@
 -dontwarn com.mapbox.**
 
 # Room Database
--keep class * extends androidx.room.RoomDatabase
+-keep class * extends androidx.room.RoomDatabase {
+    <init>(...);
+}
 -keep @androidx.room.Entity class * { *; }
 -keep interface * extends androidx.room.Dao { *; }
 -keep class * extends androidx.room.TypeConverter { *; }

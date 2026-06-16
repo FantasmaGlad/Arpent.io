@@ -127,6 +127,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // Play Services Location (Fused Location Client)
+    implementation(libs.play.services.location)
+
     // Tooling support (Previews)
     debugImplementation(libs.androidx.compose.ui.tooling)
 

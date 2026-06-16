@@ -81,6 +81,12 @@ import com.mapbox.maps.plugin.animation.MapAnimationOptions.Companion.mapAnimati
 import android.location.Location
 import android.location.LocationManager
 import android.location.LocationListener
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.Priority
+import android.os.Looper
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -118,6 +124,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.mapbox.common.MapboxOptions.accessToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
+        LocationTrackerState.restoreState(applicationContext)
         
         setContent {
             SportAndroidTheme {
@@ -1466,7 +1473,13 @@ fun ConquestMapScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    // Real run tracking states
+    // Real run tracking states collected from LocationTrackerState flow
+    val isRealRunActiveFlow by LocationTrackerState.isRealRunActive.collectAsStateWithLifecycle()
+    val gpsStartTime by LocationTrackerState.runStartTime.collectAsStateWithLifecycle()
+    val gpsPoints by LocationTrackerState.points.collectAsStateWithLifecycle()
+    val gpsDistance by LocationTrackerState.distance.collectAsStateWithLifecycle()
+    val gpsSpeed by LocationTrackerState.currentSpeed.collectAsStateWithLifecycle()
+
     var isRealRunActive by remember { mutableStateOf(false) }
     var runStartTime by remember { mutableStateOf<Long?>(null) }
     var runDistance by remember { mutableStateOf(0.0) }
@@ -1495,9 +1508,34 @@ fun ConquestMapScreen(
     // Store references to drawn objects
     val activePathPoints = remember { mutableStateListOf<Point>() }
 
-    val gpsPoints by LocationTrackerState.points.collectAsStateWithLifecycle()
-    val gpsDistance by LocationTrackerState.distance.collectAsStateWithLifecycle()
-    val gpsSpeed by LocationTrackerState.currentSpeed.collectAsStateWithLifecycle()
+    // Sync flow states to compose states
+    LaunchedEffect(isRealRunActiveFlow) {
+        isRealRunActive = isRealRunActiveFlow
+        if (isRealRunActiveFlow) {
+            // Restore from state flow on recreation
+            runStartTime = gpsStartTime
+            runDistance = gpsDistance
+            activePathPoints.clear()
+            activePathPoints.addAll(gpsPoints)
+            gpsPoints.lastOrNull()?.let {
+                currentPosition = it
+            }
+        }
+    }
+
+    // Auto-restart foreground service if session is active (e.g. after process death)
+    LaunchedEffect(isRealRunActive) {
+        if (isRealRunActive) {
+            val serviceIntent = Intent(context, LocationTrackingService::class.java).apply {
+                action = LocationTrackingService.ACTION_START
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        }
+    }
 
     LaunchedEffect(gpsPoints) {
         if (isRealRunActive) {
@@ -1718,59 +1756,59 @@ fun ConquestMapScreen(
         }
     }
 
-    // GPS Location listener using standard LocationManager
-    val locationManager = remember { context.getSystemService(Context.LOCATION_SERVICE) as LocationManager }
+    // GPS Location client using FusedLocationProviderClient
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
 
     DisposableEffect(lifecycleOwner, isRealRunActive) {
-        val locationListener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                val point = Point.fromLngLat(location.longitude, location.latitude)
-                currentPosition = point
-                if (isFirstLocationUpdate) {
-                    isFirstLocationUpdate = false
-                    mapViewportState.flyTo(
-                        CameraOptions.Builder()
-                            .center(point)
-                            .zoom(16.5)
-                            .pitch(60.0)
-                            .bearing(30.0)
-                            .build(),
-                        mapAnimationOptions { duration(1000L) }
-                    )
+        val locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                for (location in locationResult.locations) {
+                    val point = Point.fromLngLat(location.longitude, location.latitude)
+                    currentPosition = point
+                    if (isFirstLocationUpdate) {
+                        isFirstLocationUpdate = false
+                        mapViewportState.flyTo(
+                            CameraOptions.Builder()
+                                .center(point)
+                                .zoom(16.5)
+                                .pitch(60.0)
+                                .bearing(30.0)
+                                .build(),
+                            mapAnimationOptions { duration(1000L) }
+                        )
+                    }
                 }
             }
-            @Deprecated("Deprecated in Java")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
         }
 
         try {
             if (!isRealRunActive && (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)
             ) {
-                val lastKnownGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                val lastKnownNetwork = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                val bestLocation = lastKnownGps ?: lastKnownNetwork
-                bestLocation?.let {
-                    val point = Point.fromLngLat(it.longitude, it.latitude)
-                    currentPosition = point
-                    if (isFirstLocationUpdate) {
-                        isFirstLocationUpdate = false
-                        mapViewportState.setCameraOptions {
-                            center(point)
-                            zoom(16.5)
-                            pitch(60.0)
-                            bearing(30.0)
+                fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+                    location?.let {
+                        val point = Point.fromLngLat(it.longitude, it.latitude)
+                        currentPosition = point
+                        if (isFirstLocationUpdate) {
+                            isFirstLocationUpdate = false
+                            mapViewportState.setCameraOptions {
+                                center(point)
+                                zoom(16.5)
+                                pitch(60.0)
+                                bearing(30.0)
+                            }
                         }
                     }
                 }
 
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    3000L, // 3 seconds
-                    2f,    // 2 meters
-                    locationListener
+                val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
+                    .setMinUpdateDistanceMeters(2f)
+                    .build()
+
+                fusedLocationClient.requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
                 )
             }
         } catch (e: SecurityException) {
@@ -1779,7 +1817,7 @@ fun ConquestMapScreen(
 
         onDispose {
             try {
-                locationManager.removeUpdates(locationListener)
+                fusedLocationClient.removeLocationUpdates(locationCallback)
             } catch (e: Exception) {
                 // Ignore
             }
@@ -2151,9 +2189,11 @@ fun ConquestMapScreen(
                         activePathPoints.clear()
                         runDistance = 0.0
                         runStartTime = null
+                        LocationTrackerState.stopRun(context)
                     } else {
                         // Start real run
-                        LocationTrackerState.startNewRun()
+                        val startTime = System.currentTimeMillis()
+                        LocationTrackerState.startNewRun(context, startTime)
                         val serviceIntent = Intent(context, LocationTrackingService::class.java).apply {
                             action = LocationTrackingService.ACTION_START
                         }

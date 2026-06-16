@@ -6,32 +6,35 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.mapbox.geojson.Point
 
 class LocationTrackingService : Service() {
 
-    private lateinit var locationManager: LocationManager
-    
-    private val locationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            val point = Point.fromLngLat(location.longitude, location.latitude)
-            LocationTrackerState.addPoint(point, location.speed)
-        }
-        @Deprecated("Deprecated in Java")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-        override fun onProviderEnabled(provider: String) {}
-        override fun onProviderDisabled(provider: String) {}
-    }
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationCallback: LocationCallback
 
     override fun onCreate() {
         super.onCreate()
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                for (location in locationResult.locations) {
+                    val point = Point.fromLngLat(location.longitude, location.latitude)
+                    LocationTrackerState.addPoint(applicationContext, point, location.speed, location.accuracy, location.time)
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -83,11 +86,14 @@ class LocationTrackingService : Service() {
             if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
                 androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
             ) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    3000L, // 3 secondes
-                    2f,    // 2 mètres
-                    locationListener
+                val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
+                    .setMinUpdateDistanceMeters(2f)
+                    .build()
+
+                fusedLocationClient.requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
                 )
             }
         } catch (e: SecurityException) {
@@ -97,7 +103,7 @@ class LocationTrackingService : Service() {
 
     private fun stopTrackingForeground() {
         try {
-            locationManager.removeUpdates(locationListener)
+            fusedLocationClient.removeLocationUpdates(locationCallback)
         } catch (e: Exception) {
             // Ignore
         }

@@ -10,11 +10,7 @@ plugins {
 
 android {
     namespace = "com.fanta.androidsport"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     // Read .env file
     val envFile = project.rootProject.file(".env")

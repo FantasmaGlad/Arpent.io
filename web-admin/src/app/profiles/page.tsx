@@ -989,7 +989,8 @@ export default function ProfilesPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         {filteredCourses.map((c) => {
                           const durationMin = Math.floor(c.duree_secondes / 60);
-                          const durationSec = Math.floor(c.duree_secondes % 60);
+                          const rawSec = c.duree_secondes % 60;
+                          const durationSec = Math.round(rawSec * 100) / 100;
                           const distKm = c.distance_totale / 1000;
                           return (
                             <div 

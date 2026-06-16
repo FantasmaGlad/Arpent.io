@@ -164,6 +164,11 @@ body {
   background: rgba(255, 255, 255, 0.04);
 }
 
+select.input-field option {
+  background-color: var(--card-bg) !important;
+  color: var(--text-white) !important;
+}
+
 /* Typography & Badges */
 .title-cyber {
   font-weight: 700;

@@ -21,6 +21,8 @@ local.properties
 skills-lock.json
 .claude/
 *.sql
+!supabase_schema.sql
+!web-admin/fix_failles.sql
 .mcp.json
 .kotlin/
 .venv/

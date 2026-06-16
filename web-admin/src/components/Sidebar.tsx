@@ -1,13 +1,41 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map, Users, Shield, LogOut, Swords } from 'lucide-react';
+import { Map, Users, Shield, LogOut, Grid } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [adminUser, setAdminUser] = useState<{ email?: string; nom_complet?: string; initials?: string }>({});
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (user) {
+        const { data: adminRecord } = await supabase
+          .from('admins')
+          .select('nom_complet')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        const email = user.email || '';
+        const nom_complet = adminRecord?.nom_complet || user.user_metadata?.full_name || email.split('@')[0];
+        const initials = nom_complet
+          .split(' ')
+          .map((n: string) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2);
+
+        setAdminUser({
+          email,
+          nom_complet,
+          initials: initials || 'AD',
+        });
+      }
+    });
+  }, []);
 
   const handleSignOut = async () => {
     if (confirm('Voulez-vous vous déconnecter de la console admin ?')) {
@@ -17,8 +45,8 @@ export default function Sidebar() {
 
   const navItems = [
     { name: 'Carte Globale', href: '/', icon: Map },
-    { name: 'Profils Joueurs', href: '/profiles', icon: Users },
-    { name: 'Clans / Guildes', href: '/clans', icon: Swords },
+    { name: 'Profils Utilisateurs', href: '/profiles', icon: Users },
+    { name: 'Groupes / Équipes', href: '/clans', icon: Grid },
   ];
 
   return (
@@ -32,7 +60,7 @@ export default function Sidebar() {
         borderBottom: '1px solid var(--border-color)'
       }} className="sidebar-logo">
         <div style={{
-          color: 'var(--neon-volt)',
+          color: 'var(--primary-green)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center'
@@ -44,9 +72,7 @@ export default function Sidebar() {
           fontWeight: 800,
           textTransform: 'uppercase',
           letterSpacing: '1px',
-          background: 'linear-gradient(90deg, #FFFFFF 0%, #B8C6DB 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent'
+          color: 'var(--text-white)'
         }}>
           Arpent.io
         </span>
@@ -63,7 +89,7 @@ export default function Sidebar() {
               href={item.href}
               className={`nav-link ${isActive ? 'active' : ''}`}
             >
-              <Icon size={20} style={{ color: isActive ? 'var(--electric-blue)' : 'inherit' }} />
+              <Icon size={20} style={{ color: isActive ? 'var(--primary-green)' : 'inherit' }} />
               <span>{item.name}</span>
             </Link>
           );
@@ -77,27 +103,31 @@ export default function Sidebar() {
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        background: 'rgba(15, 19, 24, 0.4)'
+        background: 'rgba(255, 255, 255, 0.01)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
             width: '36px',
             height: '36px',
             borderRadius: '50%',
-            backgroundColor: 'rgba(204, 255, 0, 0.1)',
-            border: '1px solid var(--neon-volt)',
+            backgroundColor: 'rgba(204, 255, 0, 0.08)',
+            border: '1px solid var(--primary-green)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '0.85rem',
             fontWeight: 800,
-            color: 'var(--neon-volt)'
+            color: 'var(--primary-green)'
           }}>
-            AD
+            {adminUser.initials || 'AD'}
           </div>
           <div style={{ overflow: 'hidden' }}>
-            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-white)' }}>Clément B.</p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>clement.barillot3901@gmail.com</p>
+            <p style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {adminUser.nom_complet || 'Admin'}
+            </p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {adminUser.email || 'admin@arpent.io'}
+            </p>
           </div>
         </div>
 
@@ -116,7 +146,7 @@ export default function Sidebar() {
             padding: '4px 0',
             transition: 'color 0.2s'
           }}
-          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--active-orange)'}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#FF4B4B'}
           onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
         >
           <LogOut size={16} />

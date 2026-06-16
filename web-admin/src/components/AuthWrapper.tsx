@@ -15,20 +15,41 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email === 'clement.barillot3901@gmail.com') {
-        setSession(session);
-      } else if (session) {
-        // If logged in as someone else, sign out
-        supabase.auth.signOut();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const { data: adminRecord } = await supabase
+          .from('admins')
+          .select('id')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (adminRecord) {
+          setSession(session);
+        } else {
+          await supabase.auth.signOut();
+          setSession(null);
+        }
+      } else {
+        setSession(null);
       }
       setLoading(false);
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.email === 'clement.barillot3901@gmail.com') {
-        setSession(session);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const { data: adminRecord } = await supabase
+          .from('admins')
+          .select('id')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (adminRecord) {
+          setSession(session);
+        } else {
+          await supabase.auth.signOut();
+          setSession(null);
+        }
       } else {
         setSession(null);
       }
@@ -43,12 +64,6 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     setAuthError('');
     setLoginLoading(true);
 
-    if (email.trim().toLowerCase() !== 'clement.barillot3901@gmail.com') {
-      setAuthError("Cet e-mail n'a pas les droits d'administration.");
-      setLoginLoading(false);
-      return;
-    }
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
@@ -56,11 +71,23 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
 
     if (error) {
       setAuthError("Identifiants incorrects. Veuillez réessayer.");
-    } else if (data.user?.email !== 'clement.barillot3901@gmail.com') {
-      setAuthError("Accès refusé. Administrateur uniquement.");
-      await supabase.auth.signOut();
-    } else {
-      setSession(data.session);
+      setLoginLoading(false);
+      return;
+    }
+
+    if (data.user) {
+      const { data: adminRecord, error: adminError } = await supabase
+        .from('admins')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (adminError || !adminRecord) {
+        setAuthError("Accès refusé. Cet utilisateur n'a pas les droits d'administration.");
+        await supabase.auth.signOut();
+      } else {
+        setSession(data.session);
+      }
     }
     setLoginLoading(false);
   };
@@ -77,7 +104,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
         backgroundColor: 'var(--bg-dark)',
         fontFamily: 'var(--font-outfit)'
       }}>
-        <Loader2 style={{ color: 'var(--electric-blue)', animation: 'spin 1s linear infinite' }} size={40} />
+        <Loader2 style={{ color: 'var(--primary-green)', animation: 'spin 1s linear infinite' }} size={40} />
         <p style={{ color: 'var(--text-muted)' }}>Initialisation de la console sécurisée...</p>
         <style jsx global>{`
           @keyframes spin {
@@ -99,28 +126,38 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
         backgroundColor: 'var(--bg-dark)',
         position: 'relative'
       }}>
-        <div className="cyber-bg" />
-        <div className="glass-card" style={{ width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '420px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+          backgroundColor: 'var(--card-bg)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '12px',
+          padding: '32px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+        }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{
               display: 'inline-flex',
               padding: '12px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(0, 229, 255, 0.1)',
-              color: 'var(--electric-blue)',
+              backgroundColor: 'rgba(204, 255, 0, 0.08)',
+              color: 'var(--primary-green)',
               marginBottom: '16px'
             }}>
               <Shield size={32} />
             </div>
-            <h1 className="title-cyber" style={{ fontSize: '1.8rem', fontWeight: 800 }}>Arpent.io</h1>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-white)', letterSpacing: '0.5px' }}>Arpent.io</h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>Console d'Administration Réseau</p>
           </div>
 
           {authError && (
             <div style={{
-              backgroundColor: 'rgba(255, 109, 0, 0.1)',
-              border: '1px solid var(--active-orange)',
-              color: 'var(--active-orange)',
+              backgroundColor: 'rgba(255, 75, 75, 0.08)',
+              border: '1px solid rgba(255, 75, 75, 0.2)',
+              color: '#FF4B4B',
               padding: '12px',
               borderRadius: '8px',
               fontSize: '0.85rem',
@@ -170,7 +207,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
                   <span>Connexion en cours...</span>
                 </>
               ) : (
-                'Entrer dans le terminal'
+                'Se connecter'
               )}
             </button>
           </form>

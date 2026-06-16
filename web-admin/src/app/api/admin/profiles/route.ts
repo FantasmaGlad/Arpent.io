@@ -14,7 +14,13 @@ async function verifyAdmin(request: Request) {
     return false;
   }
   
-  return user.email === 'clement.barillot3901@gmail.com';
+  const { data: adminRecord, error: adminError } = await supabaseAdmin
+    .from('admins')
+    .select('id')
+    .eq('id', user.id)
+    .single();
+
+  return !adminError && adminRecord !== null;
 }
 
 export async function PUT(request: Request) {

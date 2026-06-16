@@ -9,7 +9,6 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -36,42 +35,36 @@ data class PendingRun(
 )
 
 object PendingRunsQueue {
-    private const val FILE_NAME = "pending_runs.json"
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json = Json { ignoreUnknownKeys = true }
 
-    private fun getQueueFile(context: Context): File {
-        return File(context.filesDir, FILE_NAME)
-    }
-
-    @Synchronized
-    private fun readQueue(context: Context): List<PendingRun> {
-        val file = getQueueFile(context)
-        if (!file.exists()) return emptyList()
-        return try {
-            val content = file.readText()
-            json.decodeFromString<List<PendingRun>>(content)
-        } catch (e: Exception) {
-            Log.e("PendingRunsQueue", "Erreur lors de la lecture de la file d'attente locale", e)
-            emptyList()
-        }
-    }
-
-    @Synchronized
-    private fun writeQueue(context: Context, queue: List<PendingRun>) {
-        val file = getQueueFile(context)
-        try {
-            val content = json.encodeToString(queue)
-            file.writeText(content)
-        } catch (e: Exception) {
-            Log.e("PendingRunsQueue", "Erreur lors de l'écriture de la file d'attente locale", e)
+    private suspend fun migrateLegacyQueue(context: Context, dao: PendingRunDao) = withContext(Dispatchers.IO) {
+        val file = File(context.filesDir, "pending_runs.json")
+        if (file.exists()) {
+            try {
+                val content = file.readText()
+                val legacyRuns = json.decodeFromString<List<PendingRun>>(content)
+                for (run in legacyRuns) {
+                    dao.insertRun(PendingRunEntity.fromPendingRun(run))
+                }
+                file.delete()
+                Log.d("PendingRunsQueue", "Migration réussie de ${legacyRuns.size} courses depuis le fichier JSON vers Room.")
+            } catch (e: Exception) {
+                Log.e("PendingRunsQueue", "Erreur lors de la migration du fichier JSON hérité", e)
+            }
         }
     }
 
     suspend fun enqueue(context: Context, run: PendingRun) = withContext(Dispatchers.IO) {
-        val currentQueue = readQueue(context).toMutableList()
-        currentQueue.add(run)
-        writeQueue(context, currentQueue)
-        Log.d("PendingRunsQueue", "Course ajoutée à la file locale. Taille: ${currentQueue.size}")
+        try {
+            val db = AppDatabase.getDatabase(context)
+            val dao = db.pendingRunDao()
+            migrateLegacyQueue(context, dao)
+            val entity = PendingRunEntity.fromPendingRun(run)
+            dao.insertRun(entity)
+            Log.d("PendingRunsQueue", "Course ajoutée à Room Database.")
+        } catch (e: Exception) {
+            Log.e("PendingRunsQueue", "Erreur lors de l'ajout de la course dans Room", e)
+        }
     }
 
     fun isNetworkAvailable(context: Context): Boolean {
@@ -87,18 +80,28 @@ object PendingRunsQueue {
     }
 
     suspend fun syncPendingRuns(context: Context, supabase: SupabaseClient) = withContext(Dispatchers.IO) {
+        val db = AppDatabase.getDatabase(context)
+        val dao = db.pendingRunDao()
+        migrateLegacyQueue(context, dao)
+
         if (!isNetworkAvailable(context)) {
             Log.d("PendingRunsQueue", "Pas de réseau pour la synchronisation.")
             return@withContext
         }
 
-        val queue = readQueue(context)
+        val queue = try {
+            dao.getAllRuns()
+        } catch (e: Exception) {
+            Log.e("PendingRunsQueue", "Erreur de lecture depuis la base locale Room", e)
+            return@withContext
+        }
+
         if (queue.isEmpty()) return@withContext
 
         Log.d("PendingRunsQueue", "Début de la synchronisation de ${queue.size} courses en attente...")
-        val remainingQueue = mutableListOf<PendingRun>()
 
-        for (run in queue) {
+        for (entity in queue) {
+            val run = entity.toPendingRun()
             try {
                 // Construction du payload JSON pour l'appel RPC de Supabase
                 val params = buildJsonObject {
@@ -134,14 +137,14 @@ object PendingRunsQueue {
                         Log.e("PendingRunsQueue", "Erreur lors de la mise à jour de la position du profil", ex)
                     }
                 }
-                Log.d("PendingRunsQueue", "Course synchronisée avec succès.")
+
+                // Suppression de la ligne locale Room puisque la synchronisation a réussi
+                dao.deleteRunById(entity.id)
+                Log.d("PendingRunsQueue", "Course synchronisée avec succès et retirée de la base locale.")
             } catch (e: Exception) {
-                Log.e("PendingRunsQueue", "Échec de synchronisation d'une course, remise dans la file d'attente", e)
-                remainingQueue.add(run)
+                Log.e("PendingRunsQueue", "Échec de synchronisation d'une course, conservée localement.", e)
             }
         }
-
-        writeQueue(context, remainingQueue)
-        Log.d("PendingRunsQueue", "Fin de la synchronisation. Reste dans la file: ${remainingQueue.size}")
+        Log.d("PendingRunsQueue", "Fin de la synchronisation.")
     }
 }

@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,6 +60,7 @@ import com.fanta.androidsport.ui.theme.NeonVolt
 import com.fanta.androidsport.ui.theme.SportAndroidTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.mapbox.geojson.Point
@@ -601,18 +603,25 @@ fun ArpentMainScreen(userId: String) {
         if (!isNetworkAvailable(context)) return
         scope.launch(Dispatchers.IO) {
             try {
-                // 1. Fetch profile
-                val profileRes = supabase.postgrest["profiles"].select {
-                    filter { eq("id", userId) }
+                val profileDeferred = async {
+                    supabase.postgrest["profiles"].select {
+                        filter { eq("id", userId) }
+                    }
                 }
-                // 2. Fetch courses
-                val coursesRes = supabase.postgrest["courses"].select {
-                    filter { eq("utilisateur_id", userId) }
+                val coursesDeferred = async {
+                    supabase.postgrest["courses"].select {
+                        filter { eq("utilisateur_id", userId) }
+                    }
                 }
-                // 3. Fetch territories
-                val terrRes = supabase.postgrest["territoires"].select {
-                    filter { eq("utilisateur_id", userId) }
+                val terrDeferred = async {
+                    supabase.postgrest["territoires"].select {
+                        filter { eq("utilisateur_id", userId) }
+                    }
                 }
+
+                val profileRes = profileDeferred.await()
+                val coursesRes = coursesDeferred.await()
+                val terrRes = terrDeferred.await()
 
                 // Parse profile info first
                 val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
@@ -790,6 +799,19 @@ fun ArpentMainScreen(userId: String) {
                 )
             },
             bottomBar = {
+                val configuration = LocalConfiguration.current
+                val screenWidth = configuration.screenWidthDp
+                val footerFontSize = when {
+                    screenWidth < 360 -> 9.sp
+                    screenWidth < 400 -> 10.sp
+                    else -> 11.sp
+                }
+                val footerIconSize = when {
+                    screenWidth < 360 -> 18.dp
+                    screenWidth < 400 -> 20.dp
+                    else -> 22.dp
+                }
+
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.background,
                     tonalElevation = 0.dp
@@ -797,8 +819,8 @@ fun ArpentMainScreen(userId: String) {
                     NavigationBarItem(
                         selected = navigationIndex == 0,
                         onClick = { navigationIndex = 0 },
-                        icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête") },
-                        label = { Text("Conquête") },
+                        icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
+                        label = { Text("Conquête", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = NeonVolt,
                             selectedTextColor = NeonVolt,
@@ -810,8 +832,8 @@ fun ArpentMainScreen(userId: String) {
                     NavigationBarItem(
                         selected = navigationIndex == 1,
                         onClick = { navigationIndex = 1 },
-                        icon = { Icon(Icons.Default.Star, contentDescription = "Classement") },
-                        label = { Text("Classement") },
+                        icon = { Icon(Icons.Default.Star, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
+                        label = { Text("Classement", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ElectricBlue,
                             selectedTextColor = ElectricBlue,
@@ -823,8 +845,8 @@ fun ArpentMainScreen(userId: String) {
                     NavigationBarItem(
                         selected = navigationIndex == 4,
                         onClick = { navigationIndex = 4 },
-                        icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses") },
-                        label = { Text("Courses") },
+                        icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
+                        label = { Text("Courses", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ActiveOrange,
                             selectedTextColor = ActiveOrange,
@@ -836,8 +858,8 @@ fun ArpentMainScreen(userId: String) {
                     NavigationBarItem(
                         selected = navigationIndex == 3,
                         onClick = { navigationIndex = 3 },
-                        icon = { Icon(Icons.Default.Group, contentDescription = "Guilde") },
-                        label = { Text("Guilde") },
+                        icon = { Icon(Icons.Default.Group, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
+                        label = { Text("Guilde", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = NeonVolt,
                             selectedTextColor = NeonVolt,
@@ -849,8 +871,8 @@ fun ArpentMainScreen(userId: String) {
                     NavigationBarItem(
                         selected = navigationIndex == 2,
                         onClick = { navigationIndex = 2 },
-                        icon = { Icon(Icons.Default.Person, contentDescription = "Profil") },
-                        label = { Text("Profil") },
+                        icon = { Icon(Icons.Default.Person, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
+                        label = { Text("Profil", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ActiveOrange,
                             selectedTextColor = ActiveOrange,
@@ -1237,6 +1259,22 @@ private fun isNetworkAvailable(context: android.content.Context): Boolean {
     return false
 }
 
+private fun splitIntoClosedPolygons(flatPoints: List<Point>): List<List<Point>> {
+    val polygons = mutableListOf<List<Point>>()
+    var currentRing = mutableListOf<Point>()
+    for (pt in flatPoints) {
+        currentRing.add(pt)
+        if (currentRing.size >= 3 && pt.longitude() == currentRing[0].longitude() && pt.latitude() == currentRing[0].latitude()) {
+            polygons.add(currentRing)
+            currentRing = mutableListOf()
+        }
+    }
+    if (currentRing.size >= 3) {
+        polygons.add(currentRing)
+    }
+    return polygons
+}
+
 private fun saveTerritoriesLocally(context: android.content.Context, polygons: List<List<Point>>) {
     try {
         val file = File(context.filesDir, "local_territories.json")
@@ -1325,7 +1363,7 @@ private suspend fun syncTerritoriesFromDatabase(
                         } else null
                     }
                     if (pts.isNotEmpty()) {
-                        polys.add(pts)
+                        polys.addAll(splitIntoClosedPolygons(pts))
                     }
                 }
             }
@@ -1507,6 +1545,46 @@ fun ConquestMapScreen(
     )
     var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
     var selectedPlayerStats by remember { mutableStateOf<OtherPlayerTerritory?>(null) }
+    var selectedPlayerRunsCount by remember { mutableStateOf<Int?>(null) }
+    var selectedPlayerTotalDistance by remember { mutableStateOf<Double?>(null) }
+    var loadingPlayerStats by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedPlayerStats) {
+        val player = selectedPlayerStats
+        if (player != null) {
+            loadingPlayerStats = true
+            selectedPlayerRunsCount = null
+            selectedPlayerTotalDistance = null
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    supabase.postgrest["courses"].select {
+                        filter { eq("utilisateur_id", player.playerId) }
+                    }
+                }
+                val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray
+                var totalDist = 0.0
+                var count = 0
+                if (jsonArray != null) {
+                    count = jsonArray.size
+                    for (element in jsonArray) {
+                        val obj = element as? kotlinx.serialization.json.JsonObject ?: continue
+                        val distanceTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                        totalDist += distanceTotale
+                    }
+                }
+                selectedPlayerRunsCount = count
+                selectedPlayerTotalDistance = totalDist / 1000.0
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                loadingPlayerStats = false
+            }
+        } else {
+            selectedPlayerRunsCount = null
+            selectedPlayerTotalDistance = null
+            loadingPlayerStats = false
+        }
+    }
 
     // Fetch other players' territories dynamically based on visible bounding box
     LaunchedEffect(userId) {
@@ -1591,8 +1669,8 @@ fun ConquestMapScreen(
                                 Point.fromLngLat(lon, lat)
                             } else null
                         }
-                        if (polygon.size >= 3) {
-                            terrByUser.getOrPut(uId) { mutableListOf() }.add(polygon)
+                        if (polygon.isNotEmpty()) {
+                            terrByUser.getOrPut(uId) { mutableListOf() }.addAll(splitIntoClosedPolygons(polygon))
                         }
                     }
                 }
@@ -2173,6 +2251,44 @@ fun ConquestMapScreen(
                                 color = Color.Black
                             )
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (loadingPlayerStats) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = NeonVolt,
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Nombre de courses :", color = Color.Black)
+                                Text(
+                                    text = "${selectedPlayerRunsCount ?: 0}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Distance totale courue :", color = Color.Black)
+                                val distStr = "%.2f km".format(selectedPlayerTotalDistance ?: 0.0)
+                                Text(
+                                    text = distStr,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+                        }
                     }
                 },
                 confirmButton = {
@@ -2494,8 +2610,8 @@ fun LeaderboardScreen(
                                         val isTop3 = rank <= 3
                                         val rankColor = when (rank) {
                                             1 -> NeonVolt
-                                            2 -> ElectricBlue
-                                            3 -> ActiveOrange
+                                            2 -> Color.White
+                                            3 -> Color.White
                                             else -> Color.Black.copy(alpha = 0.6f)
                                         }
                                         val circleBg = if (isTop3) Color(0xFF0F1318) else Color.Black.copy(alpha = 0.05f)
@@ -2531,25 +2647,6 @@ fun LeaderboardScreen(
                                                     style = MaterialTheme.typography.bodyLarge,
                                                     color = Color.Black
                                                 )
-                                                if (player.tag != null) {
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(
-                                                        text = "#${player.tag}",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = Color.Black.copy(alpha = 0.5f)
-                                                    )
-                                                }
-                                                if (isMe) {
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(50))
-                                                            .background(Color(0xFF0F1318))
-                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text("Vous", color = NeonVolt, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
                                             }
                                             if (player.guildeNom != null) {
                                                 val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color.Gray }
@@ -2736,8 +2833,8 @@ fun LeaderboardScreen(
                                         val isTop3 = rank <= 3
                                         val rankColor = when (rank) {
                                             1 -> NeonVolt
-                                            2 -> ElectricBlue
-                                            3 -> ActiveOrange
+                                            2 -> Color.White
+                                            3 -> Color.White
                                             else -> Color.Black.copy(alpha = 0.6f)
                                         }
                                         val circleBg = if (isTop3) Color(0xFF0F1318) else Color.Black.copy(alpha = 0.05f)

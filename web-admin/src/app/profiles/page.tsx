@@ -292,6 +292,30 @@ export default function ProfilesPage() {
     }
   };
 
+  const handleDeleteCourse = async (courseId: string) => {
+    if (!confirm("Voulez-vous vraiment supprimer cette course ? Cette action est irréversible.")) {
+      return;
+    }
+
+    setActionLoading(true);
+    setMessage(null);
+    try {
+      const { error } = await supabase
+        .from('courses')
+        .delete()
+        .eq('id', courseId);
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: "La course a été supprimée avec succès." });
+      setCourses(prev => prev.filter(c => c.id !== courseId));
+    } catch (err: any) {
+      setMessage({ type: 'error', text: `Erreur lors de la suppression de la course : ${err.message}` });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Center player on main Map page
   const centerPlayerOnMap = (lat: number, lng: number) => {
     localStorage.setItem('map_center_lat', lat.toString());
@@ -994,11 +1018,33 @@ export default function ProfilesPage() {
                                     )}
                                   </p>
                                 </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <p style={{ fontWeight: 800, color: 'var(--electric-blue)', fontSize: '1.05rem' }}>{distKm.toFixed(2)} km</p>
-                                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                    {durationMin}m {durationSec}s
-                                  </p>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <p style={{ fontWeight: 800, color: 'var(--electric-blue)', fontSize: '1.05rem' }}>{distKm.toFixed(2)} km</p>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                      {durationMin}m {durationSec}s
+                                    </p>
+                                  </div>
+                                  <button 
+                                    onClick={() => handleDeleteCourse(c.id)}
+                                    disabled={actionLoading}
+                                    style={{
+                                      background: 'rgba(239, 68, 68, 0.1)',
+                                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                                      borderRadius: '6px',
+                                      color: '#ef4444',
+                                      padding: '6px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      transition: 'all 0.2s',
+                                      opacity: actionLoading ? 0.5 : 1
+                                    }}
+                                    title="Supprimer cette course"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
                                 </div>
                               </div>
                               

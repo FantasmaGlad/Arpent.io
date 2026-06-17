@@ -39,6 +39,9 @@ object LocationTrackerState {
     private val _runStartTime = MutableStateFlow<Long?>(null)
     val runStartTime: StateFlow<Long?> = _runStartTime.asStateFlow()
 
+    private val _isSpeedLimitExceeded = MutableStateFlow(false)
+    val isSpeedLimitExceeded: StateFlow<Boolean> = _isSpeedLimitExceeded.asStateFlow()
+
     private var lastPointTime: Long = 0L
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -97,6 +100,7 @@ object LocationTrackerState {
         _distance.value = 0.0
         _isRealRunActive.value = true
         _runStartTime.value = startTime
+        _isSpeedLimitExceeded.value = false
         lastPointTime = startTime
         saveStateToDisk(context)
     }
@@ -107,6 +111,7 @@ object LocationTrackerState {
         _points.value = emptyList()
         _distance.value = 0.0
         _currentSpeed.value = 0.0
+        _isSpeedLimitExceeded.value = false
         lastPointTime = 0L
         clearSavedState(context)
     }
@@ -125,6 +130,7 @@ object LocationTrackerState {
             _points.value = currentList
             lastPointTime = timeMs
             _currentSpeed.value = speedMps * 3.6 // km/h
+            _isSpeedLimitExceeded.value = false
             saveStateToDisk(context)
         } else if (prevPoint != point) {
             val dist = calculateDistance(prevPoint, point)
@@ -134,10 +140,12 @@ object LocationTrackerState {
                 val speedBetweenPoints = dist / timeDiffSec
                 if (speedBetweenPoints > 12.0) { // > 43.2 km/h
                     Log.d("LocationTrackerState", "Point rejected due to speed anomaly: $speedBetweenPoints m/s")
+                    _isSpeedLimitExceeded.value = true
                     return
                 }
             }
 
+            _isSpeedLimitExceeded.value = false
             _distance.value += dist
             currentList.add(point)
             _points.value = currentList

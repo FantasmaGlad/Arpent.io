@@ -1,10 +1,14 @@
 package com.fanta.androidsport.ui.screens
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Build
 import android.os.Looper
+import android.os.Vibrator
+import android.os.VibrationEffect
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -134,6 +138,7 @@ fun ConquestMapScreen(
     val gpsPoints by LocationTrackerState.points.collectAsStateWithLifecycle()
     val gpsDistance by LocationTrackerState.distance.collectAsStateWithLifecycle()
     val gpsSpeed by LocationTrackerState.currentSpeed.collectAsStateWithLifecycle()
+    val isSpeedLimitExceeded by LocationTrackerState.isSpeedLimitExceeded.collectAsStateWithLifecycle()
 
     var isRealRunActive by remember { mutableStateOf(false) }
     var runStartTime by remember { mutableStateOf<Long?>(null) }
@@ -143,6 +148,25 @@ fun ConquestMapScreen(
     var currentArea by remember { mutableStateOf(initialArea) }
     var sessionGainedArea by remember { mutableStateOf(0.0) }
     var currentSpeed by remember { mutableStateOf(0.0) }
+
+    LaunchedEffect(isSpeedLimitExceeded) {
+        if (isSpeedLimitExceeded) {
+            Toast.makeText(context, "Vitesse maximale autorisée (12 m/s) dépassée ! Vos points actuels sont rejetés.", Toast.LENGTH_LONG).show()
+            try {
+                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                if (vibrator != null && vibrator.hasVibrator()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(500)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("ConquestMapScreen", "Failed to vibrate", e)
+            }
+        }
+    }
 
     LaunchedEffect(initialArea) {
         currentArea = initialArea
@@ -641,9 +665,9 @@ fun ConquestMapScreen(
                     .widthIn(max = 340.dp),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                    containerColor = if (isSpeedLimitExceeded) Color(0x33FF3D00) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
                 ),
-                border = BorderStroke(1.dp, NeonVolt.copy(alpha = 0.6f))
+                border = BorderStroke(1.5.dp, if (isSpeedLimitExceeded) Color.Red else NeonVolt.copy(alpha = 0.6f))
             ) {
                 Row(
                     modifier = Modifier
@@ -671,18 +695,27 @@ fun ConquestMapScreen(
                                 .background(Color.Red.copy(alpha = pulseAlpha))
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Enregistrement Course",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        if (isSpeedLimitExceeded) {
+                            Text(
+                                text = "⚠️ HORS-JEU (Max 12m/s)",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Red
+                            )
+                        } else {
+                            Text(
+                                text = "Enregistrement Course",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                     Text(
                         text = "${"%.1f".format(currentSpeed)} km/h",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = ElectricBlue
+                        color = if (isSpeedLimitExceeded) Color.Red else ElectricBlue
                     )
                 }
             }

@@ -193,7 +193,7 @@ export default function MapPage() {
       const geojsonFeatures = geoTerritories.map(t => {
         try {
           const geometry = JSON.parse(t.geojson);
-          const color = '#CCFF00';
+          const color = t.guilde_couleur || t.empire_color || '#CCFF00';
           return {
             type: 'Feature' as const,
             properties: {
@@ -267,7 +267,7 @@ export default function MapPage() {
       profiles.forEach(p => {
         if (p.share_location && p.latitude !== null && p.longitude !== null) {
           const guild = guilds.find(g => g.id === p.guilde_id);
-          const color = '#CCFF00';
+          const color = guild?.couleur_hex || p.empire_color || '#CCFF00';
 
           const el = document.createElement('div');
           el.className = 'player-marker';

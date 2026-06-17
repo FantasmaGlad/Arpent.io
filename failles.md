@@ -7,24 +7,31 @@ Cet audit présente une analyse détaillée des failles identifiées au sein de 
 ## 1. Failles de Calcul Spatial & Cohérence des Profils
 
 ### A. Calcul de Surface Flou en Degrés Carrés ($deg^2$) (Android)
-*   **Fichier concerné :** [`MainActivity.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/MainActivity.kt#L1196-L1206)
+*   **Statut :** 🟢 **Résolu**
+*   **Fichier concerné :** [`MainActivity.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/MainActivity.kt#L1196-L1206) (déplacé dans [`GeoUtils.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/utils/GeoUtils.kt))
 *   **Description :** La fonction `getPolygonArea` utilise la formule mathématique de Shoelace (formule des lacets) directement sur des coordonnées géographiques brutes (Latitude et Longitude).
-*   **Impact :** Le résultat obtenu est exprimé en degrés carrés ($deg^2$) et non en unités métriques. Or, la distance physique représentée par un degré de longitude diminue à mesure que l'on se rapproche des pôles (proportionnelle à $\cos(\text{latitude})$). Utiliser cette fonction pour identifier et afficher le "plus grand polygone d'un joueur" (`completedPolygons.maxByOrNull { getPolygonArea(it) }`) fausse la sélection et pénalise les parcours selon leur latitude.
+*   **Correction apportée :** Remplacement par la formule de calcul de surface sphérique sur l'ellipsoïde WGS84 ($R = 6\,378\,137.0\text{ m}$) pour obtenir une aire exacte en mètres carrés ($m^2$).
 
 ### B. Écarts de Mesure de Surface (Local vs Base de données)
-*   **Fichier concerné :** [`MainActivity.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/MainActivity.kt#L1127-L1144)
+*   **Statut :** 🟢 **Résolu**
+*   **Fichier concerné :** [`MainActivity.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/MainActivity.kt#L1127-L1144) (déplacé dans [`GeoUtils.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/utils/GeoUtils.kt))
 *   **Description :** L'application estime localement l'aire conquise via une projection plane simplifiée (`estimateAreaKm2` avec une constante fixe de $1^\circ \approx 111\,000\text{ m}$), tandis que la base de données effectue un calcul précis basé sur l'ellipsoïde de référence géodésique via PostGIS (`ST_Area(geom::geography)`).
-*   **Impact :** Ce décalage de calcul entraîne une incohérence immédiate des statistiques affichées. Les valeurs de superficie affichées à l'utilisateur "sautent" visuellement de manière saccadée dès que les données synchronisées depuis le serveur écrasent les estimations locales calculées sur le téléphone.
+*   **Correction apportée :** Alignement de `estimateAreaKm2` sur le calcul de surface sphérique WGS84 utilisé par `getPolygonArea`, garantissant la cohérence stricte avec PostGIS.
 
 ### C. Lag de Fusion et Affichage Superposé (Android)
-*   **Fichier concerné :** [`MainActivity.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/MainActivity.kt#L2176-L2185)
+*   **Statut :** 🟢 **Résolu**
+*   **Fichiers concernés :** [`StorageUtils.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/utils/StorageUtils.kt) et [`ConquestMapScreen.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/ui/screens/ConquestMapScreen.kt)
 *   **Description :** Lors de la validation d'une course, le client ajoute instantanément les points bruts à sa liste locale `completedPolygons`. En revanche, en base de données, la fonction `enregistrer_course` fusionne ce tracé avec le territoire global existant du joueur et en soustrait les chevauchements avec les alliés ou les ennemis.
-*   **Impact :** La carte du téléphone affiche temporairement des tracés bruts qui se superposent avec d'autres zones, masquant la réalité géographique de la conquête. Les découpes et fusions réelles n'apparaissent qu'après un rafraîchissement complet initié manuellement ou un redémarrage de l'application.
+*   **Correction apportée :** Modification de `saveRunToDatabase` pour recharger dynamiquement les polygones nettoyés et fusionnés depuis la base de données (`syncTerritoriesFromDatabase`) immédiatement après le succès de la synchronisation en arrière-plan.
 
 ### D. Fusion des Statistiques "All-Time" et "Actuel"
-*   **Fichier concerné :** [`MainActivity.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/MainActivity.kt#L667-L683)
+*   **Statut :** 🟢 **Résolu**
+*   **Fichiers concernés :** [`ArpentMainScreen.kt`](file:///home/fanta/AndroidStudioProjects/SportAndroid/app/src/main/java/com/fanta/androidsport/ui/screens/ArpentMainScreen.kt) et [`supabase_schema.sql`](file:///home/fanta/AndroidStudioProjects/SportAndroid/supabase_schema.sql)
 *   **Description :** Dans les statistiques du profil, les variables d'empire cumulé historique ("Empire All-Time") et d'empire possédé actuellement ("Empire Actuel") pointent toutes les deux sur le même champ calculé `profiles.total_area_m2`.
-*   **Impact :** La base de données met à jour ce champ à l'aide d'un déclencheur qui réduit la surface dès qu'un adversaire conquiert une portion du territoire. De ce fait, un joueur perdant des territoires voit également chuter sa statistique historique cumulative "All-Time", ce qui supprime tout intérêt de classement historique.
+*   **Correction apportée :** 
+    1. Ajout d'une colonne `all_time_area_m2` dans la table `profiles`.
+    2. Mise à jour de la fonction trigger `update_profile_cached_area` pour calculer le cumul des gains de superficie positifs uniquement (ignorant les pertes territoriales).
+    3. Optimisation de l'affichage mobile pour charger directement les champs en cache `total_area_m2` et `all_time_area_m2`.
 
 ---
 

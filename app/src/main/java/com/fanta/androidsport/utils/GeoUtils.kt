@@ -17,22 +17,7 @@ fun calculateDistance(p1: Point, p2: Point): Double {
 }
 
 fun estimateAreaKm2(points: List<Point>): Double {
-    if (points.size < 3) return 0.0
-    var area = 0.0
-    val refLat = points[0].latitude()
-    val cosLat = Math.cos(Math.toRadians(refLat))
-    val xy = points.map { p ->
-        val x = (p.longitude() - points[0].longitude()) * 111000.0 * cosLat
-        val y = (p.latitude() - points[0].latitude()) * 111000.0
-        Pair(x, y)
-    }
-    var j = xy.size - 1
-    for (i in xy.indices) {
-        area += (xy[j].first + xy[i].first) * (xy[j].second - xy[i].second)
-        j = i
-    }
-    val areaM2 = Math.abs(area) / 2.0
-    return areaM2 / 1_000_000.0 // convert m² to km²
+    return getPolygonArea(points) / 1_000_000.0
 }
 
 fun getPolygonCentroid(points: List<Point>): Point {
@@ -50,14 +35,19 @@ fun getPolygonCentroid(points: List<Point>): Point {
 
 fun getPolygonArea(points: List<Point>): Double {
     if (points.size < 3) return 0.0
-    var area = 0.0
+    var totalArea = 0.0
+    val r = 6378137.0 // WGS84 Semi-major axis in meters
     val n = points.size
     for (i in 0 until n) {
-        val j = (i + 1) % n
-        area += points[i].longitude() * points[j].latitude()
-        area -= points[j].longitude() * points[i].latitude()
+        val p1 = points[i]
+        val p2 = points[(i + 1) % n]
+        val lambda1 = Math.toRadians(p1.longitude())
+        val lambda2 = Math.toRadians(p2.longitude())
+        val phi1 = Math.toRadians(p1.latitude())
+        val phi2 = Math.toRadians(p2.latitude())
+        totalArea += (lambda2 - lambda1) * (2.0 + Math.sin(phi1) + Math.sin(phi2))
     }
-    return Math.abs(area) / 2.0
+    return Math.abs(totalArea * r * r / 2.0)
 }
 
 fun splitIntoClosedPolygons(flatPoints: List<Point>): List<List<Point>> {

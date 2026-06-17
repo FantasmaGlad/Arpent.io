@@ -825,19 +825,24 @@ fun ConquestMapScreen(
                                 runStartTime = runStartTime ?: System.currentTimeMillis(),
                                 runDistance = runDistance,
                                 isLoop = isLoop,
-                                closedPoints = closedPoints
-                            ) { areaKm2 ->
-                                if (isLoop) {
-                                    completedPolygons.add(closedPoints)
-                                    saveTerritoriesLocally(context, completedPolygons)
-                                    currentArea += areaKm2
-                                    sessionGainedArea = areaKm2
-                                    Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
-                                } else {
-                                    Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_SHORT).show()
+                                closedPoints = closedPoints,
+                                completedPolygons = completedPolygons,
+                                onSuccess = { areaKm2 ->
+                                    if (isLoop) {
+                                        completedPolygons.add(closedPoints)
+                                        saveTerritoriesLocally(context, completedPolygons)
+                                        currentArea += areaKm2
+                                        sessionGainedArea = areaKm2
+                                        Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_SHORT).show()
+                                    }
+                                    onRunSaved()
+                                },
+                                onSyncComplete = {
+                                    onRunSaved()
                                 }
-                                onRunSaved()
-                            }
+                            )
                         } else {
                             Toast.makeText(context, "Course annulée (aucun point GPS enregistré).", Toast.LENGTH_SHORT).show()
                         }

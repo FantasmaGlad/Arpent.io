@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     pseudonyme text UNIQUE,
     guilde_id uuid REFERENCES public.guildes(id) ON DELETE SET NULL,
     total_area_m2 float DEFAULT 0.0 NOT NULL,
+    all_time_area_m2 float DEFAULT 0.0 NOT NULL,
     share_location boolean DEFAULT true NOT NULL,
     avatar_url text,
     empire_color text DEFAULT '#00E676',
@@ -358,7 +359,8 @@ RETURNS trigger AS $$
 BEGIN
     IF (TG_OP = 'INSERT') THEN
         UPDATE public.profiles 
-        SET total_area_m2 = total_area_m2 + new.superficie_m2
+        SET total_area_m2 = total_area_m2 + new.superficie_m2,
+            all_time_area_m2 = all_time_area_m2 + new.superficie_m2
         WHERE id = new.utilisateur_id;
     ELSIF (TG_OP = 'DELETE') THEN
         UPDATE public.profiles 
@@ -366,7 +368,8 @@ BEGIN
         WHERE id = old.utilisateur_id;
     ELSIF (TG_OP = 'UPDATE') THEN
         UPDATE public.profiles 
-        SET total_area_m2 = GREATEST(0.0, total_area_m2 - old.superficie_m2 + new.superficie_m2)
+        SET total_area_m2 = GREATEST(0.0, total_area_m2 - old.superficie_m2 + new.superficie_m2),
+            all_time_area_m2 = all_time_area_m2 + GREATEST(0.0, new.superficie_m2 - old.superficie_m2)
         WHERE id = new.utilisateur_id;
     END IF;
     RETURN null;

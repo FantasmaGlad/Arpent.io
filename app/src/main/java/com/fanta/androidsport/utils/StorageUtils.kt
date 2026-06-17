@@ -136,7 +136,9 @@ fun saveRunToDatabase(
     runDistance: Double,
     isLoop: Boolean,
     closedPoints: List<Point>,
-    onSuccess: (Double) -> Unit
+    completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
+    onSuccess: (Double) -> Unit,
+    onSyncComplete: () -> Unit
 ) {
     scope.launch(Dispatchers.IO) {
         try {
@@ -183,7 +185,15 @@ fun saveRunToDatabase(
             }
 
             // Sync with remote database in background
-            PendingRunsQueue.syncPendingRuns(context, supabase)
+            if (isNetworkAvailable(context)) {
+                PendingRunsQueue.syncPendingRuns(context, supabase)
+                // Fetch the clean, database-fused polygons
+                syncTerritoriesFromDatabase(userId, context, completedPolygons)
+                // Trigger stats refresh again to show exact DB cached areas
+                withContext(Dispatchers.Main) {
+                    onSyncComplete()
+                }
+            }
         } catch (e: Exception) {
             android.util.Log.e("Arpent", "Erreur d'enregistrement local de la course", e)
             withContext(Dispatchers.Main) {

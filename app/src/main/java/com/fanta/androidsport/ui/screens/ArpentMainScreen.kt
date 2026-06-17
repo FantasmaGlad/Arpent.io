@@ -80,15 +80,9 @@ fun ArpentMainScreen(userId: String) {
                         filter { eq("utilisateur_id", userId) }
                     }
                 }
-                val terrDeferred = async {
-                    supabase.postgrest["territoires"].select {
-                        filter { eq("utilisateur_id", userId) }
-                    }
-                }
 
                 val profileRes = profileDeferred.await()
                 val coursesRes = coursesDeferred.await()
-                val terrRes = terrDeferred.await()
 
                 // Parse profile info first
                 val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
@@ -98,6 +92,8 @@ fun ArpentMainScreen(userId: String) {
                 val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
                 val avatarUrl = profileObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
                 val guildeId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
+                val totalAreaM2 = profileObj?.get("total_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                val allTimeAreaM2 = profileObj?.get("all_time_area_m2")?.jsonPrimitive?.doubleOrNull ?: totalAreaM2
 
                 // Fetch guild details if present
                 var gNom: String? = null
@@ -124,23 +120,23 @@ fun ArpentMainScreen(userId: String) {
                         totalDist += obj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
                     }
 
-                    val terrArray = kotlinx.serialization.json.Json.parseToJsonElement(terrRes.data) as? kotlinx.serialization.json.JsonArray
-                    var totalAreaM2 = 0.0
-                    terrArray?.forEach {
-                        val obj = it as? kotlinx.serialization.json.JsonObject
-                        totalAreaM2 += obj?.get("superficie_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
-                    }
-
-                    Triple(pseudo, color, Triple(shareLoc, totalDist, totalAreaM2))
+                    mapOf(
+                        "pseudo" to pseudo,
+                        "color" to color,
+                        "shareLoc" to shareLoc,
+                        "totalDist" to totalDist,
+                        "totalAreaM2" to totalAreaM2,
+                        "allTimeAreaM2" to allTimeAreaM2
+                    )
                 }
 
                 withContext(Dispatchers.Main) {
-                    userPseudo = parsed.first
-                    userEmpireColor = parsed.second
-                    userShareLocation = parsed.third.first
-                    totalDistanceKm = parsed.third.second
-                    currentAreaKm2 = parsed.third.third / 1_000_000.0
-                    allTimeAreaKm2 = parsed.third.third / 1_000_000.0
+                    userPseudo = parsed["pseudo"] as String
+                    userEmpireColor = parsed["color"] as String
+                    userShareLocation = parsed["shareLoc"] as Boolean
+                    totalDistanceKm = parsed["totalDist"] as Double
+                    currentAreaKm2 = (parsed["totalAreaM2"] as Double) / 1_000_000.0
+                    allTimeAreaKm2 = (parsed["allTimeAreaM2"] as Double) / 1_000_000.0
                     userAvatarUrl = avatarUrl
                     userGuildId = guildeId
                     userGuildNom = gNom

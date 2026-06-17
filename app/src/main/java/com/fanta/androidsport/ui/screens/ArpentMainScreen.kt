@@ -56,8 +56,13 @@ fun ArpentMainScreen(userId: String) {
     var currentAreaKm2 by remember { mutableStateOf(0.0) }
     var userEmpireColor by remember { mutableStateOf("#00E676") }
     var userShareLocation by remember { mutableStateOf(true) }
-    var userGhostMode by remember { mutableStateOf(false) }
     var userAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var userXp by remember { mutableStateOf(0) }
+    var userLevel by remember { mutableStateOf(1) }
+    var userLoopCount by remember { mutableStateOf(0) }
+    var userMaxLoopDistanceKm by remember { mutableStateOf(0.0) }
+    var userMaxAreaKm2 by remember { mutableStateOf(0.0) }
+    var userAreaLostKm2 by remember { mutableStateOf(0.0) }
     var userGuildId by remember { mutableStateOf<String?>(null) }
     var userGuildNom by remember { mutableStateOf<String?>(null) }
     var userGuildCouleur by remember { mutableStateOf<String?>(null) }
@@ -91,11 +96,20 @@ fun ArpentMainScreen(userId: String) {
                 val pseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
                 val color = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
                 val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-                val ghostMode = profileObj?.get("ghost_mode")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
                 val avatarUrl = profileObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
                 val guildeId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
                 val totalAreaM2 = profileObj?.get("total_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
                 val allTimeAreaM2 = profileObj?.get("all_time_area_m2")?.jsonPrimitive?.doubleOrNull ?: totalAreaM2
+                val xp = profileObj?.get("xp")?.jsonPrimitive?.intOrNull ?: 0
+                val level = profileObj?.get("level")?.jsonPrimitive?.intOrNull ?: 1
+                val loopCount = profileObj?.get("loop_count")?.jsonPrimitive?.intOrNull ?: 0
+                val maxLoopDistanceKm = profileObj?.get("max_loop_distance_km")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                val maxAreaM2 = profileObj?.get("max_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                val areaLostM2 = profileObj?.get("area_lost_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+
+                // Cache pseudonym for daily notifications
+                val prefs = context.getSharedPreferences("arpent_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putString("user_pseudonyme", pseudo).apply()
 
                 // Fetch guild details if present
                 var gNom: String? = null
@@ -126,10 +140,15 @@ fun ArpentMainScreen(userId: String) {
                         "pseudo" to pseudo,
                         "color" to color,
                         "shareLoc" to shareLoc,
-                        "ghostMode" to ghostMode,
                         "totalDist" to totalDist,
                         "totalAreaM2" to totalAreaM2,
-                        "allTimeAreaM2" to allTimeAreaM2
+                        "allTimeAreaM2" to allTimeAreaM2,
+                        "xp" to xp,
+                        "level" to level,
+                        "loopCount" to loopCount,
+                        "maxLoopDistanceKm" to maxLoopDistanceKm,
+                        "maxAreaM2" to maxAreaM2,
+                        "areaLostM2" to areaLostM2
                     )
                 }
 
@@ -137,10 +156,15 @@ fun ArpentMainScreen(userId: String) {
                     userPseudo = parsed["pseudo"] as String
                     userEmpireColor = parsed["color"] as String
                     userShareLocation = parsed["shareLoc"] as Boolean
-                    userGhostMode = parsed["ghostMode"] as Boolean
                     totalDistanceKm = parsed["totalDist"] as Double
                     currentAreaKm2 = (parsed["totalAreaM2"] as Double) / 1_000_000.0
                     allTimeAreaKm2 = (parsed["allTimeAreaM2"] as Double) / 1_000_000.0
+                    userXp = parsed["xp"] as Int
+                    userLevel = parsed["level"] as Int
+                    userLoopCount = parsed["loopCount"] as Int
+                    userMaxLoopDistanceKm = parsed["maxLoopDistanceKm"] as Double
+                    userMaxAreaKm2 = (parsed["maxAreaM2"] as Double) / 1_000_000.0
+                    userAreaLostKm2 = (parsed["areaLostM2"] as Double) / 1_000_000.0
                     userAvatarUrl = avatarUrl
                     userGuildId = guildeId
                     userGuildNom = gNom
@@ -414,8 +438,13 @@ fun ArpentMainScreen(userId: String) {
                         currentArea = currentAreaKm2,
                         userEmpireColor = userEmpireColor,
                         userShareLocation = userShareLocation,
-                        userGhostMode = userGhostMode,
                         userAvatarUrl = userAvatarUrl,
+                        xp = userXp,
+                        level = userLevel,
+                        loopCount = userLoopCount,
+                        maxLoopDistanceKm = userMaxLoopDistanceKm,
+                        maxAreaKm2 = userMaxAreaKm2,
+                        areaLostKm2 = userAreaLostKm2,
                         onStatsUpdated = { refreshStats() }
                     )
                 }

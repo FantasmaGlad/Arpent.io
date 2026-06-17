@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         com.mapbox.common.MapboxOptions.accessToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
         LocationTrackerState.restoreState(applicationContext)
+        NotificationScheduler.scheduleNextAlarm(applicationContext)
         
         setContent {
             SportAndroidTheme {

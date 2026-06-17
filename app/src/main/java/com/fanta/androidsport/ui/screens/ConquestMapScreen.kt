@@ -51,6 +51,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -143,6 +145,11 @@ fun ConquestMapScreen(
     var isRealRunActive by remember { mutableStateOf(false) }
     var runStartTime by remember { mutableStateOf<Long?>(null) }
     var runDistance by remember { mutableStateOf(0.0) }
+
+    var showRunSaveDialog by remember { mutableStateOf(false) }
+    var runSaveName by remember { mutableStateOf("") }
+    var runSaveDescription by remember { mutableStateOf("") }
+    var pendingRunDataToSave by remember { mutableStateOf<PendingRunSaveData?>(null) }
 
     // Live statistics
     var currentArea by remember { mutableStateOf(initialArea) }
@@ -851,38 +858,22 @@ fun ConquestMapScreen(
                         }
 
                         if (activePathPoints.isNotEmpty()) {
-                            saveRunToDatabase(
-                                userId = userId,
-                                scope = scope,
-                                context = context,
+                            pendingRunDataToSave = PendingRunSaveData(
                                 runStartTime = runStartTime ?: System.currentTimeMillis(),
                                 runDistance = runDistance,
                                 isLoop = isLoop,
-                                closedPoints = closedPoints,
-                                completedPolygons = completedPolygons,
-                                onSuccess = { areaKm2 ->
-                                    if (isLoop) {
-                                        completedPolygons.add(closedPoints)
-                                        saveTerritoriesLocally(context, completedPolygons)
-                                        currentArea += areaKm2
-                                        sessionGainedArea = areaKm2
-                                        Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_SHORT).show()
-                                    }
-                                    onRunSaved()
-                                },
-                                onSyncComplete = {
-                                    onRunSaved()
-                                }
+                                closedPoints = closedPoints
                             )
+                            runSaveName = ""
+                            runSaveDescription = ""
+                            showRunSaveDialog = true
                         } else {
                             Toast.makeText(context, "Course annulée (aucun point GPS enregistré).", Toast.LENGTH_SHORT).show()
+                            activePathPoints.clear()
+                            runDistance = 0.0
+                            runStartTime = null
+                            LocationTrackerState.stopRun(context)
                         }
-                        activePathPoints.clear()
-                        runDistance = 0.0
-                        runStartTime = null
-                        LocationTrackerState.stopRun(context)
                     } else {
                         // Start real run
                         val startTime = System.currentTimeMillis()
@@ -1033,5 +1024,131 @@ fun ConquestMapScreen(
                 containerColor = Color.White
             )
         }
+
+        if (showRunSaveDialog && pendingRunDataToSave != null) {
+            val data = pendingRunDataToSave!!
+            AlertDialog(
+                onDismissRequest = {
+                    showRunSaveDialog = false
+                    pendingRunDataToSave = null
+                    activePathPoints.clear()
+                    runDistance = 0.0
+                    runStartTime = null
+                    LocationTrackerState.stopRun(context)
+                },
+                title = {
+                    Text(
+                        text = "Enregistrer votre course",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = runSaveName,
+                            onValueChange = { runSaveName = it },
+                            label = { Text("Nom de la course") },
+                            placeholder = { Text("Ex: Session matinale") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonVolt,
+                                focusedLabelColor = NeonVolt,
+                                cursorColor = NeonVolt
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = runSaveDescription,
+                            onValueChange = { runSaveDescription = it },
+                            label = { Text("Légende / Description") },
+                            placeholder = { Text("Comment s'est passée votre course ?") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 2,
+                            maxLines = 4,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = NeonVolt,
+                                focusedLabelColor = NeonVolt,
+                                cursorColor = NeonVolt
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val finalName = runSaveName.ifBlank { "Course Arpent.io" }
+                            val finalDescription = runSaveDescription.ifBlank { "" }
+
+                            saveRunToDatabase(
+                                userId = userId,
+                                scope = scope,
+                                context = context,
+                                runStartTime = data.runStartTime,
+                                runDistance = data.runDistance,
+                                isLoop = data.isLoop,
+                                closedPoints = data.closedPoints,
+                                completedPolygons = completedPolygons,
+                                nom = finalName,
+                                legende = finalDescription,
+                                onSuccess = { areaKm2 ->
+                                    if (data.isLoop) {
+                                        completedPolygons.add(data.closedPoints)
+                                        saveTerritoriesLocally(context, completedPolygons)
+                                        currentArea += areaKm2
+                                        sessionGainedArea = areaKm2
+                                        Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_SHORT).show()
+                                    }
+                                    onRunSaved()
+                                },
+                                onSyncComplete = {
+                                    onRunSaved()
+                                }
+                            )
+
+                            showRunSaveDialog = false
+                            pendingRunDataToSave = null
+                            activePathPoints.clear()
+                            runDistance = 0.0
+                            runStartTime = null
+                            LocationTrackerState.stopRun(context)
+                        }
+                    ) {
+                        Text("ENREGISTRER", color = NeonVolt, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showRunSaveDialog = false
+                            pendingRunDataToSave = null
+                            activePathPoints.clear()
+                            runDistance = 0.0
+                            runStartTime = null
+                            LocationTrackerState.stopRun(context)
+                        }
+                    ) {
+                        Text("ANNULER", color = Color.Gray)
+                    }
+                },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = Color.White
+            )
+        }
     }
 }
+
+data class PendingRunSaveData(
+    val runStartTime: Long,
+    val runDistance: Double,
+    val isLoop: Boolean,
+    val closedPoints: List<Point>
+)

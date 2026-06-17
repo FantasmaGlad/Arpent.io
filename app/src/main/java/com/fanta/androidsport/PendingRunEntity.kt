@@ -23,7 +23,12 @@ data class PendingRunEntity(
     val allureMoyenne: Double,
     val caloriesEstimees: Double,
     val denivelePositif: Double,
-    val deniveleNegatif: Double
+    val deniveleNegatif: Double,
+    val totalSteps: Int = 0,
+    val averageCadence: Int = 0,
+    val nom: String? = null,
+    val legende: String? = null,
+    val pointsDetailsJson: String? = null
 ) {
     fun toPendingRun(): PendingRun {
         return PendingRun(
@@ -41,7 +46,12 @@ data class PendingRunEntity(
             allureMoyenne = allureMoyenne,
             caloriesEstimees = caloriesEstimees,
             denivelePositif = denivelePositif,
-            deniveleNegatif = deniveleNegatif
+            deniveleNegatif = deniveleNegatif,
+            totalSteps = totalSteps,
+            averageCadence = averageCadence,
+            nom = nom,
+            legende = legende,
+            pointsDetailsJson = pointsDetailsJson
         )
     }
 
@@ -62,7 +72,12 @@ data class PendingRunEntity(
                 allureMoyenne = run.allureMoyenne,
                 caloriesEstimees = run.caloriesEstimees,
                 denivelePositif = run.denivelePositif,
-                deniveleNegatif = run.deniveleNegatif
+                deniveleNegatif = run.deniveleNegatif,
+                totalSteps = run.totalSteps,
+                averageCadence = run.averageCadence,
+                nom = run.nom,
+                legende = run.legende,
+                pointsDetailsJson = run.pointsDetailsJson
             )
         }
     }

@@ -18,10 +18,79 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.mapbox.geojson.Point
 
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+
 class LocationTrackingService : Service() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
+
+    private var sensorManager: SensorManager? = null
+    private var accelerometer: Sensor? = null
+    private var stepCounter: Sensor? = null
+    private var stepDetector: Sensor? = null
+
+    private var currentAccelX: Double? = null
+    private var currentAccelY: Double? = null
+    private var currentAccelZ: Double? = null
+
+    private var runStartStepCount = -1
+    private var lastRecordedStepCount = -1
+    private var totalStepsInRun = 0
+    private val stepTimeHistory = mutableListOf<Long>()
+
+    private val sensorListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent?) {
+            if (event == null) return
+            when (event.sensor.type) {
+                Sensor.TYPE_ACCELEROMETER -> {
+                    currentAccelX = event.values[0].toDouble()
+                    currentAccelY = event.values[1].toDouble()
+                    currentAccelZ = event.values[2].toDouble()
+                }
+                Sensor.TYPE_STEP_DETECTOR -> {
+                    totalStepsInRun++
+                    val now = System.currentTimeMillis()
+                    stepTimeHistory.add(now)
+                    stepTimeHistory.removeAll { now - it > 15000 }
+                }
+                Sensor.TYPE_STEP_COUNTER -> {
+                    val stepsSinceBoot = event.values[0].toInt()
+                    if (runStartStepCount < 0) {
+                        runStartStepCount = stepsSinceBoot
+                        lastRecordedStepCount = stepsSinceBoot
+                    }
+                    if (stepDetector == null) {
+                        val delta = stepsSinceBoot - lastRecordedStepCount
+                        if (delta > 0) {
+                            totalStepsInRun += delta
+                            val now = System.currentTimeMillis()
+                            repeat(delta) {
+                                stepTimeHistory.add(now)
+                            }
+                            stepTimeHistory.removeAll { now - it > 15000 }
+                            lastRecordedStepCount = stepsSinceBoot
+                        }
+                    }
+                }
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    private fun getCurrentCadence(): Int {
+        val now = System.currentTimeMillis()
+        stepTimeHistory.removeAll { now - it > 15000 }
+        return if (stepTimeHistory.isNotEmpty()) {
+            (stepTimeHistory.size * 4)
+        } else {
+            0
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -31,7 +100,19 @@ class LocationTrackingService : Service() {
             override fun onLocationResult(locationResult: LocationResult) {
                 for (location in locationResult.locations) {
                     val point = Point.fromLngLat(location.longitude, location.latitude)
-                    LocationTrackerState.addPoint(applicationContext, point, location.speed, location.accuracy, location.time)
+                    LocationTrackerState.addPoint(
+                        context = applicationContext,
+                        point = point,
+                        speedMps = location.speed,
+                        accuracy = location.accuracy,
+                        timeMs = location.time,
+                        altitude = if (location.hasAltitude()) location.altitude else null,
+                        accelX = currentAccelX,
+                        accelY = currentAccelY,
+                        accelZ = currentAccelZ,
+                        steps = totalStepsInRun,
+                        cadence = getCurrentCadence()
+                    )
                 }
             }
         }
@@ -99,11 +180,41 @@ class LocationTrackingService : Service() {
         } catch (e: SecurityException) {
             android.util.Log.e("Arpent", "Permission GPS manquante pour le service", e)
         }
+
+        try {
+            sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            stepCounter = sensorManager?.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+            stepDetector = sensorManager?.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+
+            // Reset run states
+            totalStepsInRun = 0
+            runStartStepCount = -1
+            lastRecordedStepCount = -1
+            stepTimeHistory.clear()
+
+            accelerometer?.let {
+                sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+            }
+            stepDetector?.let {
+                sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+            }
+            stepCounter?.let {
+                sensorManager?.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Arpent", "Error registering sensors", e)
+        }
     }
 
     private fun stopTrackingForeground() {
         try {
             fusedLocationClient.removeLocationUpdates(locationCallback)
+        } catch (e: Exception) {
+            // Ignore
+        }
+        try {
+            sensorManager?.unregisterListener(sensorListener)
         } catch (e: Exception) {
             // Ignore
         }

@@ -102,6 +102,7 @@ fun GuildeScreen(
     var suggestedFriends by remember { mutableStateOf<List<ProximitySuggestion>>(emptyList()) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var isFriendsLoading by remember { mutableStateOf(true) }
+    var proximityDistanceLimit by remember { mutableStateOf(50000.0) }
     
     // Clan state
     var clanId by remember { mutableStateOf<String?>(null) }
@@ -190,10 +191,10 @@ fun GuildeScreen(
                     }
                 }
                 
-                // Fetch suggestions by proximity (Max 50 km)
+                // Fetch suggestions by proximity
                 val suggestionsParams = kotlinx.serialization.json.buildJsonObject {
                     put("p_utilisateur_id", kotlinx.serialization.json.JsonPrimitive(userId))
-                    put("p_max_distance_meters", kotlinx.serialization.json.JsonPrimitive(50000.0))
+                    put("p_max_distance_meters", kotlinx.serialization.json.JsonPrimitive(proximityDistanceLimit))
                 }
                 val suggestionsRes = supabase.postgrest.rpc("suggerer_amis_proximite", suggestionsParams)
                 val suggestionsArray = kotlinx.serialization.json.Json.parseToJsonElement(suggestionsRes.data) as? kotlinx.serialization.json.JsonArray
@@ -298,7 +299,7 @@ fun GuildeScreen(
         }
     }
 
-    LaunchedEffect(isActive, selectedTab) {
+    LaunchedEffect(isActive, selectedTab, proximityDistanceLimit) {
         if (!isActive) return@LaunchedEffect
         if (selectedTab == 0) {
             if (friendsList.isEmpty()) {
@@ -451,14 +452,57 @@ fun GuildeScreen(
                         // Proximity suggestions
                         if (suggestedFriends.isNotEmpty()) {
                             item {
-                                Text(
-                                    text = "JOUEURS À PROXIMITÉ",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 1.sp,
-                                    color = Color.Black.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                                )
+                                Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "JOUEURS À PROXIMITÉ",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            letterSpacing = 1.sp,
+                                            color = Color.Black.copy(alpha = 0.5f),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        // Small green pulsing dot representing geographical search
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(NeonVolt)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        listOf(
+                                            Pair("5 km", 5000.0),
+                                            Pair("15 km", 15000.0),
+                                            Pair("50 km", 50000.0),
+                                            Pair("100 km", 100000.0),
+                                            Pair("Global", 9999999.0)
+                                        ).forEach { (label, value) ->
+                                            val isSelected = proximityDistanceLimit == value
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isSelected) NeonVolt else Color.Black.copy(alpha = 0.05f))
+                                                    .clickable { proximityDistanceLimit = value }
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    color = if (isSelected) Color.Black else Color.Black.copy(alpha = 0.7f),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             items(suggestedFriends) { suggestion ->
                                 Card(
@@ -491,11 +535,29 @@ fun GuildeScreen(
                                             } else {
                                                 "À ${suggestion.distanceMeters.toInt()} m"
                                             }
-                                            Text(
-                                                text = distStr,
-                                                fontSize = 11.sp,
-                                                color = Color.Black.copy(alpha = 0.5f)
-                                            )
+                                            val (proximityLabel, badgeColor) = when {
+                                                suggestion.distanceMeters < 2000.0 -> Pair("Très proche", NeonVolt)
+                                                suggestion.distanceMeters < 10000.0 -> Pair("Proche", Color(0xFF00E676))
+                                                suggestion.distanceMeters < 50000.0 -> Pair("Même zone", Color(0xFF29B6F6))
+                                                else -> Pair("Éloigné", Color.Gray)
+                                            }
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(6.dp)
+                                                        .clip(CircleShape)
+                                                        .background(badgeColor)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "$proximityLabel • $distStr",
+                                                    fontSize = 11.sp,
+                                                    color = Color.Black.copy(alpha = 0.5f)
+                                                )
+                                            }
                                         }
                                         Button(
                                             onClick = {

@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -128,6 +129,7 @@ suspend fun syncTerritoriesFromDatabase(
     }
 }
 
+
 fun saveRunToDatabase(
     userId: String,
     scope: CoroutineScope,
@@ -137,6 +139,8 @@ fun saveRunToDatabase(
     isLoop: Boolean,
     closedPoints: List<Point>,
     completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
+    nom: String?,
+    legende: String?,
     onSuccess: (Double) -> Unit,
     onSyncComplete: () -> Unit
 ) {
@@ -157,6 +161,40 @@ fun saveRunToDatabase(
             val pointsArray = closedPoints.map { "${it.longitude()} ${it.latitude()}" }
             val lastPt = closedPoints.lastOrNull()
 
+            // Fetch tracker metrics
+            val rawPoints = com.fanta.androidsport.LocationTrackerState.pointsDetails.value
+            val totalSteps = if (rawPoints.isNotEmpty()) rawPoints.last().steps ?: 0 else 0
+            val validCadences = rawPoints.mapNotNull { it.cadence }.filter { it > 0 }
+            val averageCadence = if (validCadences.isNotEmpty()) validCadences.average().toInt() else 0
+
+            val rawSpeeds = rawPoints.mapNotNull { it.speed }
+            val vitesseMax = if (rawSpeeds.isNotEmpty()) rawSpeeds.maxOrNull() ?: 0.0 else 0.0
+
+            var denivelePos = 0.0
+            var deniveleNeg = 0.0
+            val validAltitudes = rawPoints.mapNotNull { it.altitude }
+            if (validAltitudes.size > 1) {
+                var prevAlt = validAltitudes.first()
+                for (i in 1 until validAltitudes.size) {
+                    val currAlt = validAltitudes[i]
+                    val diff = currAlt - prevAlt
+                    if (diff > 0.5) { // filter out minor noise
+                        denivelePos += diff
+                        prevAlt = currAlt
+                    } else if (diff < -0.5) {
+                        deniveleNeg += -diff
+                        prevAlt = currAlt
+                    }
+                }
+            }
+
+            // Serialize pointsDetailsJson
+            val pointsDetailsJson = try {
+                Json.encodeToString(rawPoints)
+            } catch (e: Exception) {
+                null
+            }
+
             val pendingRun = PendingRun(
                 userId = userId,
                 dateDebut = dateDebut,
@@ -168,11 +206,16 @@ fun saveRunToDatabase(
                 lastLatitude = lastPt?.latitude(),
                 lastLongitude = lastPt?.longitude(),
                 vitesseMoyenne = vitesseMoyenne,
-                vitesseMax = 0.0, // Max speed tracked separately via LocationTracker
+                vitesseMax = vitesseMax,
                 allureMoyenne = allureMoyenne,
                 caloriesEstimees = caloriesEstimees,
-                denivelePositif = 0.0,
-                deniveleNegatif = 0.0
+                denivelePositif = denivelePos,
+                deniveleNegatif = deniveleNeg,
+                totalSteps = totalSteps,
+                averageCadence = averageCadence,
+                nom = nom,
+                legende = legende,
+                pointsDetailsJson = pointsDetailsJson
             )
 
             // Save to local offline queue first

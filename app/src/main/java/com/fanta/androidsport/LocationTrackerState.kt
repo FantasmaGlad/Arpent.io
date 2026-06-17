@@ -15,17 +15,35 @@ import java.io.File
 data class CachedPoint(val longitude: Double, val latitude: Double)
 
 @Serializable
+data class TrackerPoint(
+    val longitude: Double,
+    val latitude: Double,
+    val altitude: Double? = null,
+    val speed: Double = 0.0,
+    val time: Long,
+    val accelX: Double? = null,
+    val accelY: Double? = null,
+    val accelZ: Double? = null,
+    val steps: Int? = null,
+    val cadence: Int? = null
+)
+
+@Serializable
 data class ActiveSessionState(
     val isRealRunActive: Boolean,
     val runStartTime: Long?,
     val distance: Double,
     val points: List<CachedPoint>,
-    val lastPointTime: Long
+    val lastPointTime: Long,
+    val pointsDetails: List<TrackerPoint> = emptyList()
 )
 
 object LocationTrackerState {
     private val _points = MutableStateFlow<List<Point>>(emptyList())
     val points: StateFlow<List<Point>> = _points.asStateFlow()
+
+    private val _pointsDetails = MutableStateFlow<List<TrackerPoint>>(emptyList())
+    val pointsDetails: StateFlow<List<TrackerPoint>> = _pointsDetails.asStateFlow()
 
     private val _currentSpeed = MutableStateFlow(0.0)
     val currentSpeed: StateFlow<Double> = _currentSpeed.asStateFlow()
@@ -55,7 +73,8 @@ object LocationTrackerState {
                 runStartTime = _runStartTime.value,
                 distance = _distance.value,
                 points = pts,
-                lastPointTime = lastPointTime
+                lastPointTime = lastPointTime,
+                pointsDetails = _pointsDetails.value
             )
             val jsonStr = json.encodeToString(stateObj)
             val file = File(context.filesDir, SESSION_FILE_NAME)
@@ -75,8 +94,9 @@ object LocationTrackerState {
                 _runStartTime.value = stateObj.runStartTime
                 _distance.value = stateObj.distance
                 _points.value = stateObj.points.map { Point.fromLngLat(it.longitude, it.latitude) }
+                _pointsDetails.value = stateObj.pointsDetails
                 lastPointTime = stateObj.lastPointTime
-                Log.d("LocationTrackerState", "Restored session state from disk. Active: ${stateObj.isRealRunActive}, Points: ${stateObj.points.size}")
+                Log.d("LocationTrackerState", "Restored session state from disk. Active: ${stateObj.isRealRunActive}, Points: ${stateObj.points.size}, Details: ${stateObj.pointsDetails.size}")
             }
         } catch (e: Exception) {
             Log.e("LocationTrackerState", "Error restoring session from disk", e)
@@ -96,6 +116,7 @@ object LocationTrackerState {
 
     fun startNewRun(context: Context, startTime: Long) {
         _points.value = emptyList()
+        _pointsDetails.value = emptyList()
         _currentSpeed.value = 0.0
         _distance.value = 0.0
         _isRealRunActive.value = true
@@ -109,6 +130,7 @@ object LocationTrackerState {
         _isRealRunActive.value = false
         _runStartTime.value = null
         _points.value = emptyList()
+        _pointsDetails.value = emptyList()
         _distance.value = 0.0
         _currentSpeed.value = 0.0
         _isSpeedLimitExceeded.value = false
@@ -116,18 +138,47 @@ object LocationTrackerState {
         clearSavedState(context)
     }
 
-    fun addPoint(context: Context, point: Point, speedMps: Float, accuracy: Float, timeMs: Long) {
+    fun addPoint(
+        context: Context,
+        point: Point,
+        speedMps: Float,
+        accuracy: Float,
+        timeMs: Long,
+        altitude: Double? = null,
+        accelX: Double? = null,
+        accelY: Double? = null,
+        accelZ: Double? = null,
+        steps: Int? = null,
+        cadence: Int? = null
+    ) {
         if (accuracy > 20.0f) {
             Log.d("LocationTrackerState", "Point rejected due to accuracy: $accuracy")
             return
         }
 
         val currentList = _points.value.toMutableList()
+        val currentDetails = _pointsDetails.value.toMutableList()
         val prevPoint = currentList.lastOrNull()
 
         if (prevPoint == null) {
             currentList.add(point)
             _points.value = currentList
+
+            val trackerPoint = TrackerPoint(
+                longitude = point.longitude(),
+                latitude = point.latitude(),
+                altitude = altitude,
+                speed = speedMps * 3.6,
+                time = timeMs,
+                accelX = accelX,
+                accelY = accelY,
+                accelZ = accelZ,
+                steps = steps,
+                cadence = cadence
+            )
+            currentDetails.add(trackerPoint)
+            _pointsDetails.value = currentDetails
+
             lastPointTime = timeMs
             _currentSpeed.value = speedMps * 3.6 // km/h
             _isSpeedLimitExceeded.value = false
@@ -149,6 +200,22 @@ object LocationTrackerState {
             _distance.value += dist
             currentList.add(point)
             _points.value = currentList
+
+            val trackerPoint = TrackerPoint(
+                longitude = point.longitude(),
+                latitude = point.latitude(),
+                altitude = altitude,
+                speed = speedMps * 3.6,
+                time = timeMs,
+                accelX = accelX,
+                accelY = accelY,
+                accelZ = accelZ,
+                steps = steps,
+                cadence = cadence
+            )
+            currentDetails.add(trackerPoint)
+            _pointsDetails.value = currentDetails
+
             lastPointTime = timeMs
             _currentSpeed.value = speedMps * 3.6 // km/h
             saveStateToDisk(context)

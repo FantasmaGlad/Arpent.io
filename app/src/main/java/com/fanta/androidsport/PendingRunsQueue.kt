@@ -31,7 +31,12 @@ data class PendingRun(
     val allureMoyenne: Double = 0.0,
     val caloriesEstimees: Double = 0.0,
     val denivelePositif: Double = 0.0,
-    val deniveleNegatif: Double = 0.0
+    val deniveleNegatif: Double = 0.0,
+    val totalSteps: Int = 0,
+    val averageCadence: Int = 0,
+    val nom: String? = null,
+    val legende: String? = null,
+    val pointsDetailsJson: String? = null
 )
 
 object PendingRunsQueue {
@@ -103,6 +108,17 @@ object PendingRunsQueue {
         for (entity in queue) {
             val run = entity.toPendingRun()
             try {
+                // Parse pointsDetailsJson to JSON Element
+                val pointsDetailsJsonElement = if (!run.pointsDetailsJson.isNullOrEmpty()) {
+                    try {
+                        json.parseToJsonElement(run.pointsDetailsJson)
+                    } catch (e: Exception) {
+                        JsonArray(emptyList())
+                    }
+                } else {
+                    JsonArray(emptyList())
+                }
+
                 // Construction du payload JSON pour l'appel RPC de Supabase
                 val params = buildJsonObject {
                     put("p_user_id", JsonPrimitive(run.userId))
@@ -118,6 +134,11 @@ object PendingRunsQueue {
                     put("p_calories_estimees", JsonPrimitive(run.caloriesEstimees))
                     put("p_denivele_positif", JsonPrimitive(run.denivelePositif))
                     put("p_denivele_negatif", JsonPrimitive(run.deniveleNegatif))
+                    put("p_total_steps", JsonPrimitive(run.totalSteps))
+                    put("p_average_cadence", JsonPrimitive(run.averageCadence))
+                    put("p_nom_course", JsonPrimitive(run.nom ?: ""))
+                    put("p_legende", JsonPrimitive(run.legende ?: ""))
+                    put("p_points_details", pointsDetailsJsonElement)
                 }
 
                 supabase.postgrest.rpc("enregistrer_course", params)

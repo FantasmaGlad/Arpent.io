@@ -30,7 +30,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const { guildId, nom, couleurHex, avatarUrl, chefId } = await request.json();
+    const { guildId, nom, tag, couleurHex, avatarUrl, chefId } = await request.json();
 
     if (!guildId) {
       return NextResponse.json({ error: 'Guild ID is required' }, { status: 400 });
@@ -38,6 +38,7 @@ export async function PUT(request: Request) {
 
     const updates: any = {};
     if (nom !== undefined) updates.nom = nom;
+    if (tag !== undefined) updates.tag = tag === '' ? null : tag;
     if (couleurHex !== undefined) updates.couleur_hex = couleurHex;
     if (avatarUrl !== undefined) {
       updates.avatar_url = avatarUrl;

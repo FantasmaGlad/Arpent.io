@@ -36,6 +36,14 @@ interface Profile {
   tag: string | null;
   guilde_id: string | null;
   total_area_m2: number;
+  all_time_area_m2: number;
+  max_area_m2: number;
+  area_lost_m2: number;
+  xp: number;
+  level: number;
+  loop_count: number;
+  max_loop_distance_km: number;
+  ghost_mode: boolean;
   avatar_url: string | null;
   empire_color: string;
   date_inscription: string;
@@ -88,9 +96,10 @@ export default function ProfilesPage() {
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
+  const [streak, setStreak] = useState<number>(0);
 
   // Tabs for user inspector modal
-  const [activeTab, setActiveTab] = useState<'dossier' | 'amis' | 'entrainement'>('dossier');
+  const [activeTab, setActiveTab] = useState<'apercu' | 'conquete' | 'entrainement' | 'amis' | 'parametres'>('apercu');
   const [friends, setFriends] = useState<any[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
 
@@ -98,9 +107,24 @@ export default function ProfilesPage() {
   const [minDistance, setMinDistance] = useState<number>(0);
   const [loopOnlyFilter, setLoopOnlyFilter] = useState<'all' | 'loops' | 'noloops'>('all');
 
-  // Edit fields
+  // Edit fields for Admin moderation
   const [isEditing, setIsEditing] = useState(false);
   const [newPseudonyme, setNewPseudonyme] = useState('');
+  const [newTag, setNewTag] = useState('');
+  const [newGhostMode, setNewGhostMode] = useState(false);
+  const [newXp, setNewXp] = useState(0);
+  const [newLevel, setNewLevel] = useState(1);
+  const [newEmpireColor, setNewEmpireColor] = useState('#CCFF00');
+  const [newTotalArea, setNewTotalArea] = useState(0);
+  const [newAllTimeArea, setNewAllTimeArea] = useState(0);
+  const [newMaxArea, setNewMaxArea] = useState(0);
+  const [newAreaLost, setNewAreaLost] = useState(0);
+  const [newLoopCount, setNewLoopCount] = useState(0);
+  const [newMaxLoopDistance, setNewMaxLoopDistance] = useState(0);
+  const [newShareLocation, setNewShareLocation] = useState(false);
+  const [newGrade, setNewGrade] = useState('');
+  const [newGuildeId, setNewGuildeId] = useState<string>('');
+  
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -230,6 +254,15 @@ export default function ProfilesPage() {
           if (profilesError) throw profilesError;
           setFriends(friendProfiles || []);
         }
+
+        // 3. Fetch activity streak
+        const { data: streakVal, error: streakError } = await supabase
+          .rpc('get_user_streak', { p_user_id: selectedProfile!.id });
+        if (!streakError && streakVal !== null) {
+          setStreak(Number(streakVal));
+        } else {
+          setStreak(0);
+        }
       } catch (err) {
         console.error('Error fetching details:', err);
       } finally {
@@ -241,7 +274,21 @@ export default function ProfilesPage() {
     fetchDetails();
     setIsEditing(false);
     setNewPseudonyme(selectedProfile.pseudonyme || '');
-    setActiveTab('dossier');
+    setNewTag(selectedProfile.tag || '');
+    setNewGhostMode(selectedProfile.ghost_mode || false);
+    setNewXp(selectedProfile.xp || 0);
+    setNewLevel(selectedProfile.level || 1);
+    setNewEmpireColor(selectedProfile.empire_color || '#CCFF00');
+    setNewTotalArea(selectedProfile.total_area_m2 || 0);
+    setNewAllTimeArea(selectedProfile.all_time_area_m2 || 0);
+    setNewMaxArea(selectedProfile.max_area_m2 || 0);
+    setNewAreaLost(selectedProfile.area_lost_m2 || 0);
+    setNewLoopCount(selectedProfile.loop_count || 0);
+    setNewMaxLoopDistance(selectedProfile.max_loop_distance_km || 0);
+    setNewShareLocation(selectedProfile.share_location || false);
+    setNewGrade(selectedProfile.grade || '');
+    setNewGuildeId(selectedProfile.guilde_id || '');
+    setActiveTab('apercu');
     setMinDistance(0);
     setLoopOnlyFilter('all');
   }, [selectedProfile]);
@@ -263,7 +310,21 @@ export default function ProfilesPage() {
         },
         body: JSON.stringify({
           userId: selectedProfile.id,
-          pseudonyme: newPseudonyme
+          pseudonyme: newPseudonyme,
+          tag: newTag || null,
+          ghost_mode: newGhostMode,
+          xp: Number(newXp),
+          level: Number(newLevel),
+          empire_color: newEmpireColor,
+          total_area_m2: Number(newTotalArea),
+          all_time_area_m2: Number(newAllTimeArea),
+          max_area_m2: Number(newMaxArea),
+          area_lost_m2: Number(newAreaLost),
+          loop_count: Number(newLoopCount),
+          max_loop_distance_km: Number(newMaxLoopDistance),
+          share_location: newShareLocation,
+          grade: newGrade || null,
+          guilde_id: newGuildeId || null
         })
       });
 
@@ -274,7 +335,24 @@ export default function ProfilesPage() {
 
       setMessage({ type: 'success', text: 'Profil mis à jour avec succès.' });
       
-      const updatedProfile = { ...selectedProfile, pseudonyme: newPseudonyme };
+      const updatedProfile = { 
+        ...selectedProfile, 
+        pseudonyme: newPseudonyme,
+        tag: newTag || null,
+        ghost_mode: newGhostMode,
+        xp: Number(newXp),
+        level: Number(newLevel),
+        empire_color: newEmpireColor,
+        total_area_m2: Number(newTotalArea),
+        all_time_area_m2: Number(newAllTimeArea),
+        max_area_m2: Number(newMaxArea),
+        area_lost_m2: Number(newAreaLost),
+        loop_count: Number(newLoopCount),
+        max_loop_distance_km: Number(newMaxLoopDistance),
+        share_location: newShareLocation,
+        grade: newGrade || null,
+        guilde_id: newGuildeId || null
+      };
       setSelectedProfile(updatedProfile);
       setProfiles(prev => prev.map(p => p.id === selectedProfile.id ? updatedProfile : p));
       setIsEditing(false);
@@ -357,22 +435,54 @@ export default function ProfilesPage() {
   };
 
   const handleDeleteCourse = async (courseId: string) => {
-    if (!confirm("Voulez-vous vraiment supprimer cette activité ? Cette action est irréversible.")) {
+    if (!confirm("Voulez-vous vraiment supprimer cette activité ? Cette action est irréversible et modifiera le score et les statistiques de l'utilisateur.")) {
       return;
     }
 
     setActionLoading(true);
     setMessage(null);
     try {
-      const { error } = await supabase
-        .from('courses')
-        .delete()
-        .eq('id', courseId);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (error) throw error;
+      const response = await fetch(`/api/admin/courses?courseId=${courseId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || "Erreur lors de la suppression de l'activité.");
+      }
 
       setMessage({ type: 'success', text: "L'activité a été supprimée avec succès." });
       setCourses(prev => prev.filter(c => c.id !== courseId));
+      
+      // Update local selected profile view statistics
+      if (selectedProfile) {
+        const deletedCourse = courses.find(c => c.id === courseId);
+        if (deletedCourse) {
+          const distKm = deletedCourse.distance_totale / 1000.0;
+          const isLoop = deletedCourse.est_bouclee;
+          const loopBonus = isLoop ? 200 : 0;
+          const xpLoss = Math.floor(100.0 * distKm) + loopBonus;
+          
+          const newXpVal = Math.max(0, (selectedProfile.xp || 0) - xpLoss);
+          const newLvlVal = Math.floor(Math.sqrt(newXpVal / 250.0)) + 1;
+          const newLoopCountVal = Math.max(0, (selectedProfile.loop_count || 0) - (isLoop ? 1 : 0));
+          
+          const updatedProfile = {
+            ...selectedProfile,
+            xp: newXpVal,
+            level: newLvlVal,
+            loop_count: newLoopCountVal
+          };
+          setSelectedProfile(updatedProfile);
+          setProfiles(prev => prev.map(p => p.id === selectedProfile.id ? updatedProfile : p));
+        }
+      }
     } catch (err: any) {
       setMessage({ type: 'error', text: `Erreur lors de la suppression de l'activité : ${err.message}` });
     } finally {
@@ -730,47 +840,56 @@ export default function ProfilesPage() {
                 {message.text}
               </div>
             )}
-
             {/* Modal Tabs Panel */}
             <div style={{ 
               display: 'flex', 
               background: 'rgba(255, 255, 255, 0.01)', 
               borderBottom: '1px solid var(--border-color)',
-              padding: '0 24px'
+              padding: '0 24px',
+              overflowX: 'auto',
+              scrollbarWidth: 'none'
             }}>
               <button 
-                onClick={() => setActiveTab('dossier')}
+                onClick={() => setActiveTab('apercu')}
                 style={{
                   background: 'none',
                   border: 'none',
-                  borderBottom: activeTab === 'dossier' ? '2px solid var(--primary-green)' : '2px solid transparent',
-                  color: activeTab === 'dossier' ? 'var(--text-white)' : 'var(--text-muted)',
-                  padding: '14px 20px',
-                  fontSize: '0.9rem',
+                  borderBottom: activeTab === 'apercu' ? '2px solid var(--primary-green)' : '2px solid transparent',
+                  color: activeTab === 'apercu' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 16px',
+                  fontSize: '0.85rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   fontFamily: 'var(--font-outfit)',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                Fiche Utilisateur
+                <User size={14} /> Aperçu
               </button>
               <button 
-                onClick={() => setActiveTab('amis')}
+                onClick={() => setActiveTab('conquete')}
                 style={{
                   background: 'none',
                   border: 'none',
-                  borderBottom: activeTab === 'amis' ? '2px solid var(--primary-green)' : '2px solid transparent',
-                  color: activeTab === 'amis' ? 'var(--text-white)' : 'var(--text-muted)',
-                  padding: '14px 20px',
-                  fontSize: '0.9rem',
+                  borderBottom: activeTab === 'conquete' ? '2px solid var(--primary-green)' : '2px solid transparent',
+                  color: activeTab === 'conquete' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 16px',
+                  fontSize: '0.85rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   fontFamily: 'var(--font-outfit)',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                Relations ({friends.length})
+                <Award size={14} /> Conquête
               </button>
               <button 
                 onClick={() => setActiveTab('entrainement')}
@@ -779,175 +898,317 @@ export default function ProfilesPage() {
                   border: 'none',
                   borderBottom: activeTab === 'entrainement' ? '2px solid var(--primary-green)' : '2px solid transparent',
                   color: activeTab === 'entrainement' ? 'var(--text-white)' : 'var(--text-muted)',
-                  padding: '14px 20px',
-                  fontSize: '0.9rem',
+                  padding: '14px 16px',
+                  fontSize: '0.85rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   fontFamily: 'var(--font-outfit)',
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                Activités ({courses.length})
+                <Activity size={14} /> Activités ({courses.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('amis')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'amis' ? '2px solid var(--primary-green)' : '2px solid transparent',
+                  color: activeTab === 'amis' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 16px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Users size={14} /> Relations ({friends.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('parametres')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'parametres' ? '2px solid var(--primary-green)' : '2px solid transparent',
+                  color: activeTab === 'parametres' ? 'var(--text-white)' : 'var(--text-muted)',
+                  padding: '14px 16px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-outfit)',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <ShieldAlert size={14} /> Modération
               </button>
             </div>
 
             {/* Modal Body Container */}
             <div style={{ padding: '24px', maxHeight: '550px', overflowY: 'auto' }}>
               
-              {/* TAB 1: USER DOSSIER */}
-              {activeTab === 'dossier' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  {/* Account Actions */}
-                  <div style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    {selectedProfile.avatar_url && (
-                      <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
-                        <ImageIcon size={12} /> Supprimer la photo
-                      </button>
-                    )}
-                    <button className="btn btn-danger" onClick={() => handleDeleteUser(selectedProfile.id)} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem', marginLeft: 'auto' }}>
-                      <Trash2 size={12} /> Supprimer définitivement l'utilisateur
-                    </button>
-                  </div>
+              {/* TAB 1: APERCU */}
+              {activeTab === 'apercu' && (() => {
+                const currentLevel = selectedProfile.level || 1;
+                const currentXp = selectedProfile.xp || 0;
+                const prevLvlXp = 250 * Math.pow(currentLevel - 1, 2);
+                const nextLvlXp = 250 * Math.pow(currentLevel, 2);
+                const xpDiff = nextLvlXp - prevLvlXp;
+                const xpProgress = xpDiff > 0 ? Math.min(100, Math.max(0, ((currentXp - prevLvlXp) / xpDiff) * 100)) : 100;
 
-                  {/* Double column details */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <h4 style={{ fontSize: '0.9rem', color: 'var(--primary-green)', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>Identité Réseau</h4>
-                      
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Streak & Status Header */}
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      background: 'rgba(204, 255, 0, 0.03)',
+                      padding: '16px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(204, 255, 0, 0.15)'
+                    }}>
                       <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>UUID Base de données</span>
-                        <p style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px', wordBreak: 'break-all' }}>{selectedProfile.id}</p>
-                      </div>
-
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Date d'inscription</span>
-                        <p style={{ fontSize: '0.9rem', color: 'var(--text-white)', marginTop: '2px' }}>
-                          {new Date(selectedProfile.date_inscription).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Assiduité</span>
+                        <p style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          🔥 {streak} {streak > 1 ? 'jours consécutifs' : 'jour actif'}
                         </p>
                       </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Mode Fantôme</span>
+                        <p style={{ 
+                          fontSize: '0.9rem', 
+                          fontWeight: 700, 
+                          color: selectedProfile.ghost_mode ? 'var(--primary-green)' : 'var(--text-muted)', 
+                          marginTop: '2px' 
+                        }}>
+                          {selectedProfile.ghost_mode ? 'ACTIVÉ (INVISIBLE)' : 'DÉSACTIVÉ (VISIBLE)'}
+                        </p>
+                      </div>
+                    </div>
 
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Couleur personnalisée</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                          <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '3px', backgroundColor: selectedProfile.empire_color || '#CCFF00' }} />
-                          <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)' }}>{selectedProfile.empire_color || '#CCFF00'}</span>
+                    {/* Level & XP Progression Card */}
+                    <div style={{ 
+                      background: 'rgba(255, 255, 255, 0.02)', 
+                      padding: '20px', 
+                      borderRadius: '8px', 
+                      border: '1px solid var(--border-color)' 
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Niveau actuel</span>
+                          <h3 style={{ fontSize: '1.8rem', fontWeight: 900, color: 'var(--text-white)' }}>
+                            Lvl {currentLevel}
+                          </h3>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Expérience globale</span>
+                          <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--primary-green)' }}>
+                            {currentXp} / {nextLvlXp} XP
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* XP Progress Bar */}
+                      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${xpProgress}%`, height: '100%', background: 'var(--primary-green)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                        <span>Lvl {currentLevel} ({prevLvlXp} XP)</span>
+                        <span>Lvl {currentLevel + 1} ({nextLvlXp} XP)</span>
+                      </div>
+                    </div>
+
+                    {/* Information Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', fontWeight: 700 }}>Profil Réseau</h4>
+                        
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Identifiant Unique (UUID)</span>
+                          <p style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px', wordBreak: 'break-all' }}>{selectedProfile.id}</p>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Date d'inscription</span>
+                          <p style={{ fontSize: '0.85rem', color: 'var(--text-white)', marginTop: '2px' }}>
+                            {new Date(selectedProfile.date_inscription).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Couleur personnalisée</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                            <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '3px', backgroundColor: selectedProfile.empire_color || '#CCFF00' }} />
+                            <span style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)' }}>{selectedProfile.empire_color || '#CCFF00'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', fontWeight: 700 }}>Position GPS</h4>
+                        
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Partage de position</span>
+                          <p style={{ fontSize: '0.85rem', fontWeight: 'bold', color: selectedProfile.share_location ? 'var(--primary-green)' : '#FF4B4B', marginTop: '2px' }}>
+                            {selectedProfile.share_location ? 'EN LIGNE' : 'HORS LIGNE / ANONYME'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Coordonnées en direct</span>
+                          <p style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px' }}>
+                            {selectedProfile.latitude && selectedProfile.longitude ? (
+                              `${selectedProfile.latitude.toFixed(6)}, ${selectedProfile.longitude.toFixed(6)}`
+                            ) : (
+                              'Aucun point GPS stocké'
+                            )}
+                          </p>
+                        </div>
+
+                        {selectedProfile.share_location && selectedProfile.latitude && selectedProfile.longitude && (
+                          <button 
+                            className="btn btn-secondary" 
+                            onClick={() => centerPlayerOnMap(selectedProfile.latitude!, selectedProfile.longitude!)}
+                            style={{ width: '100%', marginTop: '6px', padding: '8px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                          >
+                            <MapPin size={12} /> Centrer la carte globale sur le joueur
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* TAB 2: CONQUETE */}
+              {activeTab === 'conquete' && (() => {
+                const totalDistanceMeters = courses.reduce((acc, c) => acc + (c.distance_totale || 0), 0);
+                const totalDistanceKm = totalDistanceMeters / 1000.0;
+                const yieldVal = totalDistanceKm > 0 ? (selectedProfile.all_time_area_m2 || 0) / totalDistanceKm : 0;
+                
+                const formatArea = (val: number) => {
+                  if (val >= 10000) {
+                    return `${(val / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²`;
+                  }
+                  return `${val.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m²`;
+                };
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      
+                      {/* Current Area Widget */}
+                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Contrôlée</span>
+                        <p style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--primary-green)', marginTop: '4px' }}>
+                          {formatArea(selectedProfile.total_area_m2 || 0)}
+                        </p>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Superficie actuelle active</p>
+                      </div>
+
+                      {/* Historic Max Area Widget */}
+                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Max Historique</span>
+                        <p style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-white)', marginTop: '4px' }}>
+                          {formatArea(selectedProfile.max_area_m2 || 0)}
+                        </p>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Record historique absolu</p>
+                      </div>
+
+                      {/* All Time Cumulative Area Widget */}
+                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Cumulée Totale</span>
+                        <p style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-white)', marginTop: '4px' }}>
+                          {formatArea(selectedProfile.all_time_area_m2 || 0)}
+                        </p>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Somme de toutes les zones closes</p>
+                      </div>
+
+                      {/* Area Lost Widget */}
+                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Territoire Perdu (Fragmenté)</span>
+                        <p style={{ fontSize: '1.4rem', fontWeight: 900, color: '#FF4B4B', marginTop: '4px' }}>
+                          {formatArea(selectedProfile.area_lost_m2 || 0)}
+                        </p>
+                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Territoire volé par d'autres clans</p>
+                      </div>
+
+                    </div>
+
+                    {/* Paper.io Loops & Yield Stats */}
+                    <div style={{ 
+                      background: 'rgba(255,255,255,0.01)', 
+                      padding: '20px', 
+                      borderRadius: '8px', 
+                      border: '1px solid var(--border-color)' 
+                    }}>
+                      <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', fontWeight: 700, marginBottom: '14px' }}>Rendement & Boucles</h4>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Boucles Fermées</span>
+                          <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>
+                            {selectedProfile.loop_count || 0}
+                          </p>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Boucle Max (km)</span>
+                          <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>
+                            {(selectedProfile.max_loop_distance_km || 0).toFixed(2)} km
+                          </p>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Rendement Moyen</span>
+                          <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '2px' }}>
+                            {yieldVal.toFixed(1)} m²/km
+                          </p>
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <h4 style={{ fontSize: '0.9rem', color: 'var(--primary-green)', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>Positionnement GPS</h4>
-                      
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Partage de position</span>
-                        <p style={{ fontSize: '0.9rem', fontWeight: 'bold', color: selectedProfile.share_location ? 'var(--primary-green)' : '#FF4B4B', marginTop: '2px' }}>
-                          {selectedProfile.share_location ? 'ACTIVÉ (EN LIGNE)' : 'DÉSACTIVÉ (HORS LIGNE)'}
+                    {/* Clan & Grade */}
+                    <div style={{ display: 'flex', gap: '16px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Clan / Guilde</span>
+                        <p style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-white)', marginTop: '2px' }}>
+                          {(() => {
+                            const guild = guilds.find(g => g.id === selectedProfile.guilde_id);
+                            return guild ? `${guild.nom} [${guild.tag || 'SANS TAG'}]` : 'Sans clan';
+                          })()}
                         </p>
                       </div>
-
-                      <div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Dernière position connue</span>
-                        <p style={{ fontSize: '0.85rem', fontFamily: 'monospace', color: 'var(--text-white)', marginTop: '2px' }}>
-                          {selectedProfile.latitude && selectedProfile.longitude ? (
-                            `${selectedProfile.latitude.toFixed(6)}, ${selectedProfile.longitude.toFixed(6)}`
-                          ) : (
-                            'Aucune coordonnée enregistrée'
-                          )}
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rôle du clan</span>
+                        <p style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--primary-green)', marginTop: '2px' }}>
+                          {selectedProfile.grade === 'chef' ? '👑 Chef de guilde' : selectedProfile.grade === 'adjoint' ? '👥 Adjoint de guilde' : selectedProfile.guilde_id ? 'Membre standard' : 'Aucun rôle'}
                         </p>
                       </div>
-
-                      {selectedProfile.share_location && selectedProfile.latitude && selectedProfile.longitude && (
-                        <button 
-                          className="btn btn-secondary" 
-                          onClick={() => centerPlayerOnMap(selectedProfile.latitude!, selectedProfile.longitude!)}
-                          style={{ width: '100%', marginTop: '8px', padding: '8px 12px', fontSize: '0.8rem' }}
-                        >
-                          <MapPin size={12} /> Centrer sur la carte globale
-                        </button>
-                      )}
                     </div>
+
                   </div>
+                );
+              })()}
 
-                  {/* Area Section */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginTop: '10px' }}>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Couverte</span>
-                      <p style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '4px' }}>
-                        {(selectedProfile.total_area_m2 / 1000000).toLocaleString('fr-FR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} km²
-                      </p>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Rôle du Groupe</span>
-                      <p style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-white)', marginTop: '4px' }}>
-                        {selectedProfile.grade === 'chef' ? '👑 Responsable' : selectedProfile.grade === 'adjoint' ? '👥 Adjoint' : selectedProfile.guilde_id ? 'Membre' : 'Utilisateur Indépendant'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: SOCIAL NETWORK (FRIENDS) */}
-              {activeTab === 'amis' && (
-                <div>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Users size={18} style={{ color: 'var(--primary-green)' }} /> Liste des relations ({friends.length})
-                  </h4>
-
-                  {loadingFriends ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Chargement des relations...</p>
-                  ) : friends.length === 0 ? (
-                    <div style={{ padding: '32px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
-                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Cet utilisateur n'a pas encore établi de relations sur le réseau.</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      {friends.map(f => (
-                        <div 
-                          key={f.id}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.01)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '8px',
-                            padding: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px'
-                          }}
-                        >
-                          {f.avatar_url ? (
-                            <img src={f.avatar_url} alt="" className="avatar" style={{ width: '36px', height: '36px', borderColor: 'var(--primary-green)' }} />
-                          ) : (
-                            <div className="avatar avatar-placeholder" style={{ width: '36px', height: '36px', borderColor: 'var(--primary-green)', color: 'var(--primary-green)', fontSize: '0.8rem' }}>
-                              {f.pseudonyme?.substring(0, 2).toUpperCase() || 'US'}
-                            </div>
-                          )}
-                          <div style={{ minWidth: 0, flexGrow: 1 }}>
-                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-white)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
-                              {f.pseudonyme || 'Utilisateur'}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                              {f.tag || ''}
-                            </span>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <p style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--primary-green)' }}>
-                              {(f.total_area_m2 / 1000000).toFixed(3)} km²
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 3: TRAINING SESSIONS AND STATS */}
+              {/* TAB 3: ACTIVITIES & RUN DETAILS */}
               {activeTab === 'entrainement' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   
                   {/* Cumulative stats block */}
                   <div>
-                    <h4 style={{ fontSize: '0.95rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>Statistiques d'Activité Cumulées</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>Statistiques d'Activité Cumulées</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sessions</span>
@@ -978,7 +1239,7 @@ export default function ProfilesPage() {
 
                   {/* Graphic Performance */}
                   <div>
-                    <h4 style={{ fontSize: '0.95rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>Graphique d'Évolution (Distance & Temps)</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>Graphique d'Évolution (Distance & Temps)</h4>
                     <div className="glass-card" style={{ padding: '16px', background: 'rgba(255, 255, 255, 0.01)', borderRadius: '8px', minHeight: '220px' }}>
                       {mounted && chartData.length > 0 ? (
                         <div style={{ width: '100%', height: 220 }}>
@@ -1045,7 +1306,7 @@ export default function ProfilesPage() {
 
                   {/* Course list */}
                   <div>
-                    <h4 style={{ fontSize: '0.95rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>Historique des activités ({filteredCourses.length})</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>Historique des activités ({filteredCourses.length})</h4>
                     
                     {loadingCourses ? (
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Chargement des sessions...</p>
@@ -1137,6 +1398,272 @@ export default function ProfilesPage() {
                       </div>
                     )}
                   </div>
+
+                </div>
+              )}
+
+              {/* TAB 4: RELATIONS (FRIENDS LIST) */}
+              {activeTab === 'amis' && (
+                <div>
+                  <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px', fontWeight: 700, marginBottom: '14px' }}>Liste d'amis</h4>
+                  {loadingFriends ? (
+                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Chargement des relations...</p>
+                  ) : friends.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Aucun ami dans la liste</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      {friends.map(f => (
+                        <div 
+                          key={f.id} 
+                          onClick={() => {
+                            setSelectedProfile(f);
+                            setActiveTab('apercu');
+                          }}
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '10px', 
+                            border: '1px solid var(--border-color)', 
+                            padding: '10px', 
+                            borderRadius: '6px', 
+                            background: 'rgba(255, 255, 255, 0.01)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          className="friend-card-hover"
+                        >
+                          {f.avatar_url ? (
+                            <img src={f.avatar_url} alt="" className="avatar" style={{ borderColor: f.empire_color || '#CCFF00' }} />
+                          ) : (
+                            <div className="avatar avatar-placeholder" style={{ borderColor: f.empire_color || '#CCFF00', color: f.empire_color || '#CCFF00', fontSize: '0.75rem' }}>
+                              {f.pseudonyme ? f.pseudonyme.substring(0, 2).toUpperCase() : 'US'}
+                            </div>
+                          )}
+                          <div>
+                            <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-white)' }}>{f.pseudonyme || 'Utilisateur'}</p>
+                            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>TAG: {f.tag || 'AUCUN'}</p>
+                          </div>
+                          <ChevronRight size={14} style={{ marginLeft: 'auto', color: 'var(--text-muted)' }} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 5: MODERATION (PARAMETRES) */}
+              {activeTab === 'parametres' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  {/* Danger Zone Actions */}
+                  <div style={{ display: 'flex', gap: '12px', background: 'rgba(255, 75, 75, 0.03)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(255, 75, 75, 0.2)' }}>
+                    {selectedProfile.avatar_url && (
+                      <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem', borderColor: 'rgba(255,255,255,0.1)' }}>
+                        <ImageIcon size={12} /> Supprimer l'avatar
+                      </button>
+                    )}
+                    <button className="btn btn-danger" onClick={() => handleDeleteUser(selectedProfile.id)} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem', marginLeft: 'auto' }}>
+                      <Trash2 size={12} /> Supprimer définitivement l'utilisateur
+                    </button>
+                  </div>
+
+                  {/* Form fields for updating database values */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    
+                    {/* Identity parameters */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pseudonyme</label>
+                      <input 
+                        type="text" 
+                        className="input-field" 
+                        value={newPseudonyme}
+                        onChange={(e) => setNewPseudonyme(e.target.value)}
+                        placeholder="Pseudonyme"
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Tag de guilde / Clan</label>
+                      <input 
+                        type="text" 
+                        className="input-field" 
+                        value={newTag}
+                        onChange={(e) => setNewTag(e.target.value)}
+                        placeholder="Tag (ex: FR)"
+                      />
+                    </div>
+
+                    {/* Guild / Grade controls */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rôle dans la guilde (Grade)</label>
+                      <select 
+                        className="input-field" 
+                        value={newGrade}
+                        onChange={(e) => setNewGrade(e.target.value)}
+                      >
+                        <option value="">Utilisateur standard (Aucun rôle)</option>
+                        <option value="chef">Chef de guilde (Responsable)</option>
+                        <option value="adjoint">Adjoint de guilde</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Clan associé (Guilde)</label>
+                      <select 
+                        className="input-field" 
+                        value={newGuildeId}
+                        onChange={(e) => setNewGuildeId(e.target.value)}
+                      >
+                        <option value="">Aucune guilde</option>
+                        {guilds.map(g => (
+                          <option key={g.id} value={g.id}>{g.nom}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Progression parameters */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Points d'Expérience (XP)</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newXp}
+                        onChange={(e) => setNewXp(Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Niveau (Level)</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newLevel}
+                        onChange={(e) => setNewLevel(Number(e.target.value))}
+                      />
+                    </div>
+
+                    {/* Color picker */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Couleur d'empire (Hexadecimal)</label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input 
+                          type="color" 
+                          style={{ width: '40px', height: '38px', padding: '0', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'none', cursor: 'pointer' }}
+                          value={newEmpireColor}
+                          onChange={(e) => setNewEmpireColor(e.target.value)}
+                        />
+                        <input 
+                          type="text" 
+                          className="input-field" 
+                          style={{ flex: 1, fontFamily: 'monospace' }}
+                          value={newEmpireColor}
+                          onChange={(e) => setNewEmpireColor(e.target.value)}
+                          placeholder="#CCFF00"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Conquest metrics updates */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Superficie Actuelle (m²)</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newTotalArea}
+                        onChange={(e) => setNewTotalArea(Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Superficie Cumulée All-Time (m²)</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newAllTimeArea}
+                        onChange={(e) => setNewAllTimeArea(Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Superficie Max Historique (m²)</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newMaxArea}
+                        onChange={(e) => setNewMaxArea(Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Superficie Perdue Cumulée (m²)</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newAreaLost}
+                        onChange={(e) => setNewAreaLost(Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Nombre de Boucles Fermées</label>
+                      <input 
+                        type="number" 
+                        className="input-field" 
+                        value={newLoopCount}
+                        onChange={(e) => setNewLoopCount(Number(e.target.value))}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Distance de Boucle Max (km)</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        className="input-field" 
+                        value={newMaxLoopDistance}
+                        onChange={(e) => setNewMaxLoopDistance(Number(e.target.value))}
+                      />
+                    </div>
+
+                    {/* Switches */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px' }}>
+                      <input 
+                        type="checkbox" 
+                        id="ghost_mode_check"
+                        checked={newGhostMode}
+                        onChange={(e) => setNewGhostMode(e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: 'var(--primary-green)' }}
+                      />
+                      <label htmlFor="ghost_mode_check" style={{ fontSize: '0.85rem', color: 'var(--text-white)', cursor: 'pointer' }}>
+                        Mode Fantôme (Invisible sur la carte)
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px' }}>
+                      <input 
+                        type="checkbox" 
+                        id="share_location_check"
+                        checked={newShareLocation}
+                        onChange={(e) => setNewShareLocation(e.target.checked)}
+                        style={{ cursor: 'pointer', accentColor: 'var(--primary-green)' }}
+                      />
+                      <label htmlFor="share_location_check" style={{ fontSize: '0.85rem', color: 'var(--text-white)', cursor: 'pointer' }}>
+                        Activer le partage GPS
+                      </label>
+                    </div>
+
+                  </div>
+
+                  {/* Save button */}
+                  <button 
+                    className="btn btn-primary" 
+                    onClick={handleUpdateProfile} 
+                    disabled={actionLoading}
+                    style={{ width: '100%', padding: '12px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '10px' }}
+                  >
+                    <Save size={16} /> 
+                    {actionLoading ? 'Mise à jour en cours...' : 'Enregistrer toutes les modifications'}
+                  </button>
 
                 </div>
               )}

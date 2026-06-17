@@ -62,6 +62,16 @@ fun ArpentMainScreen(userId: String) {
     var userGuildCouleur by remember { mutableStateOf<String?>(null) }
     var mapTargetPosition by remember { mutableStateOf<Point?>(null) }
 
+    var userTag by remember { mutableStateOf<String?>(null) }
+    var maxAreaKm2 by remember { mutableStateOf(0.0) }
+    var areaLostKm2 by remember { mutableStateOf(0.0) }
+    var userXp by remember { mutableStateOf(0) }
+    var userLevel by remember { mutableStateOf(1) }
+    var userLoopCount by remember { mutableStateOf(0) }
+    var maxLoopDistanceKm by remember { mutableStateOf(0.0) }
+    var userGhostMode by remember { mutableStateOf(false) }
+    var userStreak by remember { mutableStateOf(0) }
+
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
 
     val scope = rememberCoroutineScope()
@@ -80,9 +90,22 @@ fun ArpentMainScreen(userId: String) {
                         filter { eq("utilisateur_id", userId) }
                     }
                 }
+                val streakDeferred = async {
+                    try {
+                        val params = kotlinx.serialization.json.buildJsonObject {
+                            put("p_user_id", kotlinx.serialization.json.JsonPrimitive(userId))
+                        }
+                        val rpcRes = supabase.postgrest.rpc("get_user_streak", params)
+                        kotlinx.serialization.json.Json.parseToJsonElement(rpcRes.data).jsonPrimitive.intOrNull ?: 0
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to get user streak", e)
+                        0
+                    }
+                }
 
                 val profileRes = profileDeferred.await()
                 val coursesRes = coursesDeferred.await()
+                val streakVal = streakDeferred.await()
 
                 // Parse profile info first
                 val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
@@ -94,6 +117,14 @@ fun ArpentMainScreen(userId: String) {
                 val guildeId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
                 val totalAreaM2 = profileObj?.get("total_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
                 val allTimeAreaM2 = profileObj?.get("all_time_area_m2")?.jsonPrimitive?.doubleOrNull ?: totalAreaM2
+                val maxAreaM2 = profileObj?.get("max_area_m2")?.jsonPrimitive?.doubleOrNull ?: totalAreaM2
+                val areaLostM2 = profileObj?.get("area_lost_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                val xpVal = profileObj?.get("xp")?.jsonPrimitive?.intOrNull ?: 0
+                val levelVal = profileObj?.get("level")?.jsonPrimitive?.intOrNull ?: 1
+                val loopCountVal = profileObj?.get("loop_count")?.jsonPrimitive?.intOrNull ?: 0
+                val maxLoopDistanceKmVal = profileObj?.get("max_loop_distance_km")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                val ghostModeVal = profileObj?.get("ghost_mode")?.jsonPrimitive?.booleanOrNull ?: false
+                val tagVal = profileObj?.get("tag")?.jsonPrimitive?.contentOrNull
 
                 // Fetch guild details if present
                 var gNom: String? = null
@@ -126,7 +157,16 @@ fun ArpentMainScreen(userId: String) {
                         "shareLoc" to shareLoc,
                         "totalDist" to totalDist,
                         "totalAreaM2" to totalAreaM2,
-                        "allTimeAreaM2" to allTimeAreaM2
+                        "allTimeAreaM2" to allTimeAreaM2,
+                        "maxAreaM2" to maxAreaM2,
+                        "areaLostM2" to areaLostM2,
+                        "xp" to xpVal,
+                        "level" to levelVal,
+                        "loopCount" to loopCountVal,
+                        "maxLoopDistanceKm" to maxLoopDistanceKmVal,
+                        "ghostMode" to ghostModeVal,
+                        "tag" to tagVal,
+                        "streak" to streakVal
                     )
                 }
 
@@ -134,9 +174,18 @@ fun ArpentMainScreen(userId: String) {
                     userPseudo = parsed["pseudo"] as String
                     userEmpireColor = parsed["color"] as String
                     userShareLocation = parsed["shareLoc"] as Boolean
-                    totalDistanceKm = parsed["totalDist"] as Double
+                    totalDistanceKm = (parsed["totalDist"] as Double) / 1000.0 // note: distance_totale in db is in meters
                     currentAreaKm2 = (parsed["totalAreaM2"] as Double) / 1_000_000.0
                     allTimeAreaKm2 = (parsed["allTimeAreaM2"] as Double) / 1_000_000.0
+                    maxAreaKm2 = (parsed["maxAreaM2"] as Double) / 1_000_000.0
+                    areaLostKm2 = (parsed["areaLostM2"] as Double) / 1_000_000.0
+                    userXp = parsed["xp"] as Int
+                    userLevel = parsed["level"] as Int
+                    userLoopCount = parsed["loopCount"] as Int
+                    maxLoopDistanceKm = parsed["maxLoopDistanceKm"] as Double
+                    userGhostMode = parsed["ghostMode"] as Boolean
+                    userTag = parsed["tag"] as? String
+                    userStreak = parsed["streak"] as Int
                     userAvatarUrl = avatarUrl
                     userGuildId = guildeId
                     userGuildNom = gNom
@@ -406,12 +455,23 @@ fun ArpentMainScreen(userId: String) {
                     ProfileScreen(
                         userId = userId,
                         userPseudo = userPseudo,
+                        userTag = userTag,
                         totalDistance = totalDistanceKm,
                         allTimeArea = allTimeAreaKm2,
                         currentArea = currentAreaKm2,
+                        maxArea = maxAreaKm2,
+                        areaLost = areaLostKm2,
+                        xp = userXp,
+                        level = userLevel,
+                        loopCount = userLoopCount,
+                        maxLoopDistanceKm = maxLoopDistanceKm,
+                        ghostMode = userGhostMode,
+                        streak = userStreak,
                         userEmpireColor = userEmpireColor,
                         userShareLocation = userShareLocation,
                         userAvatarUrl = userAvatarUrl,
+                        userGuildNom = userGuildNom,
+                        userGuildCouleur = userGuildCouleur,
                         onStatsUpdated = { refreshStats() }
                     )
                 }
@@ -450,7 +510,8 @@ fun ArpentMainScreen(userId: String) {
                 ) {
                     CoursesScreen(
                         userId = userId,
-                        isActive = isCoursesVisible
+                        isActive = isCoursesVisible,
+                        onCourseDeleted = { refreshStats() }
                     )
                 }
             }

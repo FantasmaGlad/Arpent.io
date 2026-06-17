@@ -30,7 +30,25 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const { userId, pseudonyme, avatarUrl } = await request.json();
+    const { 
+      userId, 
+      pseudonyme, 
+      avatarUrl, 
+      ghost_mode, 
+      xp, 
+      level, 
+      empire_color, 
+      total_area_m2, 
+      all_time_area_m2, 
+      max_area_m2, 
+      area_lost_m2, 
+      loop_count, 
+      max_loop_distance_km, 
+      share_location, 
+      tag, 
+      grade,
+      guilde_id
+    } = await request.json();
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -38,6 +56,21 @@ export async function PUT(request: Request) {
 
     const updates: any = {};
     if (pseudonyme !== undefined) updates.pseudonyme = pseudonyme;
+    if (ghost_mode !== undefined) updates.ghost_mode = ghost_mode;
+    if (xp !== undefined) updates.xp = xp;
+    if (level !== undefined) updates.level = level;
+    if (empire_color !== undefined) updates.empire_color = empire_color;
+    if (total_area_m2 !== undefined) updates.total_area_m2 = total_area_m2;
+    if (all_time_area_m2 !== undefined) updates.all_time_area_m2 = all_time_area_m2;
+    if (max_area_m2 !== undefined) updates.max_area_m2 = max_area_m2;
+    if (area_lost_m2 !== undefined) updates.area_lost_m2 = area_lost_m2;
+    if (loop_count !== undefined) updates.loop_count = loop_count;
+    if (max_loop_distance_km !== undefined) updates.max_loop_distance_km = max_loop_distance_km;
+    if (share_location !== undefined) updates.share_location = share_location;
+    if (tag !== undefined) updates.tag = tag;
+    if (grade !== undefined) updates.grade = grade === '' ? null : grade;
+    if (guilde_id !== undefined) updates.guilde_id = guilde_id === '' ? null : guilde_id;
+
     if (avatarUrl !== undefined) {
       updates.avatar_url = avatarUrl;
       if (avatarUrl === null) {

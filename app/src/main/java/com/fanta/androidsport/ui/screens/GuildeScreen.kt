@@ -106,23 +106,51 @@ fun GuildeScreen(
     // Clan state
     var clanId by remember { mutableStateOf<String?>(null) }
     var clanNom by remember { mutableStateOf<String?>(null) }
+    var clanTag by remember { mutableStateOf<String?>(null) }
     var clanCouleur by remember { mutableStateOf<String?>(null) }
     var clanAvatar by remember { mutableStateOf<String?>(null) }
+    var clanChefId by remember { mutableStateOf<String?>(null) }
     var clanMembers by remember { mutableStateOf<List<ClanMember>>(emptyList()) }
     
     // Clan creation/joining forms
     var newClanName by remember { mutableStateOf("") }
+    var newClanTag by remember { mutableStateOf("") }
     var newClanColor by remember { mutableStateOf("#CCFF00") }
     var newClanAvatarBase64 by remember { mutableStateOf<String?>(null) }
     var clanSearchQuery by remember { mutableStateOf("") }
     var allClansList by remember { mutableStateOf<List<ClanItem>>(emptyList()) }
     var isClanLoading by remember { mutableStateOf(true) }
 
+    // Clan editing states
+    var isEditingClan by remember { mutableStateOf(false) }
+    var tempClanNom by remember { mutableStateOf("") }
+    var tempClanTag by remember { mutableStateOf("") }
+    var tempClanColor by remember { mutableStateOf("#CCFF00") }
+    var tempClanAvatarBase64 by remember { mutableStateOf<String?>(null) }
+    var showDissolveDialog by remember { mutableStateOf(false) }
+
     val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let {
             newClanAvatarBase64 = it.toString()
+        }
+    }
+
+    val editClanImageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        uri?.let {
+            tempClanAvatarBase64 = it.toString()
+        }
+    }
+
+    LaunchedEffect(isEditingClan) {
+        if (isEditingClan) {
+            tempClanNom = clanNom ?: ""
+            tempClanTag = clanTag ?: ""
+            tempClanColor = clanCouleur ?: "#CCFF00"
+            tempClanAvatarBase64 = clanAvatar
         }
     }
 
@@ -245,8 +273,10 @@ fun GuildeScreen(
                     val guildArray = kotlinx.serialization.json.Json.parseToJsonElement(guildRes.data) as? kotlinx.serialization.json.JsonArray
                     val guildObj = guildArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
                     val nom = guildObj?.get("nom")?.jsonPrimitive?.contentOrNull ?: "Mon Clan"
+                    val tagVal = guildObj?.get("tag")?.jsonPrimitive?.contentOrNull
                     val col = guildObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull ?: "#CCFF00"
                     val av = guildObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
+                    val chefVal = guildObj?.get("chef_id")?.jsonPrimitive?.contentOrNull
                     
                     // Fetch members
                     val membersRes = supabase.postgrest["profiles"].select {
@@ -264,8 +294,10 @@ fun GuildeScreen(
                     withContext(Dispatchers.Main) {
                         clanId = uClanId
                         clanNom = nom
+                        clanTag = tagVal
                         clanCouleur = col
                         clanAvatar = av
+                        clanChefId = chefVal
                         clanMembers = members
                     }
                 } else {
@@ -279,9 +311,10 @@ fun GuildeScreen(
                         val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
                         val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
                         val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
+                        val tagVal = obj["tag"]?.jsonPrimitive?.contentOrNull
                         val col = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#CCFF00"
                         val av = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                        ClanItem(id, nom, col, av)
+                        ClanItem(id, nom, tagVal, col, av)
                     } ?: emptyList()
                     
                     withContext(Dispatchers.Main) {
@@ -683,126 +716,389 @@ fun GuildeScreen(
                     val parsedClanColor = remember(clanCouleur) {
                         try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { NeonVolt }
                     }
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1318)),
-                                border = BorderStroke(1.dp, parsedClanColor.copy(alpha = 0.4f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(20.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                    if (isEditingClan) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                                    border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
                                 ) {
-                                    AvatarImage(
-                                        avatarUrl = clanAvatar,
-                                        modifier = Modifier
-                                            .size(64.dp)
-                                            .clip(CircleShape)
-                                            .border(2.dp, parsedClanColor, CircleShape),
-                                        placeholderColor = parsedClanColor,
-                                        placeholderIcon = Icons.Default.Shield
-                                    )
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Column {
-                                        Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "${clanMembers.size} membre(s)", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        item {
-                            Text(
-                                text = "MEMBRES DU CLAN",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                letterSpacing = 1.sp,
-                                color = Color.Black.copy(alpha = 0.5f),
-                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                            )
-                        }
-                        
-                        items(clanMembers) { member ->
-                            val isMe = member.id == userId
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = if (isMe) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.9f)),
-                                border = if (isMe) BorderStroke(1.5.dp, NeonVolt) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    AvatarImage(
-                                        avatarUrl = member.avatarUrl,
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .border(1.5.dp, if (isMe) NeonVolt else Color.Black.copy(alpha = 0.1f), CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = member.pseudo,
-                                        fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
-                                        color = Color.Black,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (isMe) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .background(Color(0xFF0F1318))
-                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    Column(modifier = Modifier.padding(20.dp)) {
+                                        Text(
+                                            text = "MODIFIER LE CLAN",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            letterSpacing = 1.sp,
+                                            color = Color.Black
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(56.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF0F1318).copy(alpha = 0.08f))
+                                                    .clickable { editClanImageLauncher.launch("image/*") },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                AvatarImage(
+                                                    avatarUrl = tempClanAvatarBase64,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    placeholderColor = try { Color(android.graphics.Color.parseColor(tempClanColor)) } catch (_: Exception) { NeonVolt },
+                                                    placeholderIcon = Icons.Default.Shield
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            Button(
+                                                onClick = { editClanImageLauncher.launch("image/*") },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = Color(0xFF0F1318).copy(alpha = 0.08f),
+                                                    contentColor = Color.Black
+                                                ),
+                                                shape = RoundedCornerShape(50),
+                                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                            ) {
+                                                Text("Modifier logo", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            }
+                                        }
+                                        
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        OutlinedTextField(
+                                            value = tempClanNom,
+                                            onValueChange = { tempClanNom = it },
+                                            placeholder = { Text("Nom du clan", color = Color.Black.copy(alpha = 0.4f)) },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(50),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.Black,
+                                                unfocusedTextColor = Color.Black,
+                                                focusedContainerColor = Color.White.copy(alpha = 0.95f),
+                                                unfocusedContainerColor = Color.White.copy(alpha = 0.7f),
+                                                focusedBorderColor = NeonVolt,
+                                                unfocusedBorderColor = Color.Black.copy(alpha = 0.06f)
+                                            )
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        OutlinedTextField(
+                                            value = tempClanTag,
+                                            onValueChange = { if (it.length <= 4) tempClanTag = it.uppercase() },
+                                            placeholder = { Text("Tag (Ex: ARPT, max 4 lettres)", color = Color.Black.copy(alpha = 0.4f)) },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(50),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.Black,
+                                                unfocusedTextColor = Color.Black,
+                                                focusedContainerColor = Color.White.copy(alpha = 0.95f),
+                                                unfocusedContainerColor = Color.White.copy(alpha = 0.7f),
+                                                focusedBorderColor = NeonVolt,
+                                                unfocusedBorderColor = Color.Black.copy(alpha = 0.06f)
+                                            )
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text(
-                                                text = "VOUS",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = NeonVolt
+                                                text = "Couleur du clan",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                modifier = Modifier.weight(1f)
                                             )
+                                            val parsedColor = remember(tempClanColor) {
+                                                try { Color(android.graphics.Color.parseColor(tempClanColor)) } catch (_: Exception) { Color(0xFFCCFF00) }
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(24.dp)
+                                                    .clip(CircleShape)
+                                                    .background(parsedColor)
+                                                    .border(1.5.dp, Color.White, CircleShape)
+                                            )
+                                        }
+                                        
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        val parsedColorForWheel = remember(tempClanColor) {
+                                            try { Color(android.graphics.Color.parseColor(tempClanColor)) } catch (_: Exception) { Color(0xFFCCFF00) }
+                                        }
+                                        ColorWheel(
+                                            selectedColor = parsedColorForWheel,
+                                            onColorSelected = { color ->
+                                                val hex = String.format("#%06X", 0xFFFFFF and color.toArgb())
+                                                tempClanColor = hex
+                                            },
+                                            modifier = Modifier
+                                                .size(160.dp)
+                                                .align(Alignment.CenterHorizontally)
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.height(20.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Button(
+                                                onClick = { isEditingClan = false },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray, contentColor = Color.Black),
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = PaddingValues(vertical = 12.dp)
+                                            ) {
+                                                Text("ANNULER", fontWeight = FontWeight.Bold, color = Color.Black)
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    if (tempClanNom.trim().isEmpty()) return@Button
+                                                    scope.launch(Dispatchers.IO) {
+                                                        try {
+                                                            var finalAvatarUrl = tempClanAvatarBase64
+                                                            val localUriStr = tempClanAvatarBase64
+                                                            if (localUriStr != null && (localUriStr.startsWith("content://") || localUriStr.startsWith("file://"))) {
+                                                                try {
+                                                                    val bytes = context.contentResolver.openInputStream(android.net.Uri.parse(localUriStr))?.use { it.readBytes() }
+                                                                    if (bytes != null) {
+                                                                        val bucket = supabase.storage.from("Images")
+                                                                        val filename = "guild_${clanId}.jpg"
+                                                                        bucket.upload(filename, bytes) {
+                                                                            upsert = true
+                                                                        }
+                                                                        val publicUrl = bucket.publicUrl(filename)
+                                                                        finalAvatarUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    android.util.Log.e("Arpent", "Failed to upload guild avatar", e)
+                                                                }
+                                                            }
+                                                            
+                                                            supabase.postgrest["guildes"].update(
+                                                                mapOf(
+                                                                    "nom" to tempClanNom.trim(),
+                                                                    "tag" to if (tempClanTag.trim().isEmpty()) null else tempClanTag.trim().uppercase(),
+                                                                    "couleur_hex" to tempClanColor,
+                                                                    "avatar_url" to finalAvatarUrl
+                                                                )
+                                                            ) {
+                                                                filter { eq("id", clanId!!) }
+                                                            }
+                                                            
+                                                            withContext(Dispatchers.Main) {
+                                                                Toast.makeText(context, "Clan modifié avec succès !", Toast.LENGTH_SHORT).show()
+                                                                isEditingClan = false
+                                                                loadClanData()
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            withContext(Dispatchers.Main) {
+                                                                Toast.makeText(context, "Erreur lors de la modification.", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = NeonVolt, contentColor = Color.Black),
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = PaddingValues(vertical = 12.dp)
+                                            ) {
+                                                Text("SAUVEGARDER", fontWeight = FontWeight.Bold, color = Color.Black)
+                                            }
                                         }
                                     }
                                 }
                             }
+                            
+                            item {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = { showDissolveDialog = true },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFFFEBEE),
+                                        contentColor = Color(0xFFC62828)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(50),
+                                    contentPadding = PaddingValues(vertical = 12.dp)
+                                ) {
+                                    Text("DISSOUDRE LE CLAN", fontWeight = FontWeight.Bold, color = Color(0xFFC62828), letterSpacing = 1.sp)
+                                }
+                            }
                         }
-                        
-                        item {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = {
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            supabase.postgrest["profiles"].update(
-                                                mapOf("guilde_id" to null)
-                                            ) {
-                                                filter { eq("id", userId) }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1318)),
+                                    border = BorderStroke(1.dp, parsedClanColor.copy(alpha = 0.4f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(20.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AvatarImage(
+                                            avatarUrl = clanAvatar,
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(CircleShape)
+                                                .border(2.dp, parsedClanColor, CircleShape),
+                                            placeholderColor = parsedClanColor,
+                                            placeholderIcon = Icons.Default.Shield
+                                        )
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
+                                                if (!clanTag.isNullOrEmpty()) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                            .background(parsedClanColor)
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = clanTag ?: "",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color.Black
+                                                        )
+                                                    }
+                                                }
                                             }
-                                            withContext(Dispatchers.Main) {
-                                                Toast.makeText(context, "Vous avez quitté le clan.", Toast.LENGTH_SHORT).show()
-                                                clanId = null
-                                                loadClanData()
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(text = "${clanMembers.size} membre(s)", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+                                        }
+                                        if (clanChefId == userId) {
+                                            IconButton(onClick = { isEditingClan = true }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = "Modifier",
+                                                    tint = Color.White
+                                                )
                                             }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("Arpent", "Failed to leave clan", e)
                                         }
                                     }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFFFEBEE),
-                                    contentColor = Color(0xFFC62828)
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(50),
-                                contentPadding = PaddingValues(vertical = 12.dp)
-                            ) {
-                                Text("QUITTER LE CLAN", fontWeight = FontWeight.Bold, color = Color(0xFFC62828), letterSpacing = 1.sp)
+                                }
+                            }
+                            
+                            item {
+                                Text(
+                                    text = "MEMBRES DU CLAN",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    letterSpacing = 1.sp,
+                                    color = Color.Black.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                                )
+                            }
+                            
+                            items(clanMembers) { member ->
+                                val isMe = member.id == userId
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = if (isMe) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.9f)),
+                                    border = if (isMe) BorderStroke(1.5.dp, NeonVolt) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AvatarImage(
+                                            avatarUrl = member.avatarUrl,
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .border(1.5.dp, if (isMe) NeonVolt else Color.Black.copy(alpha = 0.1f), CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = member.pseudo,
+                                            fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
+                                            color = Color.Black,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isMe) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(50))
+                                                    .background(Color(0xFF0F1318))
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "VOUS",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = NeonVolt
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            item {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                if (clanChefId == userId) {
+                                    Button(
+                                        onClick = { showDissolveDialog = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFFFEBEE),
+                                            contentColor = Color(0xFFC62828)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(50),
+                                        contentPadding = PaddingValues(vertical = 12.dp)
+                                    ) {
+                                        Text("DISSOUDRE LE CLAN", fontWeight = FontWeight.Bold, color = Color(0xFFC62828), letterSpacing = 1.sp)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            scope.launch(Dispatchers.IO) {
+                                                try {
+                                                    supabase.postgrest["profiles"].update(
+                                                        mapOf("guilde_id" to null)
+                                                    ) {
+                                                        filter { eq("id", userId) }
+                                                    }
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Vous avez quitté le clan.", Toast.LENGTH_SHORT).show()
+                                                        clanId = null
+                                                        loadClanData()
+                                                    }
+                                                } catch (e: Exception) {
+                                                    android.util.Log.e("Arpent", "Failed to leave clan", e)
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFFFEBEE),
+                                            contentColor = Color(0xFFC62828)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(50),
+                                        contentPadding = PaddingValues(vertical = 12.dp)
+                                    ) {
+                                        Text("QUITTER LE CLAN", fontWeight = FontWeight.Bold, color = Color(0xFFC62828), letterSpacing = 1.sp)
+                                    }
+                                }
                             }
                         }
                     }
@@ -880,6 +1176,24 @@ fun GuildeScreen(
                                         )
                                     )
                                     
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedTextField(
+                                        value = newClanTag,
+                                        onValueChange = { if (it.length <= 4) newClanTag = it.uppercase() },
+                                        placeholder = { Text("Tag (Ex: ARPT, max 4 lettres)", color = Color.Black.copy(alpha = 0.4f)) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(50),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.Black,
+                                            unfocusedTextColor = Color.Black,
+                                            focusedContainerColor = Color.White.copy(alpha = 0.95f),
+                                            unfocusedContainerColor = Color.White.copy(alpha = 0.7f),
+                                            focusedBorderColor = NeonVolt,
+                                            unfocusedBorderColor = Color.Black.copy(alpha = 0.06f)
+                                        )
+                                    )
+                                    
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -928,6 +1242,7 @@ fun GuildeScreen(
                                                     val newGuildRes = supabase.postgrest["guildes"].insert(
                                                         mapOf(
                                                             "nom" to newClanName.trim(),
+                                                            "tag" to if (newClanTag.trim().isEmpty()) null else newClanTag.trim().uppercase(),
                                                             "couleur_hex" to newClanColor,
                                                             "avatar_url" to null,
                                                             "chef_id" to userId
@@ -1078,13 +1393,32 @@ fun GuildeScreen(
                                                 placeholderColor = parsedCColor,
                                                 placeholderIcon = Icons.Default.Shield
                                             )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Text(
-                                                text = clan.nom,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.Black,
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
                                                 modifier = Modifier.weight(1f)
-                                            )
+                                            ) {
+                                                Text(
+                                                    text = clan.nom,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.Black
+                                                )
+                                                if (!clan.tag.isNullOrEmpty()) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                            .background(parsedCColor)
+                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = clan.tag!!,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if ((parsedCColor.red * 0.299f + parsedCColor.green * 0.587f + parsedCColor.blue * 0.114f) > 0.6f) Color.Black else Color.White
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             if (clanId == null) {
                                                 val isCColorLight = (parsedCColor.red * 0.299f + parsedCColor.green * 0.587f + parsedCColor.blue * 0.114f) > 0.6f
                                                 Button(

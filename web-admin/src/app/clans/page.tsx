@@ -68,7 +68,6 @@ export default function ClansPage() {
   // Edit fields
   const [isEditing, setIsEditing] = useState(false);
   const [newNom, setNewNom] = useState('');
-  const [newTag, setNewTag] = useState('');
   const [newCouleur, setNewCouleur] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -154,7 +153,6 @@ export default function ClansPage() {
 
     setIsEditing(false);
     setNewNom(selectedGuild.nom);
-    setNewTag(selectedGuild.tag || '');
     setNewCouleur(selectedGuild.couleur_hex);
     setMessage(null);
     setActiveTab('generale');
@@ -179,7 +177,6 @@ export default function ClansPage() {
         body: JSON.stringify({
           guildId: selectedGuild.id,
           nom: newNom,
-          tag: newTag.trim() === '' ? null : newTag.trim().toUpperCase(),
           couleurHex: newCouleur
         })
       });
@@ -191,12 +188,7 @@ export default function ClansPage() {
 
       setMessage({ type: 'success', text: 'Groupe mis à jour avec succès.' });
 
-      const updatedGuild = { 
-        ...selectedGuild, 
-        nom: newNom, 
-        tag: newTag.trim() === '' ? null : newTag.trim().toUpperCase(), 
-        couleur_hex: newCouleur 
-      };
+      const updatedGuild = { ...selectedGuild, nom: newNom, couleur_hex: newCouleur };
       setSelectedGuild(updatedGuild);
       setGuilds(prev => prev.map(g => g.id === selectedGuild.id ? updatedGuild : g));
       setIsEditing(false);
@@ -516,35 +508,23 @@ export default function ClansPage() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     {isEditing ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <input 
-                            type="text" 
-                            className="input-field" 
-                            placeholder="Nom du clan"
-                            value={newNom}
-                            onChange={(e) => setNewNom(e.target.value)}
-                            style={{ padding: '4px 10px', fontSize: '1.1rem', width: '180px' }}
-                          />
-                          <input 
-                            type="text" 
-                            className="input-field" 
-                            placeholder="TAG (max 4 char)"
-                            maxLength={4}
-                            value={newTag}
-                            onChange={(e) => setNewTag(e.target.value.toUpperCase())}
-                            style={{ padding: '4px 10px', fontSize: '1.1rem', width: '100px', fontFamily: 'monospace' }}
-                          />
-                          <input 
-                            type="color" 
-                            value={newCouleur}
-                            onChange={(e) => setNewCouleur(e.target.value)}
-                            style={{ width: '32px', height: '32px', border: 'none', background: 'transparent', cursor: 'pointer' }}
-                          />
-                          <button className="btn btn-primary" onClick={handleUpdateGuild} disabled={actionLoading} style={{ padding: '6px 12px' }}>
-                            <Save size={14} />
-                          </button>
-                        </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input 
+                          type="text" 
+                          className="input-field" 
+                          value={newNom}
+                          onChange={(e) => setNewNom(e.target.value)}
+                          style={{ padding: '4px 10px', fontSize: '1.1rem', width: '180px' }}
+                        />
+                        <input 
+                          type="color" 
+                          value={newCouleur}
+                          onChange={(e) => setNewCouleur(e.target.value)}
+                          style={{ width: '32px', height: '32px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                        />
+                        <button className="btn btn-primary" onClick={handleUpdateGuild} disabled={actionLoading} style={{ padding: '6px 12px' }}>
+                          <Save size={14} />
+                        </button>
                       </div>
                     ) : (
                       <>
@@ -556,7 +536,7 @@ export default function ClansPage() {
                     )}
                   </div>
                   <p style={{ color: 'var(--primary-green)', fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 700, marginTop: '2px' }}>
-                    TAG GROUPE: {selectedGuild.tag ? `#${selectedGuild.tag}` : 'NON DÉFINI'}
+                    TAG GROUPE: {selectedGuild.tag || 'NON DÉFINI'}
                   </p>
                 </div>
               </div>

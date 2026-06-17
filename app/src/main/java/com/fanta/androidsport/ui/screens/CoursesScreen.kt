@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsRun
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,10 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.IconButton
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,7 +47,6 @@ import com.fanta.androidsport.ui.theme.ElectricBlue
 import com.fanta.androidsport.ui.theme.NeonVolt
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -62,15 +56,12 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable
 fun CoursesScreen(
     userId: String,
-    isActive: Boolean,
-    onCourseDeleted: () -> Unit = {}
+    isActive: Boolean
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var courses by remember { mutableStateOf<List<CourseItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var courseToDelete by remember { mutableStateOf<String?>(null) }
-
 
     LaunchedEffect(isActive) {
         if (!isActive) return@LaunchedEffect
@@ -247,58 +238,41 @@ fun CoursesScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        val instant = try {
-                                            java.time.Instant.parse(course.dateDebut)
-                                        } catch (_: Exception) {
-                                            null
-                                        }
-                                        val formattedDate = if (instant != null) {
-                                            val formatter = java.time.format.DateTimeFormatter
-                                                .ofPattern("dd MMM yyyy à HH:mm")
-                                                .withZone(java.time.ZoneId.systemDefault())
-                                            formatter.format(instant)
-                                        } else {
-                                            course.dateDebut
-                                        }
-
-                                        Text(
-                                            text = formattedDate,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.Gray
-                                        )
-
-                                        if (course.estBouclee) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(50))
-                                                    .background(ElectricBlue.copy(alpha = 0.15f))
-                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = "Boucle",
-                                                    color = ElectricBlue,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
+                                    val instant = try {
+                                        java.time.Instant.parse(course.dateDebut)
+                                    } catch (_: Exception) {
+                                        null
+                                    }
+                                    val formattedDate = if (instant != null) {
+                                        val formatter = java.time.format.DateTimeFormatter
+                                            .ofPattern("dd MMM yyyy à HH:mm")
+                                            .withZone(java.time.ZoneId.systemDefault())
+                                        formatter.format(instant)
+                                    } else {
+                                        course.dateDebut
                                     }
 
-                                    IconButton(
-                                        onClick = { courseToDelete = course.id },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Supprimer l'activité",
-                                            tint = Color(0xFFC62828),
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                    Text(
+                                        text = formattedDate,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Gray
+                                    )
+
+                                    if (course.estBouclee) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .background(ElectricBlue.copy(alpha = 0.15f))
+                                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "Boucle",
+                                                color = ElectricBlue,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
 
@@ -356,46 +330,5 @@ fun CoursesScreen(
                 }
             }
         }
-    }
-
-    if (courseToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { courseToDelete = null },
-            title = { Text("Supprimer l'activité", fontWeight = FontWeight.Bold) },
-            text = { Text("Êtes-vous sûr de vouloir supprimer cette activité ? Cette action est définitive et recalculera vos statistiques.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val cId = courseToDelete
-                        if (cId != null) {
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    supabase.postgrest["courses"].delete {
-                                        filter { eq("id", cId) }
-                                    }
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, "Activité supprimée avec succès.", Toast.LENGTH_SHORT).show()
-                                        courses = courses.filter { it.id != cId }
-                                        onCourseDeleted()
-                                    }
-                                } catch (e: Exception) {
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, "Erreur de suppression.", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        }
-                        courseToDelete = null
-                    }
-                ) {
-                    Text("SUPPRIMER", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { courseToDelete = null }) {
-                    Text("ANNULER", color = Color.Gray)
-                }
-            }
-        )
     }
 }

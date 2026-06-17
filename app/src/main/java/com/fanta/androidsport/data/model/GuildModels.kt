@@ -31,7 +31,6 @@ data class ClanMember(
 data class ClanItem(
     val id: String,
     val nom: String,
-    val tag: String?,
     val color: String,
     val avatarUrl: String?
 )

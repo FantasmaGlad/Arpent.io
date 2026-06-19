@@ -109,6 +109,7 @@ export async function DELETE(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get('userId');
+  const onlyData = searchParams.get('onlyData') === 'true';
 
   if (!userId) {
     return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
@@ -122,10 +123,61 @@ export async function DELETE(request: Request) {
       .eq('id', userId)
       .single();
 
-    // 2. Delete user from auth.users (which cascades to profiles, courses, territoires, etc.)
-    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-    if (deleteError) {
-      return NextResponse.json({ error: deleteError.message }, { status: 400 });
+    if (onlyData) {
+      // Delete game data
+      // Delete courses (cascades to points_gps, reactions, comments associated with these courses)
+      const { error: coursesError } = await supabaseAdmin
+        .from('courses')
+        .delete()
+        .eq('utilisateur_id', userId);
+      if (coursesError) throw coursesError;
+
+      // Delete territoires
+      const { error: territoiresError } = await supabaseAdmin
+        .from('territoires')
+        .delete()
+        .eq('utilisateur_id', userId);
+      if (territoiresError) throw territoiresError;
+
+      // Delete friendships
+      const { error: amisError } = await supabaseAdmin
+        .from('amis')
+        .delete()
+        .or(`demandeur_id.eq.${userId},destinataire_id.eq.${userId}`);
+      if (amisError) throw amisError;
+
+      // Delete comments & reactions left by this user on other courses
+      await supabaseAdmin.from('course_commentaires').delete().eq('utilisateur_id', userId);
+      await supabaseAdmin.from('course_reactions').delete().eq('utilisateur_id', userId);
+
+      // Reset statistics in the profile table
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          total_area_m2: 0.0,
+          all_time_area_m2: 0.0,
+          max_area_m2: 0.0,
+          area_lost_m2: 0.0,
+          xp: 0,
+          level: 1,
+          loop_count: 0,
+          max_loop_distance_km: 0.0,
+          total_steps: 0,
+          average_cadence: 0.0,
+          guilde_id: null,
+          grade: 'membre',
+          avatar_url: null,
+          latitude: null,
+          longitude: null
+        })
+        .eq('id', userId);
+      if (profileError) throw profileError;
+    } else {
+      // 2. Delete user from auth.users (which cascades to profiles, courses, territoires, etc.)
+      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+      if (deleteError) {
+        return NextResponse.json({ error: deleteError.message }, { status: 400 });
+      }
     }
 
     // 3. Clean up avatar in storage if it exists

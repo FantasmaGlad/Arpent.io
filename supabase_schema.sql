@@ -290,6 +290,9 @@ CREATE POLICY "Les utilisateurs peuvent insérer/modifier leurs propres territoi
 DROP POLICY IF EXISTS "Les utilisateurs peuvent modifier leurs propres territoires" ON public.territoires;
 CREATE POLICY "Les utilisateurs peuvent modifier leurs propres territoires" ON public.territoires FOR UPDATE USING (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer leurs propres territoires" ON public.territoires;
+CREATE POLICY "Les utilisateurs peuvent supprimer leurs propres territoires" ON public.territoires FOR DELETE USING (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
+
 -- Politiques Points GPS
 DROP POLICY IF EXISTS "Les utilisateurs peuvent insérer leurs propres points gps" ON public.points_gps;
 CREATE POLICY "Les utilisateurs peuvent insérer leurs propres points gps" ON public.points_gps 
@@ -303,6 +306,15 @@ FOR INSERT WITH CHECK (
 DROP POLICY IF EXISTS "Les utilisateurs peuvent voir leurs propres points gps" ON public.points_gps;
 CREATE POLICY "Les utilisateurs peuvent voir leurs propres points gps" ON public.points_gps 
 FOR SELECT USING (
+    EXISTS (
+        SELECT 1 FROM public.courses c 
+        WHERE c.id = course_id AND c.utilisateur_id = auth.uid()
+    ) OR public.is_admin(auth.uid())
+);
+
+DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer leurs propres points gps" ON public.points_gps;
+CREATE POLICY "Les utilisateurs peuvent supprimer leurs propres points gps" ON public.points_gps
+FOR DELETE USING (
     EXISTS (
         SELECT 1 FROM public.courses c 
         WHERE c.id = course_id AND c.utilisateur_id = auth.uid()
@@ -324,7 +336,7 @@ CREATE POLICY "Les utilisateurs peuvent accepter/modifier leurs demandes" ON pub
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer une relation d'ami" ON public.amis;
 CREATE POLICY "Les utilisateurs peuvent supprimer une relation d'ami" ON public.amis 
-    FOR DELETE USING (auth.uid() = demandeur_id OR auth.uid() = destinataire_id);
+    FOR DELETE USING (auth.uid() = demandeur_id OR auth.uid() = destinataire_id OR public.is_admin(auth.uid()));
 
 -- Politiques Reactions de Courses
 DROP POLICY IF EXISTS "Les utilisateurs authentifiés peuvent voir les réactions" ON public.course_reactions;
@@ -337,7 +349,7 @@ CREATE POLICY "Les utilisateurs peuvent réagir aux courses" ON public.course_re
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer leur propre réaction" ON public.course_reactions;
 CREATE POLICY "Les utilisateurs peuvent supprimer leur propre réaction" ON public.course_reactions
-    FOR DELETE USING (auth.uid() = utilisateur_id);
+    FOR DELETE USING (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
 
 -- Politiques Commentaires de Courses
 DROP POLICY IF EXISTS "Les utilisateurs authentifiés peuvent voir les commentaires" ON public.course_commentaires;
@@ -350,7 +362,7 @@ CREATE POLICY "Les utilisateurs peuvent commenter les courses" ON public.course_
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer leur propre commentaire" ON public.course_commentaires;
 CREATE POLICY "Les utilisateurs peuvent supprimer leur propre commentaire" ON public.course_commentaires
-    FOR DELETE USING (auth.uid() = utilisateur_id);
+    FOR DELETE USING (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
 
 -- ==========================================
 -- FONCTIONS DÉCLENCHÉES (TRIGGERS)

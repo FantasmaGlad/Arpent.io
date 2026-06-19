@@ -381,8 +381,15 @@ export default function ProfilesPage() {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (!confirm("ATTENTION : Cette action supprimera définitivement le compte utilisateur, ses relations, ses zones couvertes et ses sessions d'activité.\n\nCette action est irréversible. Continuer ?")) {
+  const handleDeleteUser = async (userId: string, onlyData: boolean = false) => {
+    const isGuest = profiles.find(p => p.id === userId)?.pseudonyme?.startsWith('Invité_');
+    const confirmMessage = onlyData 
+      ? "ATTENTION : Cette action supprimera TOUTES les données de jeu (courses, territoires, statistiques, relations) de cet utilisateur.\nSon compte de connexion sera conservé.\n\nCette action est irréversible. Continuer ?"
+      : isGuest
+        ? "ATTENTION : Cette action supprimera définitivement ce compte invité ainsi que toutes ses données de jeu.\n\nCette action est irréversible. Continuer ?"
+        : "ATTENTION : Cette action supprimera définitivement le compte utilisateur, ses relations, ses zones couvertes et ses sessions d'activité.\n\nCette action est irréversible. Continuer ?";
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
@@ -391,7 +398,7 @@ export default function ProfilesPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch(`/api/admin/profiles?userId=${userId}`, {
+      const response = await fetch(`/api/admin/profiles?userId=${userId}${onlyData ? '&onlyData=true' : ''}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -403,10 +410,52 @@ export default function ProfilesPage() {
         throw new Error(resData.error || 'Erreur lors de la suppression.');
       }
 
-      alert('Utilisateur supprimé avec succès.');
-      setSelectedProfile(null);
-      setProfiles(prev => prev.filter(p => p.id !== userId));
-      setTotalCount(prev => Math.max(0, prev - 1));
+      alert(onlyData ? 'Données de jeu de l\'utilisateur réinitialisées avec succès.' : 'Utilisateur supprimé avec succès.');
+      
+      if (onlyData) {
+        setProfiles(prev => prev.map(p => p.id === userId ? {
+          ...p,
+          total_area_m2: 0,
+          all_time_area_m2: 0,
+          max_area_m2: 0,
+          area_lost_m2: 0,
+          xp: 0,
+          level: 1,
+          loop_count: 0,
+          max_loop_distance_km: 0,
+          total_steps: 0,
+          average_cadence: 0,
+          guilde_id: null,
+          grade: 'membre',
+          avatar_url: null,
+          latitude: null,
+          longitude: null
+        } : p));
+        if (selectedProfile?.id === userId) {
+          setSelectedProfile(prev => prev ? {
+            ...prev,
+            total_area_m2: 0,
+            all_time_area_m2: 0,
+            max_area_m2: 0,
+            area_lost_m2: 0,
+            xp: 0,
+            level: 1,
+            loop_count: 0,
+            max_loop_distance_km: 0,
+            total_steps: 0,
+            average_cadence: 0,
+            guilde_id: null,
+            grade: 'membre',
+            avatar_url: null,
+            latitude: null,
+            longitude: null
+          } : null);
+        }
+      } else {
+        setSelectedProfile(null);
+        setProfiles(prev => prev.filter(p => p.id !== userId));
+        setTotalCount(prev => Math.max(0, prev - 1));
+      }
     } catch (err: any) {
       alert(`Erreur : ${err.message}`);
     } finally {
@@ -1516,11 +1565,22 @@ export default function ProfilesPage() {
                         </button>
                       )}
                       
+                      {!selectedProfile.pseudonyme?.startsWith('Invité_') && (
+                        <button 
+                          className="btn btn-secondary" 
+                          onClick={() => handleDeleteUser(selectedProfile.id, true)} 
+                          disabled={actionLoading}
+                          style={{ fontSize: '0.8rem', padding: '8px 14px', border: '1px solid rgba(255, 75, 75, 0.4)', color: '#FF4B4B' }}
+                        >
+                          <Trash2 size={12} /> Réinitialiser uniquement les données
+                        </button>
+                      )}
+                      
                       <button 
                         className="btn btn-danger" 
-                        onClick={() => handleDeleteUser(selectedProfile.id)} 
+                        onClick={() => handleDeleteUser(selectedProfile.id, false)} 
                         disabled={actionLoading}
-                        style={{ fontSize: '0.8rem', padding: '8px 14px', marginLeft: 'auto' }}
+                        style={{ fontSize: '0.8rem', padding: '8px 14px', marginLeft: selectedProfile.pseudonyme?.startsWith('Invité_') ? 'auto' : '0' }}
                       >
                         <Trash2 size={12} /> Supprimer définitivement le compte
                       </button>

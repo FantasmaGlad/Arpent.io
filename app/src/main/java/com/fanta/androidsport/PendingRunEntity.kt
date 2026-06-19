@@ -3,10 +3,14 @@ package com.fanta.androidsport
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
+import androidx.room.Index
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-@Entity(tableName = "pending_runs")
+@Entity(
+    tableName = "pending_runs",
+    indices = [Index(value = ["userId", "dateDebut"], unique = true)]
+)
 data class PendingRunEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val userId: String,

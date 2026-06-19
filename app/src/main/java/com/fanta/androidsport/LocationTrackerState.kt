@@ -156,6 +156,12 @@ object LocationTrackerState {
             return
         }
 
+        if (speedMps > 12.0f) {
+            Log.d("LocationTrackerState", "Point rejected due to speed limit: $speedMps m/s")
+            _isSpeedLimitExceeded.value = true
+            return
+        }
+
         val currentList = _points.value.toMutableList()
         val currentDetails = _pointsDetails.value.toMutableList()
         val prevPoint = currentList.lastOrNull()

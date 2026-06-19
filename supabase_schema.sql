@@ -633,19 +633,54 @@ DECLARE
     v_new_points text[];
     v_existing_id uuid;
     v_existing_contour geometry;
+
+    -- Variables pour calculs anti-triche
+    v_calculated_distance float := 0.0;
+    v_calculated_duration float := 0.0;
+    v_calculated_distance_km float := 0.0;
 BEGIN
     -- Contrôle d'accès strict
     IF auth.uid() IS NULL OR p_user_id <> auth.uid() THEN
         RAISE EXCEPTION 'Non autorisé : ID utilisateur invalide ou non authentifié.';
     END IF;
 
-    -- Contrôle anti-triche : vitesse moyenne de la course
-    IF p_duree_secondes > 0 AND (p_distance_totale * 1000.0 / p_duree_secondes) > 12.0 THEN
-        RAISE EXCEPTION 'Vitesse moyenne irréaliste (anti-triche).';
+    -- Contrôle anti-triche serveur (vitesse réelle, distance, durée et instantanée)
+    IF p_points_details IS NOT NULL AND jsonb_array_length(p_points_details) >= 2 THEN
+        SELECT COALESCE(ST_Length(ST_MakeLine(array_agg(ST_SetSRID(ST_MakePoint((val->>'longitude')::double precision, (val->>'latitude')::double precision), 4326) ORDER BY ord))::geography), 0.0)
+        INTO v_calculated_distance
+        FROM jsonb_array_elements(p_points_details) WITH ORDINALITY AS f(val, ord);
+    ELSIF p_points IS NOT NULL AND array_length(p_points, 1) >= 2 THEN
+        SELECT COALESCE(ST_Length(ST_MakeLine(array_agg(ST_SetSRID(ST_MakePoint(split_part(trim(pt), ' ', 1)::double precision, split_part(trim(pt), ' ', 2)::double precision), 4326) ORDER BY ord))::geography), 0.0)
+        INTO v_calculated_distance
+        FROM unnest(p_points) WITH ORDINALITY AS f(pt, ord);
     END IF;
 
-    IF p_vitesse_moyenne > 43.2 OR p_vitesse_max > 43.2 THEN
-        RAISE EXCEPTION 'Vitesse maximale ou moyenne dépassée (anti-triche).';
+    v_calculated_distance_km := v_calculated_distance / 1000.0;
+    v_calculated_duration := EXTRACT(EPOCH FROM (p_date_fin - p_date_debut));
+
+    -- Validation de l'écart de distance (max 15% de divergence si distance significative)
+    IF v_calculated_distance_km > 0.05 AND ABS(p_distance_totale - v_calculated_distance_km) / v_calculated_distance_km > 0.15 THEN
+        RAISE EXCEPTION 'Écart de distance trop important (anti-triche). Client: %, Serveur: %', p_distance_totale, v_calculated_distance_km;
+    END IF;
+
+    -- Validation de l'écart de durée (max 15% de divergence si durée significative)
+    IF v_calculated_duration > 5.0 AND ABS(p_duree_secondes - v_calculated_duration) / v_calculated_duration > 0.15 THEN
+        RAISE EXCEPTION 'Écart de durée trop important (anti-triche). Client: %, Serveur: %', p_duree_secondes, v_calculated_duration;
+    END IF;
+
+    -- Validation de la vitesse moyenne réelle (< 12 m/s, soit 43.2 km/h)
+    IF v_calculated_duration > 0.0 AND (v_calculated_distance / v_calculated_duration) > 12.0 THEN
+        RAISE EXCEPTION 'Vitesse moyenne réelle irréaliste (anti-triche). Vitesse: % m/s', (v_calculated_distance / v_calculated_duration);
+    END IF;
+
+    -- Validation de la vitesse instantanée dans les points détaillés (max 43.2 km/h)
+    IF p_points_details IS NOT NULL AND jsonb_array_length(p_points_details) > 0 THEN
+        IF EXISTS (
+            SELECT 1 FROM jsonb_array_elements(p_points_details) AS val
+            WHERE (val->>'speed')::double precision > 43.2
+        ) THEN
+            RAISE EXCEPTION 'Vitesse instantanée maximale dépassée (anti-triche).';
+        END IF;
     END IF;
 
     -- Gestion de la boucle de territoire d'abord pour calculer la superficie
@@ -728,19 +763,31 @@ BEGIN
         INSERT INTO public.points_gps (course_id, longitude, latitude)
         SELECT 
             v_course_id,
-            (parts[1])::double precision,
-            (parts[2])::double precision
-        FROM (
-            SELECT regexp_split_to_array(trim(pt), '\s+') AS parts
-            FROM unnest(p_points) AS pt
-        ) s
-        WHERE array_length(parts, 1) = 2;
+            split_part(trim(pt), ' ', 1)::double precision,
+            split_part(trim(pt), ' ', 2)::double precision
+        FROM unnest(p_points) AS pt;
     END IF;
 
     -- 3. Gestion de la conquête de territoire (soustraire ennemi et rajouter ami)
     IF p_est_bouclee AND v_superficie > 0.0 THEN
         SELECT guilde_id INTO v_guilde_id FROM public.profiles WHERE id = p_user_id;
 
+        -- A. Verrouillage déterministe des profils impactés pour éviter les Deadlocks
+        PERFORM id FROM public.profiles
+        WHERE id IN (
+            SELECT p_user_id
+            UNION
+            SELECT DISTINCT t.utilisateur_id
+            FROM public.territoires t
+            JOIN public.profiles p ON t.utilisateur_id = p.id
+            WHERE t.utilisateur_id <> p_user_id 
+              AND (v_guilde_id IS NULL OR p.guilde_id IS NULL OR p.guilde_id <> v_guilde_id)
+              AND ST_Intersects(t.contour, v_geom)
+        )
+        ORDER BY id
+        FOR UPDATE;
+
+        -- B. Verrouillage des territoires impactés
         PERFORM id FROM public.territoires
         WHERE id IN (
             SELECT id FROM public.territoires WHERE utilisateur_id = p_user_id

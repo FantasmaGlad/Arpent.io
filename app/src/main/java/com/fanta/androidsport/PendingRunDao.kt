@@ -2,11 +2,12 @@ package com.fanta.androidsport
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
 interface PendingRunDao {
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertRun(run: PendingRunEntity): Long
 
     @Query("SELECT * FROM pending_runs ORDER BY id ASC")

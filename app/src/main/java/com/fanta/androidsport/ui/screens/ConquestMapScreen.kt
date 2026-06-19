@@ -191,6 +191,16 @@ fun ConquestMapScreen(
     // First location update flag
     var isFirstLocationUpdate by remember { mutableStateOf(true) }
 
+    // Mapbox Viewport State
+    val mapViewportState = rememberMapViewportState {
+        setCameraOptions {
+            center(parisCenter)
+            zoom(16.2)
+            pitch(60.0) // 3D Tilt perspective angle
+            bearing(30.0)
+        }
+    }
+
     // Store references to drawn objects
     val activePathPoints = remember { mutableStateListOf<Point>() }
 
@@ -229,6 +239,12 @@ fun ConquestMapScreen(
             activePathPoints.addAll(gpsPoints)
             gpsPoints.lastOrNull()?.let {
                 currentPosition = it
+                mapViewportState.flyTo(
+                    CameraOptions.Builder()
+                        .center(it)
+                        .build(),
+                    mapAnimationOptions { duration(800L) }
+                )
             }
         }
     }
@@ -245,15 +261,7 @@ fun ConquestMapScreen(
         }
     }
 
-    // Mapbox Viewport State
-    val mapViewportState = rememberMapViewportState {
-        setCameraOptions {
-            center(parisCenter)
-            zoom(16.2)
-            pitch(60.0) // 3D Tilt perspective angle
-            bearing(30.0)
-        }
-    }
+
 
     // --- Other players data ---
     data class OtherPlayerTerritory(

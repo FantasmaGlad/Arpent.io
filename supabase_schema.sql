@@ -929,6 +929,7 @@ RETURNS TABLE (
     reactions jsonb,
     commentaires jsonb
 ) AS $$
+#variable_conflict use_column
 DECLARE
     v_guilde_id uuid;
 BEGIN
@@ -1064,6 +1065,7 @@ RETURNS TABLE (
     guilde_couleur text,
     total_area_m2 float
 ) AS $$
+#variable_conflict use_column
 BEGIN
     RETURN QUERY
     SELECT 
@@ -1100,6 +1102,7 @@ RETURNS TABLE (
     empire_color text,
     distance_meters float
 ) AS $$
+#variable_conflict use_column
 DECLARE
     v_user_geom geometry;
 BEGIN
@@ -1433,6 +1436,7 @@ RETURNS TABLE (
     superficie_m2 float,
     geojson text
 ) AS $$
+#variable_conflict use_column
 BEGIN
     RETURN QUERY
     SELECT 

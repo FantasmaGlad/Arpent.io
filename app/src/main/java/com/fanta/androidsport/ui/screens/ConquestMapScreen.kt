@@ -870,7 +870,8 @@ fun ConquestMapScreen(
                                 runStartTime = runStartTime ?: System.currentTimeMillis(),
                                 runDistance = runDistance,
                                 isLoop = isLoop,
-                                closedPoints = closedPoints
+                                closedPoints = closedPoints,
+                                rawPoints = LocationTrackerState.pointsDetails.value.toList()
                             )
                             runSaveName = ""
                             runSaveDescription = ""
@@ -1102,6 +1103,7 @@ fun ConquestMapScreen(
                                 runDistance = data.runDistance,
                                 isLoop = data.isLoop,
                                 closedPoints = data.closedPoints,
+                                rawPoints = data.rawPoints,
                                 completedPolygons = completedPolygons,
                                 nom = finalName,
                                 legende = finalDescription,
@@ -1158,5 +1160,6 @@ data class PendingRunSaveData(
     val runStartTime: Long,
     val runDistance: Double,
     val isLoop: Boolean,
-    val closedPoints: List<Point>
+    val closedPoints: List<Point>,
+    val rawPoints: List<com.fanta.androidsport.TrackerPoint>
 )

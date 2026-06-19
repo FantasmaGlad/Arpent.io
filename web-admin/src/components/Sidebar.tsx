@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Map, Users, Shield, LogOut, Grid, BarChart3 } from 'lucide-react';
+import { Map, Users, Shield, LogOut, Grid, BarChart3, Rss } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 export default function Sidebar() {
@@ -48,6 +48,7 @@ export default function Sidebar() {
     { name: 'Statistiques analytiques', href: '/stats', icon: BarChart3 },
     { name: 'Profils Utilisateurs', href: '/profiles', icon: Users },
     { name: 'Groupes / Équipes', href: '/clans', icon: Grid },
+    { name: 'Modération Feed', href: '/feed', icon: Rss },
   ];
 
   return (

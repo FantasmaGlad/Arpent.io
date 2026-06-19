@@ -138,6 +138,7 @@ fun saveRunToDatabase(
     runDistance: Double,
     isLoop: Boolean,
     closedPoints: List<Point>,
+    rawPoints: List<com.fanta.androidsport.TrackerPoint>,
     completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
     nom: String?,
     legende: String?,
@@ -161,8 +162,7 @@ fun saveRunToDatabase(
             val pointsArray = closedPoints.map { "${it.longitude()} ${it.latitude()}" }
             val lastPt = closedPoints.lastOrNull()
 
-            // Fetch tracker metrics
-            val rawPoints = com.fanta.androidsport.LocationTrackerState.pointsDetails.value
+            // Fetch tracker metrics (passed as parameter to prevent race condition)
             val totalSteps = if (rawPoints.isNotEmpty()) rawPoints.last().steps ?: 0 else 0
             val validCadences = rawPoints.mapNotNull { it.cadence }.filter { it > 0 }
             val averageCadence = if (validCadences.isNotEmpty()) validCadences.average().toInt() else 0

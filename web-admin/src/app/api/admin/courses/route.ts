@@ -22,6 +22,40 @@ async function verifyAdmin(request: Request) {
   return !adminError && adminRecord !== null;
 }
 
+export async function PUT(request: Request) {
+  const isAdmin = await verifyAdmin(request);
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const { courseId, nom, legende } = await request.json();
+
+    if (!courseId) {
+      return NextResponse.json({ error: 'Course ID is required' }, { status: 400 });
+    }
+
+    const updates: any = {};
+    if (nom !== undefined) updates.nom = nom;
+    if (legende !== undefined) updates.legende = legende;
+
+    const { data, error } = await supabaseAdmin
+      .from('courses')
+      .update(updates)
+      .eq('id', courseId)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ success: true, course: data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   const isAdmin = await verifyAdmin(request);
   if (!isAdmin) {

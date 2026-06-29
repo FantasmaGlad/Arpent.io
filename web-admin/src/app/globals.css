@@ -426,3 +426,64 @@ select.input-field option {
     display: none;
   }
 }
+
+/* Strava Light Theme Container overrides */
+.strava-theme-container {
+  --bg-dark: #F4F5F7;
+  --card-bg: #FFFFFF;
+  --card-bg-hover: #FAFAFA;
+  --primary-green: #00875A;
+  --text-white: #1E1E1E;
+  --text-muted: #6E6E73;
+  --border-color: #E5E5EA;
+  --border-hover: #D1D1D6;
+  --glass-bg: #FFFFFF;
+  
+  background-color: var(--bg-dark);
+  color: var(--text-white);
+  min-height: 100vh;
+  margin: -40px;
+  padding: 40px;
+}
+
+.strava-theme-container .cyber-bg {
+  display: none;
+}
+
+/* Adjust components inside light theme */
+.strava-theme-container .btn-primary {
+  color: #FFFFFF;
+}
+.strava-theme-container .btn-primary:hover {
+  background-color: #006F48;
+}
+.strava-theme-container .input-field {
+  background: #FFFFFF;
+}
+.strava-theme-container .input-field:focus {
+  background: #FFFFFF;
+  border-color: var(--primary-green);
+}
+.strava-theme-container .btn-secondary {
+  color: #1E1E1E;
+}
+.strava-theme-container .btn-secondary:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+.strava-theme-container .avatar-placeholder {
+  background-color: #E5E5EA;
+  color: var(--text-muted);
+}
+.strava-theme-container .btn-icon {
+  background: #FFFFFF;
+}
+.strava-theme-container .btn-icon:hover {
+  background: #F4F5F7;
+}
+.strava-theme-container .modal-content {
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+}
+.strava-theme-container select.input-field option {
+  background-color: #FFFFFF !important;
+  color: #1E1E1E !important;
+}

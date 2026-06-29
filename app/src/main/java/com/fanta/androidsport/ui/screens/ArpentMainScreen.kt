@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -67,6 +68,7 @@ fun ArpentMainScreen(userId: String) {
     var userGuildNom by remember { mutableStateOf<String?>(null) }
     var userGuildCouleur by remember { mutableStateOf<String?>(null) }
     var mapTargetPosition by remember { mutableStateOf<Point?>(null) }
+    var userStreak by remember { mutableStateOf(0) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
 
@@ -86,13 +88,35 @@ fun ArpentMainScreen(userId: String) {
                         filter { eq("utilisateur_id", userId) }
                     }
                 }
+                val streakDeferred = async {
+                    try {
+                        val params = kotlinx.serialization.json.buildJsonObject {
+                            put("p_user_id", kotlinx.serialization.json.JsonPrimitive(userId))
+                        }
+                        supabase.postgrest.rpc("get_user_streak", params)
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to fetch user streak", e)
+                        null
+                    }
+                }
 
                 val profileRes = profileDeferred.await()
                 val coursesRes = coursesDeferred.await()
+                val streakRes = streakDeferred.await()
+
+                val streak = if (streakRes != null) {
+                    try {
+                        Json.parseToJsonElement(streakRes.data).jsonPrimitive.intOrNull ?: 0
+                    } catch (e: Exception) {
+                        0
+                    }
+                } else {
+                    0
+                }
 
                 // Parse profile info first
-                val profileArray = kotlinx.serialization.json.Json.parseToJsonElement(profileRes.data) as? kotlinx.serialization.json.JsonArray
-                val profileObj = profileArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                val profileArray = Json.parseToJsonElement(profileRes.data) as? JsonArray
+                val profileObj = profileArray?.firstOrNull() as? JsonObject
                 val pseudo = profileObj?.get("pseudonyme")?.jsonPrimitive?.contentOrNull ?: "Joueur_${userId.take(8)}"
                 val color = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
                 val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
@@ -119,8 +143,8 @@ fun ArpentMainScreen(userId: String) {
                         val guildRes = supabase.postgrest["guildes"].select {
                             filter { eq("id", guildeId) }
                         }
-                        val guildArray = kotlinx.serialization.json.Json.parseToJsonElement(guildRes.data) as? kotlinx.serialization.json.JsonArray
-                        val guildObj = guildArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                        val guildArray = Json.parseToJsonElement(guildRes.data) as? JsonArray
+                        val guildObj = guildArray?.firstOrNull() as? JsonObject
                         gNom = guildObj?.get("nom")?.jsonPrimitive?.contentOrNull
                         gColor = guildObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull
                     } catch (e: Exception) {
@@ -129,10 +153,10 @@ fun ArpentMainScreen(userId: String) {
                 }
 
                 val parsed = withContext(Dispatchers.Default) {
-                    val coursesArray = kotlinx.serialization.json.Json.parseToJsonElement(coursesRes.data) as? kotlinx.serialization.json.JsonArray
+                    val coursesArray = Json.parseToJsonElement(coursesRes.data) as? JsonArray
                     var totalDist = 0.0
                     coursesArray?.forEach {
-                        val obj = it as? kotlinx.serialization.json.JsonObject
+                        val obj = it as? JsonObject
                         totalDist += obj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
                     }
 
@@ -169,6 +193,7 @@ fun ArpentMainScreen(userId: String) {
                     userGuildId = guildeId
                     userGuildNom = gNom
                     userGuildCouleur = gColor
+                    userStreak = streak
                 }
             } catch (e: Exception) {
                 android.util.Log.e("Arpent", "Error fetching stats", e)
@@ -270,7 +295,7 @@ fun ArpentMainScreen(userId: String) {
                                 text = ".IO",
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 2.sp,
-                                color = NeonVolt
+                                color = Color(0xFF00875A)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             // Glowing status indicator dot
@@ -278,7 +303,19 @@ fun ArpentMainScreen(userId: String) {
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(NeonVolt)
+                                    .background(Color(0xFF00875A))
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            Toast.makeText(context, "Aucune notification pour le moment", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(
+                                painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_notification),
+                                contentDescription = "Notifications",
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onBackground
                             )
                         }
                     },
@@ -312,8 +349,8 @@ fun ArpentMainScreen(userId: String) {
                         icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
                         label = { Text("Conquête", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NeonVolt,
-                            selectedTextColor = NeonVolt,
+                            selectedIconColor = Color(0xFF00875A),
+                            selectedTextColor = Color(0xFF00875A),
                             unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                             unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                             indicatorColor = Color.Transparent
@@ -325,8 +362,8 @@ fun ArpentMainScreen(userId: String) {
                         icon = { Icon(Icons.Default.Star, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
                         label = { Text("Classement", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ElectricBlue,
-                            selectedTextColor = ElectricBlue,
+                            selectedIconColor = Color(0xFF00875A),
+                            selectedTextColor = Color(0xFF00875A),
                             unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                             unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                             indicatorColor = Color.Transparent
@@ -338,8 +375,8 @@ fun ArpentMainScreen(userId: String) {
                         icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
                         label = { Text("Courses", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ActiveOrange,
-                            selectedTextColor = ActiveOrange,
+                            selectedIconColor = Color(0xFF00875A),
+                            selectedTextColor = Color(0xFF00875A),
                             unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                             unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                             indicatorColor = Color.Transparent
@@ -351,8 +388,8 @@ fun ArpentMainScreen(userId: String) {
                         icon = { Icon(Icons.Default.Group, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
                         label = { Text("Guilde", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NeonVolt,
-                            selectedTextColor = NeonVolt,
+                            selectedIconColor = Color(0xFF00875A),
+                            selectedTextColor = Color(0xFF00875A),
                             unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                             unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                             indicatorColor = Color.Transparent
@@ -364,8 +401,8 @@ fun ArpentMainScreen(userId: String) {
                         icon = { Icon(Icons.Default.Person, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
                         label = { Text("Profil", fontSize = footerFontSize, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ActiveOrange,
-                            selectedTextColor = ActiveOrange,
+                            selectedIconColor = Color(0xFF00875A),
+                            selectedTextColor = Color(0xFF00875A),
                             unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                             unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                             indicatorColor = Color.Transparent
@@ -445,6 +482,10 @@ fun ArpentMainScreen(userId: String) {
                         maxLoopDistanceKm = userMaxLoopDistanceKm,
                         maxAreaKm2 = userMaxAreaKm2,
                         areaLostKm2 = userAreaLostKm2,
+                        userStreak = userStreak,
+                        userGuildNom = userGuildNom,
+                        userGuildCouleur = userGuildCouleur,
+                        completedPolygons = completedPolygons,
                         onStatsUpdated = { refreshStats() }
                     )
                 }

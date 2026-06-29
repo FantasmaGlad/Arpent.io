@@ -127,9 +127,20 @@ CREATE TABLE IF NOT EXISTS public.course_reactions (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     course_id uuid REFERENCES public.courses(id) ON DELETE CASCADE NOT NULL,
     utilisateur_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    type_reaction text CHECK (type_reaction IN ('trident', 'couronne')) NOT NULL,
+    type_reaction text CHECK (type_reaction IN ('baamix')) NOT NULL,
     date_creation timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     UNIQUE (course_id, utilisateur_id, type_reaction)
+);
+
+-- Table des invitations de guilde/clan
+CREATE TABLE IF NOT EXISTS public.guilde_invitations (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    guilde_id uuid REFERENCES public.guildes(id) ON DELETE CASCADE NOT NULL,
+    invitant_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    invite_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    statut text DEFAULT 'en_attente' NOT NULL CHECK (statut IN ('en_attente', 'accepte', 'refuse')),
+    date_creation timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE (guilde_id, invite_id)
 );
 
 CREATE INDEX IF NOT EXISTS course_reactions_course_id_idx ON public.course_reactions(course_id);
@@ -338,6 +349,39 @@ DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer une relation d'ami" ON
 CREATE POLICY "Les utilisateurs peuvent supprimer une relation d'ami" ON public.amis 
     FOR DELETE USING (auth.uid() = demandeur_id OR auth.uid() = destinataire_id OR public.is_admin(auth.uid()));
 
+-- Politiques Invitations de Guilde
+ALTER TABLE public.guilde_invitations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Lecture des invitations de guilde" ON public.guilde_invitations;
+CREATE POLICY "Lecture des invitations de guilde" ON public.guilde_invitations
+    FOR SELECT USING (
+        auth.uid() = invite_id 
+        OR auth.uid() = invitant_id 
+        OR (SELECT guilde_id FROM public.profiles WHERE id = auth.uid()) = guilde_id
+    );
+
+DROP POLICY IF EXISTS "Insertion des invitations par chef/adjoint" ON public.guilde_invitations;
+CREATE POLICY "Insertion des invitations par chef/adjoint" ON public.guilde_invitations
+    FOR INSERT WITH CHECK (
+        auth.uid() = invitant_id 
+        AND (SELECT grade FROM public.profiles WHERE id = auth.uid()) IN ('chef', 'adjoint')
+        AND (SELECT guilde_id FROM public.profiles WHERE id = auth.uid()) = guilde_id
+    );
+
+DROP POLICY IF EXISTS "Modification des invitations par l'invite" ON public.guilde_invitations;
+CREATE POLICY "Modification des invitations par l'invite" ON public.guilde_invitations
+    FOR UPDATE USING (
+        auth.uid() = invite_id
+    );
+
+DROP POLICY IF EXISTS "Suppression des invitations par l'invitant ou chef/adjoint" ON public.guilde_invitations;
+CREATE POLICY "Suppression des invitations par l'invitant ou chef/adjoint" ON public.guilde_invitations
+    FOR DELETE USING (
+        auth.uid() = invitant_id
+        OR ((SELECT grade FROM public.profiles WHERE id = auth.uid()) IN ('chef', 'adjoint')
+            AND (SELECT guilde_id FROM public.profiles WHERE id = auth.uid()) = guilde_id)
+    );
+
 -- Politiques Reactions de Courses
 DROP POLICY IF EXISTS "Les utilisateurs authentifiés peuvent voir les réactions" ON public.course_reactions;
 CREATE POLICY "Les utilisateurs authentifiés peuvent voir les réactions" ON public.course_reactions
@@ -454,13 +498,15 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
--- B. Calcul en temps réel de superficie dans le profil
+-- B. Calcul en temps réel de superficie dans le profil (avec gestion rollback)
 CREATE OR REPLACE FUNCTION public.update_profile_cached_area()
 RETURNS trigger AS $$
 DECLARE
     v_xp_gain integer;
+    v_xp_loss integer;
     v_gain float;
     v_loss float;
+    v_is_rollback boolean := COALESCE(current_setting('app.rollback_course_deletion', true) = 'true', false);
 BEGIN
     IF (TG_OP = 'INSERT') THEN
         v_xp_gain := FLOOR(new.superficie_m2 * 0.05);
@@ -472,10 +518,21 @@ BEGIN
             level = FLOOR(SQRT((xp + v_xp_gain) / 250.0)) + 1
         WHERE id = new.utilisateur_id;
     ELSIF (TG_OP = 'DELETE') THEN
-        UPDATE public.profiles 
-        SET total_area_m2 = GREATEST(0.0, total_area_m2 - old.superficie_m2),
-            area_lost_m2 = area_lost_m2 + old.superficie_m2
-        WHERE id = old.utilisateur_id;
+        IF v_is_rollback THEN
+            v_xp_loss := FLOOR(old.superficie_m2 * 0.05);
+            UPDATE public.profiles 
+            SET total_area_m2 = GREATEST(0.0, total_area_m2 - old.superficie_m2),
+                all_time_area_m2 = GREATEST(0.0, all_time_area_m2 - old.superficie_m2),
+                max_area_m2 = GREATEST(0.0, max_area_m2 - old.superficie_m2),
+                xp = GREATEST(0, xp - v_xp_loss),
+                level = FLOOR(SQRT(GREATEST(0, xp - v_xp_loss) / 250.0)) + 1
+            WHERE id = old.utilisateur_id;
+        ELSE
+            UPDATE public.profiles 
+            SET total_area_m2 = GREATEST(0.0, total_area_m2 - old.superficie_m2),
+                area_lost_m2 = area_lost_m2 + old.superficie_m2
+            WHERE id = old.utilisateur_id;
+        END IF;
     ELSIF (TG_OP = 'UPDATE') THEN
         IF (new.superficie_m2 > old.superficie_m2) THEN
             v_gain := new.superficie_m2 - old.superficie_m2;
@@ -489,10 +546,21 @@ BEGIN
             WHERE id = new.utilisateur_id;
         ELSIF (new.superficie_m2 < old.superficie_m2) THEN
             v_loss := old.superficie_m2 - new.superficie_m2;
-            UPDATE public.profiles 
-            SET total_area_m2 = GREATEST(0.0, total_area_m2 - v_loss),
-                area_lost_m2 = area_lost_m2 + v_loss
-            WHERE id = new.utilisateur_id;
+            IF v_is_rollback THEN
+                v_xp_loss := FLOOR(v_loss * 0.05);
+                UPDATE public.profiles 
+                SET total_area_m2 = GREATEST(0.0, total_area_m2 - v_loss),
+                    all_time_area_m2 = GREATEST(0.0, all_time_area_m2 - v_loss),
+                    max_area_m2 = GREATEST(0.0, max_area_m2 - v_loss),
+                    xp = GREATEST(0, xp - v_xp_loss),
+                    level = FLOOR(SQRT(GREATEST(0, xp - v_xp_loss) / 250.0)) + 1
+                WHERE id = new.utilisateur_id;
+            ELSE
+                UPDATE public.profiles 
+                SET total_area_m2 = GREATEST(0.0, total_area_m2 - v_loss),
+                    area_lost_m2 = area_lost_m2 + v_loss
+                WHERE id = new.utilisateur_id;
+            END IF;
         END IF;
     END IF;
     RETURN null;
@@ -503,6 +571,79 @@ DROP TRIGGER IF EXISTS on_territoire_changed ON public.territoires;
 CREATE TRIGGER on_territoire_changed
     AFTER INSERT OR UPDATE OR DELETE ON public.territoires
     FOR EACH ROW EXECUTE PROCEDURE public.update_profile_cached_area();
+
+-- B.2 Retrait de la portion de territoire lors de la suppression d'une course
+CREATE OR REPLACE FUNCTION public.delete_course_territory_portion()
+RETURNS trigger AS $$
+DECLARE
+    v_points text[];
+    v_wkt text;
+    v_course_geom geometry;
+    v_existing_id uuid;
+    v_existing_geom geometry;
+    v_diff_geom geometry;
+    v_new_points text[];
+    v_new_area float;
+BEGIN
+    IF OLD.est_bouclee AND OLD.superficie_conquise > 0.0 THEN
+        SELECT array_agg(longitude || ' ' || latitude ORDER BY timestamp_gps ASC, date_creation ASC)
+        INTO v_points
+        FROM public.points_gps
+        WHERE course_id = OLD.id;
+
+        IF v_points IS NOT NULL AND array_length(v_points, 1) >= 3 THEN
+            IF v_points[1] <> v_points[array_length(v_points, 1)] THEN
+                v_points := array_append(v_points, v_points[1]);
+            END IF;
+
+            v_wkt := 'POLYGON((' || array_to_string(v_points, ', ') || '))';
+            
+            BEGIN
+                v_course_geom := ST_GeomFromText(v_wkt, 4326);
+                IF NOT ST_IsValid(v_course_geom) THEN
+                    v_course_geom := ST_MakeValid(v_course_geom);
+                END IF;
+                v_course_geom := ST_CollectionExtract(v_course_geom, 3);
+
+                SELECT id, contour INTO v_existing_id, v_existing_geom
+                FROM public.territoires
+                WHERE utilisateur_id = OLD.utilisateur_id;
+
+                IF v_existing_id IS NOT NULL AND v_existing_geom IS NOT NULL THEN
+                    PERFORM set_config('app.rollback_course_deletion', 'true', true);
+
+                    v_diff_geom := ST_Difference(v_existing_geom, v_course_geom);
+                    v_diff_geom := ST_CollectionExtract(v_diff_geom, 3);
+
+                    IF ST_IsEmpty(v_diff_geom) OR v_diff_geom IS NULL THEN
+                        DELETE FROM public.territoires WHERE id = v_existing_id;
+                    ELSE
+                        SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
+                        FROM ST_DumpPoints(v_diff_geom);
+
+                        v_new_area := ST_Area(v_diff_geom::geography);
+
+                        UPDATE public.territoires
+                        SET contour = v_diff_geom,
+                            superficie_m2 = v_new_area,
+                            points = v_new_points,
+                            derniere_mise_a_jour = now()
+                        WHERE id = v_existing_id;
+                    END IF;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN
+                RAISE WARNING 'Erreur de mise à jour du territoire lors de la suppression de course : %', SQLERRM;
+            END;
+        END IF;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_course_before_delete ON public.courses;
+CREATE TRIGGER on_course_before_delete
+    BEFORE DELETE ON public.courses
+    FOR EACH ROW EXECUTE PROCEDURE public.delete_course_territory_portion();
 
 -- C. Calcul de la série d'activité consécutive (streak)
 CREATE OR REPLACE FUNCTION public.get_user_streak(p_user_id uuid)
@@ -963,7 +1104,8 @@ BEGIN
                 jsonb_build_object(
                     'longitude', pts.longitude,
                     'latitude', pts.latitude,
-                    'altitude', pts.altitude
+                    'altitude', pts.altitude,
+                    'timestamp_gps', pts.timestamp_gps
                 ) ORDER BY pts.timestamp_gps ASC, pts.date_creation ASC
             ) AS points
         FROM public.points_gps pts
@@ -1165,8 +1307,8 @@ $$ LANGUAGE plpgsql SECURITY INVOKER;
 -- VUES DU CLASSEMENT (LEADERBOARD)
 -- ==========================================
 
--- A. Classement individuel des joueurs (avec tag)
-DROP VIEW IF EXISTS public.leaderboard;
+-- A. Classement individuel des joueurs (avec tag, boucles et distance)
+DROP VIEW IF EXISTS public.leaderboard CASCADE;
 CREATE OR REPLACE VIEW public.leaderboard 
 WITH (security_invoker = on) AS
 SELECT 
@@ -1179,15 +1321,16 @@ SELECT
   CASE WHEN p.share_location THEN p.latitude ELSE null END as latitude,
   CASE WHEN p.share_location THEN p.longitude ELSE null END as longitude,
   p.total_area_m2,
+  p.loop_count,
+  COALESCE((SELECT SUM(c.distance_totale) FROM public.courses c WHERE c.utilisateur_id = p.id), 0.0) as distance_totale,
   g.nom as guilde_nom,
   g.couleur_hex as guilde_couleur,
   g.tag as guilde_tag
 FROM public.profiles p
-LEFT JOIN public.guildes g ON p.guilde_id = g.id
-ORDER BY p.total_area_m2 DESC;
+LEFT JOIN public.guildes g ON p.guilde_id = g.id;
 
--- B. Classement général des clans (avec tag)
-DROP VIEW IF EXISTS public.clan_leaderboard;
+-- B. Classement général des clans (avec tag, boucles et distance)
+DROP VIEW IF EXISTS public.clan_leaderboard CASCADE;
 CREATE OR REPLACE VIEW public.clan_leaderboard 
 WITH (security_invoker = on) AS
 SELECT 
@@ -1197,11 +1340,122 @@ SELECT
     g.couleur_hex,
     g.avatar_url,
     COALESCE(SUM(p.total_area_m2), 0.0) as total_area_m2,
-    COUNT(p.id) as membre_count
+    COUNT(p.id) as membre_count,
+    COALESCE(SUM(p.loop_count), 0) as loop_count,
+    COALESCE(SUM((SELECT COALESCE(SUM(c.distance_totale), 0.0) FROM public.courses c WHERE c.utilisateur_id = p.id)), 0.0) as distance_totale
 FROM public.guildes g
 LEFT JOIN public.profiles p ON p.guilde_id = g.id
-GROUP BY g.id, g.nom, g.tag, g.couleur_hex, g.avatar_url
-ORDER BY total_area_m2 DESC;
+GROUP BY g.id, g.nom, g.tag, g.couleur_hex, g.avatar_url;
+
+-- ==========================================
+-- FONCTIONS D'ACCÈS DU CLASSEMENT LOCAL (POSTGIS)
+-- ==========================================
+
+-- C. Récupérer le classement des joueurs à proximité
+CREATE OR REPLACE FUNCTION public.get_local_leaderboard(
+  user_lat float,
+  user_lon float,
+  max_dist_meters float DEFAULT 50000
+)
+RETURNS TABLE (
+  id uuid,
+  pseudonyme text,
+  tag text,
+  empire_color text,
+  avatar_url text,
+  grade text,
+  latitude float,
+  longitude float,
+  total_area_m2 float,
+  loop_count integer,
+  distance_totale float,
+  guilde_nom text,
+  guilde_couleur text,
+  guilde_tag text,
+  distance_meters float
+)
+LANGUAGE plpgsql SECURITY INVOKER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    l.id,
+    l.pseudonyme,
+    l.tag,
+    l.empire_color,
+    l.avatar_url,
+    l.grade,
+    l.latitude,
+    l.longitude,
+    l.total_area_m2,
+    l.loop_count,
+    l.distance_totale,
+    l.guilde_nom,
+    l.guilde_couleur,
+    l.guilde_tag,
+    ST_Distance(
+      ST_SetSRID(ST_MakePoint(l.longitude, l.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)::geography
+    )::float as distance_meters
+  FROM public.leaderboard l
+  WHERE l.latitude IS NOT NULL 
+    AND l.longitude IS NOT NULL
+    AND ST_DWithin(
+      ST_SetSRID(ST_MakePoint(l.longitude, l.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)::geography,
+      max_dist_meters
+    )
+  ORDER BY distance_meters ASC;
+END;
+$$;
+
+-- D. Récupérer le classement des clans à proximité
+CREATE OR REPLACE FUNCTION public.get_local_clan_leaderboard(
+  user_lat float,
+  user_lon float,
+  max_dist_meters float DEFAULT 50000
+)
+RETURNS TABLE (
+  id uuid,
+  nom text,
+  tag text,
+  couleur_hex text,
+  avatar_url text,
+  total_area_m2 float,
+  membre_count bigint,
+  loop_count numeric,
+  distance_totale float,
+  distance_meters float
+)
+LANGUAGE plpgsql SECURITY INVOKER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    c.id,
+    c.nom,
+    c.tag,
+    c.couleur_hex,
+    c.avatar_url,
+    c.total_area_m2,
+    c.membre_count,
+    c.loop_count::numeric,
+    c.distance_totale,
+    MIN(ST_Distance(
+      ST_SetSRID(ST_MakePoint(p.longitude, p.latitude), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)::geography
+    ))::float as distance_meters
+  FROM public.clan_leaderboard c
+  JOIN public.profiles p ON p.guilde_id = c.id
+  WHERE p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+  GROUP BY c.id, c.nom, c.tag, c.couleur_hex, c.avatar_url, c.total_area_m2, c.membre_count, c.loop_count, c.distance_totale
+  HAVING MIN(ST_Distance(
+    ST_SetSRID(ST_MakePoint(p.longitude, p.latitude), 4326)::geography,
+    ST_SetSRID(ST_MakePoint(user_lon, user_lat), 4326)::geography
+  )) <= max_dist_meters
+  ORDER BY distance_meters ASC;
+END;
+$$;
 
 -- ==========================================
 -- SCRIPT OPTIONNEL DE NETTOYAGE ET FUSION INITIALE DES DOUBLONS

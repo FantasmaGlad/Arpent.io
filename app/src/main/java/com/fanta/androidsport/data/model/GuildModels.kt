@@ -34,3 +34,13 @@ data class ClanItem(
     val color: String,
     val avatarUrl: String?
 )
+
+data class GuildeInvitationItem(
+    val id: String,
+    val guildeId: String,
+    val guildeNom: String,
+    val guildeCouleur: String,
+    val guildeAvatar: String?,
+    val dateInvitation: String
+)
+

@@ -250,12 +250,11 @@ export default function FeedModerationPage() {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      <div className="cyber-bg" />
+    <div className="strava-theme-container" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
 
       {/* Header */}
       <div>
-        <h1 className="title-cyber" style={{ fontSize: '2rem' }}>Modération du Feed</h1>
+        <h1 style={{ fontWeight: 800, fontSize: '2rem', letterSpacing: '-0.5px' }}>Modération du Feed</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginTop: '4px' }}>
           Gérer et modérer les publications d'activités de course de la communauté
         </p>
@@ -306,7 +305,7 @@ export default function FeedModerationPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
             {paginatedCourses.map((c) => {
               const distanceKm = c.distance_totale / 1000;
-              const athleteColor = c.profiles?.empire_color || '#CCFF00';
+              const athleteColor = c.profiles?.empire_color === '#CCFF00' ? '#00875A' : (c.profiles?.empire_color || '#00875A');
               const dateText = new Date(c.date_debut).toLocaleDateString('fr-FR', {
                 day: 'numeric',
                 month: 'short',
@@ -374,7 +373,7 @@ export default function FeedModerationPage() {
                           className="btn-icon" 
                           onClick={() => centerCourseOnMap(c.id)} 
                           title="Voir sur la carte" 
-                          style={{ color: '#00D8FF' }}
+                          style={{ color: '#0066FE' }}
                         >
                           <MapPin size={15} />
                         </button>
@@ -382,7 +381,7 @@ export default function FeedModerationPage() {
                           className="btn-icon" 
                           onClick={() => handleDeleteCourse(c.id)} 
                           title="Supprimer la course" 
-                          style={{ color: '#FF4B4B' }}
+                          style={{ color: '#D9383A' }}
                         >
                           <Trash2 size={15} />
                         </button>
@@ -407,7 +406,7 @@ export default function FeedModerationPage() {
                     display: 'grid', 
                     gridTemplateColumns: 'repeat(3, 1fr)', 
                     gap: '10px', 
-                    background: 'rgba(255, 255, 255, 0.01)', 
+                    background: 'var(--bg-dark)', 
                     padding: '12px', 
                     borderRadius: '8px', 
                     border: '1px solid var(--border-color)' 

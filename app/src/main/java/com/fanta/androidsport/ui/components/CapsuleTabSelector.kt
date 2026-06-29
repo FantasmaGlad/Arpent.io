@@ -24,7 +24,10 @@ fun CapsuleTabSelector(
     tabs: List<String>,
     selectedTabIndex: Int,
     onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    activeBgColor: Color = Color(0xFF0F1318),
+    activeTextColor: Color = NeonVolt,
+    inactiveTextColor: Color = Color.Black.copy(alpha = 0.6f)
 ) {
     Row(
         modifier = modifier
@@ -41,7 +44,7 @@ fun CapsuleTabSelector(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) Color(0xFF0F1318) else Color.Transparent)
+                    .background(if (isSelected) activeBgColor else Color.Transparent)
                     .clickable { onTabSelected(index) }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
@@ -51,9 +54,10 @@ fun CapsuleTabSelector(
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     letterSpacing = 0.5.sp,
-                    color = if (isSelected) NeonVolt else Color.Black.copy(alpha = 0.6f)
+                    color = if (isSelected) activeTextColor else inactiveTextColor
                 )
             }
         }
     }
 }
+

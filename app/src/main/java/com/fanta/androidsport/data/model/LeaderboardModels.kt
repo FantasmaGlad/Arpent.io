@@ -18,6 +18,8 @@ data class LeaderboardPlayer(
     val latitude: Double?,
     val longitude: Double?,
     val totalAreaM2: Double,
+    val loopCount: Int,
+    val distanceTotale: Double,
     val avatarUrl: String?,
     val guildeNom: String?,
     val guildeCouleur: String?
@@ -30,5 +32,7 @@ data class LeaderboardClan(
     val couleurHex: String,
     val avatarUrl: String?,
     val totalAreaM2: Double,
-    val membreCount: Int
+    val membreCount: Int,
+    val loopCount: Int,
+    val distanceTotale: Double
 )

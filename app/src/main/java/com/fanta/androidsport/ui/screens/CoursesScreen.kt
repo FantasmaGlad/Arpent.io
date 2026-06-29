@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,7 +39,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +54,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -66,9 +70,10 @@ import com.fanta.androidsport.data.model.CourseCommentaire
 import com.fanta.androidsport.data.model.CourseReaction
 import com.fanta.androidsport.data.model.FeedCourseItem
 import com.fanta.androidsport.data.model.GPSPoint
+import com.fanta.androidsport.BuildConfig
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
-import com.fanta.androidsport.ui.theme.NeonVolt
+import coil.compose.AsyncImage
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,6 +92,7 @@ fun CoursesScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var feedCourses by remember { mutableStateOf<List<FeedCourseItem>>(emptyList()) }
+    var friendsStatusMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
 
     var selectedDetailCourse by remember { mutableStateOf<FeedCourseItem?>(null) }
@@ -95,6 +101,37 @@ fun CoursesScreen(
     fun loadFeed() {
         scope.launch(Dispatchers.IO) {
             try {
+                // Fetch friends to know the relationship status
+                val amisRes = supabase.postgrest["amis"].select {
+                    filter {
+                        or {
+                            eq("demandeur_id", userId)
+                            eq("destinataire_id", userId)
+                        }
+                    }
+                }
+                val amisArray = kotlinx.serialization.json.Json.parseToJsonElement(amisRes.data) as? kotlinx.serialization.json.JsonArray
+                val tempMap = mutableMapOf<String, String>()
+                amisArray?.forEach { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                    val demId = obj["demandeur_id"]?.jsonPrimitive?.content ?: return@forEach
+                    val destId = obj["destinataire_id"]?.jsonPrimitive?.content ?: return@forEach
+                    val statut = obj["statut"]?.jsonPrimitive?.content ?: "en_attente"
+                    if (statut == "accepte") {
+                        val otherId = if (demId == userId) destId else demId
+                        tempMap[otherId] = "accepte"
+                    } else if (statut == "en_attente") {
+                        if (demId == userId) {
+                            tempMap[destId] = "en_attente_envoye"
+                        } else {
+                            tempMap[demId] = "en_attente_recu"
+                        }
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    friendsStatusMap = tempMap
+                }
+
                 val params = kotlinx.serialization.json.buildJsonObject {
                     put("p_utilisateur_id", kotlinx.serialization.json.JsonPrimitive(userId))
                 }
@@ -268,19 +305,39 @@ fun CoursesScreen(
         }
     }
 
-    val darkScheme = darkColorScheme(
-        background = Color.Black,
-        surface = Color(0xFF121212),
-        onSurface = Color.White,
-        surfaceVariant = Color(0xFF1E1E1E),
-        onSurfaceVariant = Color.White
+    fun sendFriendRequest(otherUserId: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val insertObj = kotlinx.serialization.json.buildJsonObject {
+                    put("demandeur_id", userId)
+                    put("destinataire_id", otherUserId)
+                    put("statut", "en_attente")
+                }
+                supabase.postgrest["amis"].insert(insertObj)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Demande d'ami envoyée.", Toast.LENGTH_SHORT).show()
+                }
+                loadFeed()
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to send friend request", e)
+            }
+        }
+    }
+
+    val lightScheme = lightColorScheme(
+        primary = Color(0xFF00875A),
+        background = Color(0xFFF4F5F7),
+        surface = Color.White,
+        onSurface = Color(0xFF1E1E1E),
+        surfaceVariant = Color(0xFFE9EBEF),
+        onSurfaceVariant = Color(0xFF6E6E73)
     )
 
-    MaterialTheme(colorScheme = darkScheme) {
+    MaterialTheme(colorScheme = lightScheme) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(Color(0xFFF4F5F7))
         ) {
             Column(
                 modifier = Modifier
@@ -293,14 +350,14 @@ fun CoursesScreen(
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 12.sp,
                         letterSpacing = 1.5.sp,
-                        color = NeonVolt
+                        color = Color(0xFF00875A)
                     ),
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
 
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = NeonVolt)
+                        CircularProgressIndicator(color = Color(0xFF00875A))
                     }
                 } else if (feedCourses.isEmpty()) {
                     Box(
@@ -317,13 +374,13 @@ fun CoursesScreen(
                                 modifier = Modifier
                                     .size(90.dp)
                                     .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.05f)),
+                                    .background(Color.Black.copy(alpha = 0.05f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.DirectionsRun,
                                     contentDescription = null,
-                                    tint = NeonVolt,
+                                    tint = Color(0xFF00875A),
                                     modifier = Modifier.size(48.dp)
                                 )
                             }
@@ -332,13 +389,13 @@ fun CoursesScreen(
                                 text = "Aucune course dans le feed",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color(0xFF1E1E1E)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Ajoutez des amis ou lancez-vous pour commencer la conquête !",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
+                                color = Color(0xFF6E6E73)
                             )
                         }
                     }
@@ -354,6 +411,7 @@ fun CoursesScreen(
                             FeedCourseCard(
                                 course = course,
                                 currentUserId = userId,
+                                friendStatus = friendsStatusMap[course.utilisateurId],
                                 showComments = showCommentsSection,
                                 newCommentText = newCommentText,
                                 onToggleComments = { showCommentsSection = !showCommentsSection },
@@ -370,6 +428,9 @@ fun CoursesScreen(
                                 },
                                 onDelete = {
                                     showDeleteConfirmCourseId = course.id
+                                },
+                                onSendFriendRequest = {
+                                    sendFriendRequest(course.utilisateurId)
                                 }
                             )
                         }
@@ -381,8 +442,8 @@ fun CoursesScreen(
             if (showDeleteConfirmCourseId != null) {
                 AlertDialog(
                     onDismissRequest = { showDeleteConfirmCourseId = null },
-                    title = { Text("Supprimer la course", color = Color.White) },
-                    text = { Text("Êtes-vous sûr de vouloir supprimer cette course ? Cette action est irréversible et supprimera le territoire associé.", color = Color.LightGray) },
+                    title = { Text("Supprimer la course", color = Color(0xFF1E1E1E)) },
+                    text = { Text("Êtes-vous sûr de vouloir supprimer cette course ? Cette action est irréversible et supprimera le territoire associé.", color = Color(0xFF6E6E73)) },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -395,10 +456,10 @@ fun CoursesScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { showDeleteConfirmCourseId = null }) {
-                            Text("ANNULER", color = Color.White)
+                            Text("ANNULER", color = Color(0xFF6E6E73))
                         }
                     },
-                    containerColor = Color(0xFF1E1E1E)
+                    containerColor = Color.White
                 )
             }
 
@@ -418,6 +479,7 @@ fun CoursesScreen(
 fun FeedCourseCard(
     course: FeedCourseItem,
     currentUserId: String,
+    friendStatus: String?,
     showComments: Boolean,
     newCommentText: String,
     onToggleComments: () -> Unit,
@@ -425,38 +487,36 @@ fun FeedCourseCard(
     onSendComment: () -> Unit,
     onReact: (String, CourseReaction?) -> Unit,
     onViewDetails: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSendFriendRequest: () -> Unit
 ) {
-    val userReactionTrident = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "trident" }
-    val userReactionCrown = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "couronne" }
-
-    val tridentCount = course.reactions.count { it.type_reaction == "trident" }
-    val crownCount = course.reactions.count { it.type_reaction == "couronne" }
+    val userReactionBaamix = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" }
+    val baamixCount = course.reactions.count { it.type_reaction == "baamix" }
 
     val parsedEmpireColor = try {
-        Color(android.graphics.Color.parseColor(course.empireColor ?: "#CCFF00"))
+        Color(android.graphics.Color.parseColor(course.empireColor ?: "#00875A"))
     } catch (_: Exception) {
-        NeonVolt
+        Color(0xFF00875A)
     }
 
     val parsedGuildColor = try {
-        Color(android.graphics.Color.parseColor(course.guildeCouleur ?: "#FFFFFF"))
+        Color(android.graphics.Color.parseColor(course.guildeCouleur ?: "#1E1E1E"))
     } catch (_: Exception) {
-        Color.White
+        Color(0xFF1E1E1E)
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFE5E5EA))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header: User Info
+            // Header: User Info & Friend button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -475,13 +535,13 @@ fun FeedCourseCard(
                             text = course.pseudonyme,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = Color.White
+                            color = Color(0xFF1E1E1E)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(parsedEmpireColor.copy(alpha = 0.2f))
+                                .background(parsedEmpireColor.copy(alpha = 0.1f))
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
                             Text(
@@ -495,11 +555,51 @@ fun FeedCourseCard(
                     if (!course.guildeNom.isNullOrEmpty()) {
                         Text(
                             text = "Clan: ${course.guildeNom}",
-                            color = parsedGuildColor,
+                            color = parsedGuildColor.copy(alpha = 0.8f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
+                }
+
+                // Friend invitation button
+                if (course.utilisateurId != currentUserId) {
+                    val buttonText = when (friendStatus) {
+                        "accepte" -> "Ami"
+                        "en_attente_envoye" -> "En attente"
+                        "en_attente_recu" -> "Répondre"
+                        else -> "+ Ami"
+                    }
+                    val buttonColor = when (friendStatus) {
+                        "accepte" -> Color(0xFF00875A)
+                        "en_attente_envoye" -> Color.Gray
+                        "en_attente_recu" -> Color(0xFF00875A)
+                        else -> Color(0xFF00875A)
+                    }
+                    val isClickable = friendStatus == null
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (friendStatus == "accepte" || friendStatus == "en_attente_envoye") Color.Transparent else buttonColor)
+                            .border(
+                                1.dp,
+                                if (friendStatus == "en_attente_envoye") Color.Gray else Color(0xFF00875A),
+                                RoundedCornerShape(20.dp)
+                            )
+                            .clickable(enabled = isClickable) {
+                                onSendFriendRequest()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = buttonText,
+                            color = if (friendStatus == "accepte" || friendStatus == "en_attente_envoye") buttonColor else Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
 
                 if (course.utilisateurId == currentUserId) {
@@ -521,7 +621,7 @@ fun FeedCourseCard(
                 text = course.nom ?: "Course Arpent.io",
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 18.sp,
-                color = NeonVolt
+                color = Color(0xFF1E1E1E)
             )
             val formattedDate = remember(course.dateDebut) {
                 try {
@@ -537,7 +637,7 @@ fun FeedCourseCard(
             Text(
                 text = formattedDate,
                 fontSize = 11.sp,
-                color = Color.Gray
+                color = Color(0xFF6E6E73)
             )
 
             if (!course.legende.isNullOrEmpty()) {
@@ -545,14 +645,14 @@ fun FeedCourseCard(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.04f), shape = RoundedCornerShape(8.dp))
+                        .background(Color(0xFFF4F5F7), shape = RoundedCornerShape(8.dp))
                         .padding(10.dp)
                 ) {
                     Text(
                         text = "« ${course.legende} »",
                         fontSize = 13.sp,
                         fontStyle = FontStyle.Italic,
-                        color = Color.LightGray
+                        color = Color(0xFF1E1E1E)
                     )
                 }
             }
@@ -560,10 +660,10 @@ fun FeedCourseCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Metrics Grid
-            FlowRow(
+            SimpleFlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalGap = 16.dp,
+                verticalGap = 12.dp
             ) {
                 MetricWidget(label = "Distance", value = "%.2f km".format(course.distanceTotale))
                 val min = (course.dureeSecondes / 60).toInt()
@@ -609,29 +709,49 @@ fun FeedCourseCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Trident reaction
-                    ReactionChip(
-                        symbol = "🔱",
-                        count = tridentCount,
-                        isSelected = userReactionTrident != null,
-                        onClick = { onReact("trident", userReactionTrident) }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // Crown reaction
-                    ReactionChip(
-                        symbol = "👑",
-                        count = crownCount,
-                        isSelected = userReactionCrown != null,
-                        onClick = { onReact("couronne", userReactionCrown) }
-                    )
+                // Baamix reaction button
+                val isLiked = userReactionBaamix != null
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isLiked) Color(0xFF00875A).copy(alpha = 0.1f) else Color(0xFFF4F5F7))
+                        .border(
+                            1.dp,
+                            if (isLiked) Color(0xFF00875A) else Color(0xFFE5E5EA),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { onReact("baamix", userReactionBaamix) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_baamix),
+                            contentDescription = "Baamix",
+                            modifier = Modifier.size(20.dp),
+                            tint = Color.Unspecified
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Baamix",
+                            color = if (isLiked) Color(0xFF00875A) else Color(0xFF1E1E1E),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = baamixCount.toString(),
+                            color = if (isLiked) Color(0xFF00875A) else Color(0xFF6E6E73),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onToggleComments) {
                         Text(
-                            text = if (course.commentaires.isEmpty()) "Commenter" else "Comments (${course.commentaires.size})",
-                            color = NeonVolt,
+                            text = if (course.commentaires.isEmpty()) "Commenter" else "Commentaires (${course.commentaires.size})",
+                            color = Color(0xFF00875A),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -641,7 +761,7 @@ fun FeedCourseCard(
                         Icon(
                             imageVector = Icons.Default.Visibility,
                             contentDescription = "Voir détails",
-                            tint = Color.White
+                            tint = Color(0xFF6E6E73)
                         )
                     }
                 }
@@ -650,7 +770,7 @@ fun FeedCourseCard(
             // Expandable Comments section
             if (showComments) {
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                HorizontalDivider(color = Color(0xFFE5E5EA))
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // List comments
@@ -664,7 +784,7 @@ fun FeedCourseCard(
                             Text(
                                 text = comment.pseudonyme,
                                 fontWeight = FontWeight.Bold,
-                                color = NeonVolt,
+                                color = Color(0xFF00875A),
                                 fontSize = 12.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -679,13 +799,13 @@ fun FeedCourseCard(
                             }
                             Text(
                                 text = commentDate,
-                                color = Color.Gray,
+                                color = Color(0xFF6E6E73),
                                 fontSize = 10.sp
                             )
                         }
                         Text(
                             text = comment.contenu,
-                            color = Color.White,
+                            color = Color(0xFF1E1E1E),
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 2.dp)
                         )
@@ -706,11 +826,11 @@ fun FeedCourseCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonVolt,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            cursorColor = NeonVolt,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f)
+                            focusedBorderColor = Color(0xFF00875A),
+                            focusedTextColor = Color(0xFF1E1E1E),
+                            unfocusedTextColor = Color(0xFF1E1E1E),
+                            cursorColor = Color(0xFF00875A),
+                            unfocusedBorderColor = Color(0xFFE5E5EA)
                         )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -721,7 +841,7 @@ fun FeedCourseCard(
                         Icon(
                             imageVector = Icons.Default.Send,
                             contentDescription = "Envoyer",
-                            tint = if (newCommentText.isNotBlank()) NeonVolt else Color.Gray
+                            tint = if (newCommentText.isNotBlank()) Color(0xFF00875A) else Color.Gray
                         )
                     }
                 }
@@ -735,50 +855,16 @@ fun MetricWidget(label: String, value: String) {
     Column {
         Text(
             text = label,
-            color = Color.Gray,
+            color = Color(0xFF6E6E73),
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium
         )
         Text(
             text = value,
-            color = Color.White,
+            color = Color(0xFF1E1E1E),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
-    }
-}
-
-@Composable
-fun ReactionChip(
-    symbol: String,
-    count: Int,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) NeonVolt.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
-            .border(
-                1.dp,
-                if (isSelected) NeonVolt else Color.Transparent,
-                RoundedCornerShape(8.dp)
-            )
-            .clickable { onClick() }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = symbol, fontSize = 14.sp)
-            if (count > 0) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = count.toString(),
-                    color = if (isSelected) NeonVolt else Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
     }
 }
 
@@ -790,74 +876,131 @@ fun RoutePreviewCanvas(
     if (points.isEmpty()) {
         Box(
             modifier = modifier
-                .background(Color.Black, shape = RoundedCornerShape(12.dp)),
+                .background(Color(0xFFF4F5F7), shape = RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text("Pas de tracé GPS", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+            Text("Pas de tracé GPS", color = Color(0xFF6E6E73), fontSize = 12.sp)
         }
         return
     }
 
-    Canvas(
-        modifier = modifier
-            .background(Color.Black, shape = RoundedCornerShape(12.dp))
-            .padding(12.dp)
-    ) {
+    // Build Mapbox Static Image URL with polyline overlay
+    val mapboxToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
+    val staticMapUrl = remember(points) {
         val lats = points.map { it.latitude }
         val lons = points.map { it.longitude }
         val minLat = lats.minOrNull() ?: 0.0
         val maxLat = lats.maxOrNull() ?: 0.0
         val minLon = lons.minOrNull() ?: 0.0
         val maxLon = lons.maxOrNull() ?: 0.0
+        val centerLat = (minLat + maxLat) / 2.0
+        val centerLon = (minLon + maxLon) / 2.0
 
+        // Calculate zoom level from bounding box
         val latRange = maxLat - minLat
         val lonRange = maxLon - minLon
-
-        val sizeX = size.width
-        val sizeY = size.height
-
-        val pathPoints = points.map { pt ->
-            val x = if (lonRange > 0) {
-                ((pt.longitude - minLon) / lonRange * sizeX).toFloat()
-            } else {
-                sizeX / 2f
-            }
-            val y = if (latRange > 0) {
-                (sizeY - ((pt.latitude - minLat) / latRange * sizeY)).toFloat()
-            } else {
-                sizeY / 2f
-            }
-            Offset(x, y)
+        val maxRange = maxOf(latRange, lonRange)
+        val zoom = when {
+            maxRange > 0.1 -> 11
+            maxRange > 0.05 -> 12
+            maxRange > 0.02 -> 13
+            maxRange > 0.01 -> 14
+            maxRange > 0.005 -> 15
+            maxRange > 0.002 -> 16
+            else -> 17
         }
 
-        if (pathPoints.size > 1) {
-            val path = Path().apply {
-                moveTo(pathPoints[0].x, pathPoints[0].y)
-                for (i in 1 until pathPoints.size) {
-                    lineTo(pathPoints[i].x, pathPoints[i].y)
-                }
-            }
-            drawPath(
-                path = path,
-                color = NeonVolt,
-                style = Stroke(
-                    width = 4f,
-                    cap = StrokeCap.Round,
-                    join = StrokeJoin.Round
-                )
-            )
+        // Build simplified polyline for the path overlay (sample max 80 points for URL length)
+        val step = if (points.size > 80) points.size / 80 else 1
+        val sampled = points.filterIndexed { i, _ -> i % step == 0 || i == points.size - 1 }
+        val pathCoords = sampled.joinToString(",") { "[${it.longitude},${it.latitude}]" }
+        val geoJsonPath = "{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
+        val encodedGeoJson = java.net.URLEncoder.encode(geoJsonPath, "UTF-8")
 
-            // Start & End markers
-            drawCircle(
-                color = Color.Green,
-                radius = 8f,
-                center = pathPoints.first()
-            )
-            drawCircle(
-                color = Color.Red,
-                radius = 8f,
-                center = pathPoints.last()
-            )
+        "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/" +
+            "geojson($encodedGeoJson)/" +
+            "$centerLon,$centerLat,$zoom/600x260@2x" +
+            "?access_token=$mapboxToken&attribution=false&logo=false"
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+    ) {
+        // Mapbox static map background
+        AsyncImage(
+            model = staticMapUrl,
+            contentDescription = "Carte du tracé",
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        // Draw the GPS trace on top
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(12.dp)
+        ) {
+            val lats = points.map { it.latitude }
+            val lons = points.map { it.longitude }
+            val minLat = lats.minOrNull() ?: 0.0
+            val maxLat = lats.maxOrNull() ?: 0.0
+            val minLon = lons.minOrNull() ?: 0.0
+            val maxLon = lons.maxOrNull() ?: 0.0
+
+            val latRange = maxLat - minLat
+            val lonRange = maxLon - minLon
+
+            val sizeX = size.width
+            val sizeY = size.height
+
+            val pathPoints = points.map { pt ->
+                val x = if (lonRange > 0) {
+                    ((pt.longitude - minLon) / lonRange * sizeX).toFloat()
+                } else {
+                    sizeX / 2f
+                }
+                val y = if (latRange > 0) {
+                    (sizeY - ((pt.latitude - minLat) / latRange * sizeY)).toFloat()
+                } else {
+                    sizeY / 2f
+                }
+                Offset(x, y)
+            }
+
+            if (pathPoints.size > 1) {
+                // White outline for contrast
+                val path = Path().apply {
+                    moveTo(pathPoints[0].x, pathPoints[0].y)
+                    for (i in 1 until pathPoints.size) {
+                        lineTo(pathPoints[i].x, pathPoints[i].y)
+                    }
+                }
+                drawPath(
+                    path = path,
+                    color = Color.White,
+                    style = Stroke(
+                        width = 7f,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
+                drawPath(
+                    path = path,
+                    color = Color(0xFF00875A),
+                    style = Stroke(
+                        width = 4f,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
+
+                // Start & End markers
+                drawCircle(color = Color.White, radius = 11f, center = pathPoints.first())
+                drawCircle(color = Color(0xFF00875A), radius = 8f, center = pathPoints.first())
+                drawCircle(color = Color.White, radius = 11f, center = pathPoints.last())
+                drawCircle(color = Color.Red, radius = 8f, center = pathPoints.last())
+            }
         }
     }
 }
@@ -879,12 +1022,13 @@ fun calculateSplits(points: List<GPSPoint>): List<SplitItem> {
 
     val parsedTimes = points.map { pt ->
         if (pt.timestamp_gps == null) return@map null
+        val cleanTimestamp = pt.timestamp_gps.replace(" ", "T")
         try {
-            java.time.Instant.parse(pt.timestamp_gps).toEpochMilli()
+            java.time.Instant.parse(cleanTimestamp).toEpochMilli()
         } catch (e: Exception) {
             try {
                 val formatter = java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME
-                java.time.ZonedDateTime.parse(pt.timestamp_gps, formatter).toInstant().toEpochMilli()
+                java.time.ZonedDateTime.parse(cleanTimestamp, formatter).toInstant().toEpochMilli()
             } catch (e2: Exception) {
                 null
             }
@@ -900,7 +1044,7 @@ fun calculateSplits(points: List<GPSPoint>): List<SplitItem> {
         val dist = calculateDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
         accumulatedDistance += dist
 
-        if (currentTargetIndex < targets.size && accumulatedDistance >= targets[currentTargetIndex]) {
+        while (currentTargetIndex < targets.size && accumulatedDistance >= targets[currentTargetIndex]) {
             val target = targets[currentTargetIndex]
             val currTime = parsedTimes[i]
             val elapsedMs = if (startTime != null && currTime != null) currTime - startTime else null
@@ -949,7 +1093,7 @@ fun CourseDetailsDialog(
         title = {
             Text(
                 text = course.nom ?: "Course Arpent.io",
-                color = Color.White,
+                color = Color(0xFF1E1E1E),
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleLarge
             )
@@ -973,7 +1117,7 @@ fun CourseDetailsDialog(
 
                 Text(
                     text = "Temps de passage (Splits)",
-                    color = NeonVolt,
+                    color = Color(0xFF00875A),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -983,7 +1127,7 @@ fun CourseDetailsDialog(
                 if (splits.isEmpty()) {
                     Text(
                         text = "Aucun temps de passage disponible (course trop courte).",
-                        color = Color.Gray,
+                        color = Color(0xFF6E6E73),
                         fontSize = 13.sp
                     )
                 } else {
@@ -997,18 +1141,18 @@ fun CourseDetailsDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFF4F5F7), RoundedCornerShape(6.dp))
                                     .padding(8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
                                     text = if (split.distanceMeters >= 1000) "${split.distanceMeters / 1000.0} km" else "${split.distanceMeters} m",
-                                    color = Color.White,
+                                    color = Color(0xFF1E1E1E),
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = split.timeFormatted,
-                                    color = NeonVolt,
+                                    color = Color(0xFF00875A),
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1019,10 +1163,63 @@ fun CourseDetailsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("FERMER", color = NeonVolt, fontWeight = FontWeight.Bold)
+                Text("FERMER", color = Color(0xFF00875A), fontWeight = FontWeight.Bold)
             }
         },
-        containerColor = Color(0xFF1E1E1E),
+        containerColor = Color.White,
         shape = RoundedCornerShape(20.dp)
     )
 }
+
+@Composable
+fun SimpleFlowRow(
+    modifier: Modifier = Modifier,
+    horizontalGap: Dp = 16.dp,
+    verticalGap: Dp = 12.dp,
+    content: @Composable () -> Unit
+) {
+    Layout(
+        content = content,
+        modifier = modifier
+    ) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
+        val layoutWidth = constraints.maxWidth
+        
+        val rows = mutableListOf<List<Placeable>>()
+        var currentRow = mutableListOf<Placeable>()
+        var currentRowWidth = 0
+        
+        placeables.forEach { placeable ->
+            val horizontalGapPx = horizontalGap.roundToPx()
+            if (currentRowWidth + placeable.width + (if (currentRow.isEmpty()) 0 else horizontalGapPx) <= layoutWidth) {
+                currentRow.add(placeable)
+                currentRowWidth += placeable.width + (if (currentRow.size == 1) 0 else horizontalGapPx)
+            } else {
+                rows.add(currentRow)
+                currentRow = mutableListOf(placeable)
+                currentRowWidth = placeable.width
+            }
+        }
+        if (currentRow.isNotEmpty()) {
+            rows.add(currentRow)
+        }
+        
+        val verticalGapPx = verticalGap.roundToPx()
+        val totalHeight = rows.sumOf { row -> row.maxOfOrNull { it.height } ?: 0 } +
+                (if (rows.size > 1) (rows.size - 1) * verticalGapPx else 0)
+        
+        layout(layoutWidth, totalHeight) {
+            var y = 0
+            rows.forEach { row ->
+                var x = 0
+                val rowHeight = row.maxOfOrNull { it.height } ?: 0
+                row.forEach { placeable ->
+                    placeable.placeRelative(x, y)
+                    x += placeable.width + horizontalGap.roundToPx()
+                }
+                y += rowHeight + verticalGapPx
+            }
+        }
+    }
+}
+

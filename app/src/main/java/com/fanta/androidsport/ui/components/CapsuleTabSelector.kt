@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -17,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fanta.androidsport.ui.theme.NeonVolt
 
 @Composable
 fun CapsuleTabSelector(
@@ -25,15 +25,15 @@ fun CapsuleTabSelector(
     selectedTabIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    activeBgColor: Color = Color(0xFF0F1318),
-    activeTextColor: Color = NeonVolt,
-    inactiveTextColor: Color = Color.Black.copy(alpha = 0.6f)
+    activeBgColor: Color = MaterialTheme.colorScheme.primary,
+    activeTextColor: Color = MaterialTheme.colorScheme.onPrimary,
+    inactiveTextColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.05f))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -60,4 +60,3 @@ fun CapsuleTabSelector(
         }
     }
 }
-

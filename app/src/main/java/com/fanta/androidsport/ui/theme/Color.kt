@@ -55,7 +55,7 @@ val CardBackgroundLight = Color(0xFFEDF1F7)
 val ForestWhite = Color(0xFFFFFFFF)
 val ForestDark = Color(0xFF36454F)
 val ForestGreenDark = Color(0xFF253D2C)
-val ForestGreenLight = Color(0xFFCFFFDC)
+val ForestGreenLight = Color(0xFF68BA7F)
 
 // Theme 2: Orchid
 val OrchidWhite = Color(0xFFFFFFFF)

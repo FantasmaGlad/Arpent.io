@@ -880,8 +880,9 @@ fun ConquestMapScreen(
             }
 
             // Real run capturing button (GPS active tracking)
+            val themePrimary = MaterialTheme.colorScheme.primary
             val realButtonColor by animateColorAsState(
-                targetValue = if (isRealRunActive) Color.Red else NeonVolt,
+                targetValue = if (isRealRunActive) Color.Red else themePrimary,
                 label = "real_btn_color"
             )
             FloatingActionButton(
@@ -947,7 +948,7 @@ fun ConquestMapScreen(
                     }
                 },
                 containerColor = realButtonColor,
-                contentColor = Color.Black,
+                contentColor = if (isRealRunActive) Color.White else MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape,
                 modifier = Modifier
                     .size(60.dp)

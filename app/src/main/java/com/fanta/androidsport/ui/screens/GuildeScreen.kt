@@ -27,6 +27,7 @@ import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.CapsuleTabSelector
 import com.fanta.androidsport.ui.components.ColorWheel
+import com.fanta.androidsport.ui.theme.BrandGreen
 import com.fanta.androidsport.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,8 +36,6 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.*
-
-val BrandGreen = Color(0xFF00875A)
 
 @Composable
 fun GuildeScreen(
@@ -814,8 +813,9 @@ fun GuildeScreen(
                     }
                 } else if (clanId != null) {
                     // User belongs to a clan
+                    val defaultClanColor = BrandGreen
                     val parsedClanColor = remember(clanCouleur) {
-                        try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { BrandGreen }
+                        try { Color(android.graphics.Color.parseColor(clanCouleur)) } catch (_: Exception) { defaultClanColor }
                     }
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -959,8 +959,9 @@ fun GuildeScreen(
                                 )
                             }
                             items(receivedGuildInvitations) { invitation ->
+                                val defaultInvitationColor = BrandGreen
                                 val parsedCol = remember(invitation.guildeCouleur) {
-                                    try { Color(android.graphics.Color.parseColor(invitation.guildeCouleur)) } catch (_: Exception) { BrandGreen }
+                                    try { Color(android.graphics.Color.parseColor(invitation.guildeCouleur)) } catch (_: Exception) { defaultInvitationColor }
                                 }
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1141,8 +1142,9 @@ fun GuildeScreen(
                                             color = Color.Black.copy(alpha = 0.6f),
                                             modifier = Modifier.weight(1f)
                                         )
+                                        val defaultNewClanColor = BrandGreen
                                         val parsedColor = remember(newClanColor) {
-                                            try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { BrandGreen }
+                                            try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { defaultNewClanColor }
                                         }
                                         Box(
                                             modifier = Modifier
@@ -1154,8 +1156,9 @@ fun GuildeScreen(
                                     }
                                     
                                     Spacer(modifier = Modifier.height(16.dp))
+                                    val defaultWheelColor = BrandGreen
                                     val parsedColorForWheel = remember(newClanColor) {
-                                        try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { BrandGreen }
+                                        try { Color(android.graphics.Color.parseColor(newClanColor)) } catch (_: Exception) { defaultWheelColor }
                                     }
                                     ColorWheel(
                                         selectedColor = parsedColorForWheel,
@@ -1304,8 +1307,9 @@ fun GuildeScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 items(filteredClans) { clan ->
+                                    val defaultClanListColor = BrandGreen
                                     val parsedCColor = remember(clan.color) {
-                                        try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { BrandGreen }
+                                        try { Color(android.graphics.Color.parseColor(clan.color)) } catch (_: Exception) { defaultClanListColor }
                                     }
                                     val isMyClan = clanId == clan.id
                                     Card(

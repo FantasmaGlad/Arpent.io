@@ -299,7 +299,7 @@ fun ArpentMainScreen(userId: String) {
                                 text = ".IO",
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 2.sp,
-                                color = Color(0xFF00875A)
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             // Glowing status indicator dot
@@ -307,7 +307,7 @@ fun ArpentMainScreen(userId: String) {
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF00875A))
+                                    .background(MaterialTheme.colorScheme.primary)
                             )
                         }
                     },
@@ -506,7 +506,7 @@ fun ArpentMainScreen(userId: String) {
                             Icon(
                                 imageVector = if (isFooterExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                                 contentDescription = if (isFooterExpanded) "Réduire le menu" else "Déplier le menu",
-                                tint = Color(0xFF00875A),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
                                     .padding(top = 2.dp)
                                     .size(22.dp)
@@ -525,8 +525,8 @@ fun ArpentMainScreen(userId: String) {
                             icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
                             label = { Text("Conquête", fontSize = footerFontSize, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF00875A),
-                                selectedTextColor = Color(0xFF00875A),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
@@ -538,8 +538,8 @@ fun ArpentMainScreen(userId: String) {
                             icon = { Icon(Icons.Default.Star, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
                             label = { Text("Classement", fontSize = footerFontSize, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF00875A),
-                                selectedTextColor = Color(0xFF00875A),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
@@ -551,8 +551,8 @@ fun ArpentMainScreen(userId: String) {
                             icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
                             label = { Text("Courses", fontSize = footerFontSize, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF00875A),
-                                selectedTextColor = Color(0xFF00875A),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
@@ -564,8 +564,8 @@ fun ArpentMainScreen(userId: String) {
                             icon = { Icon(Icons.Default.Group, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
                             label = { Text("Guilde", fontSize = footerFontSize, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF00875A),
-                                selectedTextColor = Color(0xFF00875A),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
@@ -577,8 +577,8 @@ fun ArpentMainScreen(userId: String) {
                             icon = { Icon(Icons.Default.Person, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
                             label = { Text("Profil", fontSize = footerFontSize, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color(0xFF00875A),
-                                selectedTextColor = Color(0xFF00875A),
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent

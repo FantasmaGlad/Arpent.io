@@ -55,12 +55,20 @@ fun splitIntoClosedPolygons(flatPoints: List<Point>): List<List<Point>> {
     var currentRing = mutableListOf<Point>()
     for (pt in flatPoints) {
         currentRing.add(pt)
-        if (currentRing.size >= 3 && pt.longitude() == currentRing[0].longitude() && pt.latitude() == currentRing[0].latitude()) {
+        if (currentRing.size >= 3 && 
+            Math.abs(pt.longitude() - currentRing[0].longitude()) < 1e-7 && 
+            Math.abs(pt.latitude() - currentRing[0].latitude()) < 1e-7) {
             polygons.add(currentRing)
             currentRing = mutableListOf()
         }
     }
     if (currentRing.size >= 3) {
+        val first = currentRing.first()
+        val last = currentRing.last()
+        if (Math.abs(first.longitude() - last.longitude()) >= 1e-7 || 
+            Math.abs(first.latitude() - last.latitude()) >= 1e-7) {
+            currentRing.add(first)
+        }
         polygons.add(currentRing)
     }
     return polygons

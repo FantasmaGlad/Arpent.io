@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.ColorWheel
+import com.fanta.androidsport.ui.theme.ThemeManager
 import com.fanta.androidsport.utils.getPolygonArea
 import com.fanta.androidsport.utils.getPolygonCentroid
 import com.mapbox.geojson.Point
@@ -79,19 +80,20 @@ fun ProfileScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val parsedUserColor = remember(userEmpireColor) {
+    val defaultPrimary = MaterialTheme.colorScheme.primary
+    val parsedUserColor = remember(userEmpireColor, defaultPrimary) {
         try {
             Color(android.graphics.Color.parseColor(userEmpireColor))
         } catch (e: Exception) {
-            Color(0xFF00875A)
+            defaultPrimary
         }
     }
 
-    var localColor by remember(userEmpireColor) {
+    var localColor by remember(userEmpireColor, defaultPrimary) {
         val parsed = try {
             Color(android.graphics.Color.parseColor(userEmpireColor))
         } catch (e: Exception) {
-            Color(0xFF00875A)
+            defaultPrimary
         }
         mutableStateOf(parsed)
     }
@@ -549,6 +551,108 @@ fun ProfileScreen(
                                 )
                             }
                         }
+
+                        // Theme Selection Section
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, cardStrokeColor),
+                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Palette,
+                                        contentDescription = null,
+                                        tint = parsedUserColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Thème de l'application",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = textPrimary
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                
+                                val themes = listOf(
+                                    Triple("forest", "Forêt (Classique)", listOf(Color(0xFFFFFFFF), Color(0xFF36454F), Color(0xFF253D2C), Color(0xFFCFFFDC))),
+                                    Triple("orchid", "Orchidée", listOf(Color(0xFFFFFFFF), Color(0xFF4F2B4E), Color(0xFFC96DC6), Color(0xFFED80E9))),
+                                    Triple("blue_sky", "Bleu ciel", listOf(Color(0xFFFFFFFF), Color(0xFF162A33), Color(0xFF345766), Color(0xFF82C8E5)))
+                                )
+                                
+                                val currentTheme = ThemeManager.themeState.value
+                                
+                                themes.forEach { (themeId, themeName, colors) ->
+                                    val isSelected = currentTheme == themeId
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (isSelected) parsedUserColor.copy(alpha = 0.08f) else Color.Transparent)
+                                            .border(
+                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                color = if (isSelected) parsedUserColor else cardStrokeColor,
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable {
+                                                ThemeManager.themeState.value = themeId
+                                                val prefs = context.getSharedPreferences("arpent_prefs", android.content.Context.MODE_PRIVATE)
+                                                prefs.edit().putString("app_theme", themeId).apply()
+                                            }
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            RadioButton(
+                                                selected = isSelected,
+                                                onClick = {
+                                                    ThemeManager.themeState.value = themeId
+                                                    val prefs = context.getSharedPreferences("arpent_prefs", android.content.Context.MODE_PRIVATE)
+                                                    prefs.edit().putString("app_theme", themeId).apply()
+                                                },
+                                                colors = RadioButtonDefaults.colors(
+                                                    selectedColor = parsedUserColor,
+                                                    unselectedColor = textSecondary
+                                                )
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = themeName,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = textPrimary
+                                            )
+                                        }
+                                        
+                                        // Color dots representing the theme palette
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            colors.forEach { color ->
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .clip(CircleShape)
+                                                        .background(color)
+                                                        .border(1.dp, Color.LightGray, CircleShape)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else {
                     // TAB 2: STATISTIQUES
@@ -582,7 +686,7 @@ fun ProfileScreen(
                                 title = "Distance totale",
                                 value = "${"%.2f".format(totalDistance)} km",
                                 icon = Icons.Default.DirectionsRun,
-                                tint = Color(0xFF00875A),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f),
                                 cardStrokeColor = cardStrokeColor
                             )

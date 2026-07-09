@@ -50,3 +50,21 @@ val ElectricBlue = Color(0xFF00E5FF)
 val ActiveOrange = Color(0xFFFF6D00)
 val CardBackgroundDark = Color(0xFF1E242C)
 val CardBackgroundLight = Color(0xFFEDF1F7)
+
+// Theme 1: Forest / Classique
+val ForestWhite = Color(0xFFFFFFFF)
+val ForestDark = Color(0xFF36454F)
+val ForestGreenDark = Color(0xFF253D2C)
+val ForestGreenLight = Color(0xFFCFFFDC)
+
+// Theme 2: Orchid
+val OrchidWhite = Color(0xFFFFFFFF)
+val OrchidDark = Color(0xFF4F2B4E)
+val OrchidLight = Color(0xFFED80E9)
+val OrchidMedium = Color(0xFFC96DC6)
+
+// Theme 3: Blue Sky
+val BlueSkyWhite = Color(0xFFFFFFFF)
+val BlueSkyDark = Color(0xFF162A33)
+val BlueSkyMediumDark = Color(0xFF345766)
+val BlueSkyLight = Color(0xFF82C8E5)

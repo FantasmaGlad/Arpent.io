@@ -57,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -278,6 +279,8 @@ fun ConquestMapScreen(
         val totalAreaM2: Double
     )
     var otherPlayersTerritories by remember { mutableStateOf<List<OtherPlayerTerritory>>(emptyList()) }
+    var lastQueryCenter by remember { mutableStateOf<Point?>(null) }
+    var lastQueryZoom by remember { mutableStateOf<Double?>(null) }
     var selectedPlayerStats by remember { mutableStateOf<OtherPlayerTerritory?>(null) }
     var selectedPlayerRunsCount by remember { mutableStateOf<Int?>(null) }
     var selectedPlayerTotalDistance by remember { mutableStateOf<Double?>(null) }
@@ -332,10 +335,31 @@ fun ConquestMapScreen(
 
     LaunchedEffect(userId, mapViewportState.cameraState) {
         val cam = mapViewportState.cameraState ?: return@LaunchedEffect
-        val centerPoint = cam.center
         val currentZoom = cam.zoom
         
+        if (currentZoom < 12.0) {
+            if (otherPlayersTerritories.isNotEmpty()) {
+                otherPlayersTerritories = emptyList()
+            }
+            lastQueryCenter = null
+            lastQueryZoom = null
+            return@LaunchedEffect
+        }
+        
+        val centerPoint = cam.center
         delay(400) // Debounce viewport updates to avoid database spamming
+        
+        // Throttling: skip database fetch if movement since last query is insignificant
+        val lastCenter = lastQueryCenter
+        val lastZoom = lastQueryZoom
+        if (lastCenter != null && lastZoom != null) {
+            val dist = calculateDistance(centerPoint, lastCenter)
+            val zoomDiff = Math.abs(currentZoom - lastZoom)
+            val threshold = (360.0 / Math.pow(2.0, currentZoom)) * 111000.0 * 0.15
+            if (dist < threshold && zoomDiff < 0.3) {
+                return@LaunchedEffect
+            }
+        }
         
         val lat = centerPoint.latitude()
         val lng = centerPoint.longitude()
@@ -430,6 +454,8 @@ fun ConquestMapScreen(
             
             withContext(Dispatchers.Main) {
                 otherPlayersTerritories = territories
+                lastQueryCenter = centerPoint
+                lastQueryZoom = currentZoom
             }
         } catch (e: Exception) {
             android.util.Log.e("Arpent", "Failed to fetch territories in bounding box", e)
@@ -545,24 +571,28 @@ fun ConquestMapScreen(
             }
 
             // Draw completed polygons (user's own territories)
-            val parsedUserGuildColor = remember(userGuildCouleur) {
-                if (userGuildCouleur != null) {
-                    try { Color(android.graphics.Color.parseColor(userGuildCouleur)) } catch (_: Exception) { null }
-                } else null
-            }
-            val userTerritoryColor = parsedUserGuildColor ?: parsedUserColor
-
-            completedPolygons.forEach { polygonPoints ->
-                val polygonState = remember(polygonPoints, userTerritoryColor, parsedUserColor) {
-                    PolygonAnnotationState().apply {
-                        fillColor = userTerritoryColor.copy(alpha = 0.25f)
-                        fillOutlineColor = parsedUserColor
+            completedPolygons.forEachIndexed { index, polygonPoints ->
+                key("user_poly_$index") {
+                    val closedPoints = remember(polygonPoints) {
+                        if (polygonPoints.isNotEmpty() && 
+                            (polygonPoints.first().longitude() != polygonPoints.last().longitude() || 
+                             polygonPoints.first().latitude() != polygonPoints.last().latitude())) {
+                            polygonPoints + polygonPoints.first()
+                        } else {
+                            polygonPoints
+                        }
                     }
+                    val polygonState = remember(closedPoints, parsedUserColor) {
+                        PolygonAnnotationState().apply {
+                            fillColor = parsedUserColor.copy(alpha = 0.50f)
+                            fillOutlineColor = parsedUserColor
+                        }
+                    }
+                    PolygonAnnotation(
+                        points = listOf(closedPoints),
+                        polygonAnnotationState = polygonState
+                    )
                 }
-                PolygonAnnotation(
-                    points = listOf(polygonPoints),
-                    polygonAnnotationState = polygonState
-                )
             }
 
             // Draw user avatar exactly once at centroid of largest polygon
@@ -605,24 +635,30 @@ fun ConquestMapScreen(
 
             // Draw other players' territories
             otherPlayersTerritories.forEach { player ->
-                val parsedGuildColor = remember(player.guildeCouleur) {
-                    if (player.guildeCouleur != null) {
-                        try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { null }
-                    } else null
-                }
-                val territoryColor = parsedGuildColor ?: player.empireColor
-
-                player.polygons.forEach { polygonPoints ->
-                    val polygonState = remember(polygonPoints, territoryColor, player.empireColor) {
-                        PolygonAnnotationState().apply {
-                            fillColor = territoryColor.copy(alpha = 0.20f)
-                            fillOutlineColor = player.empireColor
+                key(player.playerId) {
+                    player.polygons.forEachIndexed { index, polygonPoints ->
+                        key(player.playerId + "_poly_$index") {
+                            val closedPoints = remember(polygonPoints) {
+                                if (polygonPoints.isNotEmpty() && 
+                                    (polygonPoints.first().longitude() != polygonPoints.last().longitude() || 
+                                     polygonPoints.first().latitude() != polygonPoints.last().latitude())) {
+                                    polygonPoints + polygonPoints.first()
+                                } else {
+                                    polygonPoints
+                                }
+                            }
+                            val polygonState = remember(closedPoints, player.empireColor) {
+                                PolygonAnnotationState().apply {
+                                    fillColor = player.empireColor.copy(alpha = 0.50f)
+                                    fillOutlineColor = player.empireColor
+                                }
+                            }
+                            PolygonAnnotation(
+                                points = listOf(closedPoints),
+                                polygonAnnotationState = polygonState
+                            )
                         }
                     }
-                    PolygonAnnotation(
-                        points = listOf(polygonPoints),
-                        polygonAnnotationState = polygonState
-                    )
                 }
 
                 // Draw player avatar exactly once at centroid of largest polygon

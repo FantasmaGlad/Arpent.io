@@ -10,11 +10,112 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// State holder for the active application theme
+object ThemeManager {
+    val themeState = mutableStateOf("forest")
+}
+
+// Forest/Classique Color Schemes
+private val ForestLightColorScheme = lightColorScheme(
+    primary = ForestGreenDark,
+    onPrimary = ForestWhite,
+    primaryContainer = ForestGreenLight,
+    onPrimaryContainer = ForestGreenDark,
+    secondary = ForestGreenDark,
+    onSecondary = ForestWhite,
+    secondaryContainer = ForestGreenLight,
+    onSecondaryContainer = ForestGreenDark,
+    background = ForestWhite,
+    onBackground = ForestDark,
+    surface = ForestWhite,
+    onSurface = ForestDark
+)
+
+private val ForestDarkColorScheme = darkColorScheme(
+    primary = ForestGreenLight,
+    onPrimary = ForestGreenDark,
+    primaryContainer = ForestGreenDark,
+    onPrimaryContainer = ForestGreenLight,
+    secondary = ForestGreenLight,
+    onSecondary = ForestGreenDark,
+    secondaryContainer = ForestGreenDark,
+    onSecondaryContainer = ForestGreenLight,
+    background = Color(0xFF152219),
+    onBackground = ForestWhite,
+    surface = Color(0xFF1E2F24),
+    onSurface = ForestWhite
+)
+
+// Orchid Color Schemes
+private val OrchidLightColorScheme = lightColorScheme(
+    primary = OrchidMedium,
+    onPrimary = OrchidWhite,
+    primaryContainer = OrchidLight,
+    onPrimaryContainer = OrchidDark,
+    secondary = OrchidMedium,
+    onSecondary = OrchidWhite,
+    secondaryContainer = OrchidLight,
+    onSecondaryContainer = OrchidDark,
+    background = OrchidWhite,
+    onBackground = OrchidDark,
+    surface = OrchidWhite,
+    onSurface = OrchidDark
+)
+
+private val OrchidDarkColorScheme = darkColorScheme(
+    primary = OrchidLight,
+    onPrimary = OrchidDark,
+    primaryContainer = OrchidDark,
+    onPrimaryContainer = OrchidLight,
+    secondary = OrchidLight,
+    onSecondary = OrchidDark,
+    secondaryContainer = OrchidDark,
+    onSecondaryContainer = OrchidLight,
+    background = Color(0xFF2D162C),
+    onBackground = OrchidWhite,
+    surface = Color(0xFF3F203D),
+    onSurface = OrchidWhite
+)
+
+// Blue Sky Color Schemes
+private val BlueSkyLightColorScheme = lightColorScheme(
+    primary = BlueSkyMediumDark,
+    onPrimary = BlueSkyWhite,
+    primaryContainer = BlueSkyLight,
+    onPrimaryContainer = BlueSkyDark,
+    secondary = BlueSkyMediumDark,
+    onSecondary = BlueSkyWhite,
+    secondaryContainer = BlueSkyLight,
+    onSecondaryContainer = BlueSkyDark,
+    background = BlueSkyWhite,
+    onBackground = BlueSkyDark,
+    surface = BlueSkyWhite,
+    onSurface = BlueSkyDark
+)
+
+private val BlueSkyDarkColorScheme = darkColorScheme(
+    primary = BlueSkyLight,
+    onPrimary = BlueSkyDark,
+    primaryContainer = BlueSkyDark,
+    onPrimaryContainer = BlueSkyLight,
+    secondary = BlueSkyLight,
+    onSecondary = BlueSkyDark,
+    secondaryContainer = BlueSkyDark,
+    onSecondaryContainer = BlueSkyLight,
+    background = Color(0xFF0F1E24),
+    onBackground = BlueSkyWhite,
+    surface = Color(0xFF192F38),
+    onSurface = BlueSkyWhite
+)
+
+// Fallback / original color schemes
 private val DarkColorScheme = darkColorScheme(
     primary = PrimaryDark,
     onPrimary = OnPrimaryDark,
@@ -55,18 +156,26 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun SportAndroidTheme(
+    theme: String = ThemeManager.themeState.value,
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    // Dynamic color is available on Android 12+ (only used as fallback)
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    val colorScheme = when (theme) {
+        "forest" -> if (darkTheme) ForestDarkColorScheme else ForestLightColorScheme
+        "orchid" -> if (darkTheme) OrchidDarkColorScheme else OrchidLightColorScheme
+        "blue_sky" -> if (darkTheme) BlueSkyDarkColorScheme else BlueSkyLightColorScheme
+        else -> {
+            when {
+                dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                    val context = LocalContext.current
+                    if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                }
+                darkTheme -> DarkColorScheme
+                else -> LightColorScheme
+            }
         }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
     }
 
     val view = LocalView.current
@@ -84,3 +193,7 @@ fun SportAndroidTheme(
         content = content
     )
 }
+
+val BrandGreen: Color
+    @Composable
+    get() = MaterialTheme.colorScheme.primary

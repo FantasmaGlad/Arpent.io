@@ -1,5 +1,6 @@
 package com.fanta.androidsport.ui.screens
 
+import com.fanta.androidsport.ui.theme.BrandGreen
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -56,6 +57,7 @@ import com.fanta.androidsport.data.model.LeaderboardPlayer
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.CapsuleTabSelector
+import com.fanta.androidsport.ui.theme.BrandGreen
 import com.fanta.androidsport.ui.viewmodel.LeaderboardViewModel
 import androidx.compose.runtime.collectAsState
 import com.mapbox.geojson.Point
@@ -111,14 +113,15 @@ fun PlayerRow(
     friendsStatusMap: Map<String, String>,
     onClick: () -> Unit
 ) {
-    val parsedColor = remember(player.empireColor) {
-        try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { Color(0xFF00875A) }
+    val fallbackColor = BrandGreen
+    val parsedColor = remember(player.empireColor, fallbackColor) {
+        try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { fallbackColor }
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .background(if (isMe) Color(0xFF00875A).copy(alpha = 0.08f) else Color.Transparent)
+            .background(if (isMe) BrandGreen.copy(alpha = 0.08f) else Color.Transparent)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -195,14 +198,15 @@ fun ClanRow(
     metric: MetricFilter,
     onClick: () -> Unit
 ) {
-    val parsedClanColor = remember(clan.couleurHex) {
-        try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { Color(0xFF00875A) }
+    val fallbackColor = BrandGreen
+    val parsedClanColor = remember(clan.couleurHex, fallbackColor) {
+        try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { fallbackColor }
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .background(if (isMyClan) Color(0xFF00875A).copy(alpha = 0.08f) else Color.Transparent)
+            .background(if (isMyClan) BrandGreen.copy(alpha = 0.08f) else Color.Transparent)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -322,8 +326,9 @@ fun LeaderboardScreen(
         }
     }
 
+    val activePrimary = BrandGreen
     val leaderboardColorScheme = lightColorScheme(
-        primary = Color(0xFF00875A),
+        primary = activePrimary,
         background = Color(0xFFF4F5F7),
         surface = Color.White,
         onSurface = Color(0xFF1E1E1E),
@@ -372,7 +377,7 @@ fun LeaderboardScreen(
                             SocialFilter.AMIS -> "Amis"
                             SocialFilter.LOCAL -> "Local"
                         }
-                        val bgColor = if (isSelected) Color(0xFF00875A) else Color(0xFFE9EBEF)
+                        val bgColor = if (isSelected) BrandGreen else Color(0xFFE9EBEF)
                         val contentColor = if (isSelected) Color.White else Color(0xFF6E6E73)
                         Box(
                             modifier = Modifier
@@ -405,9 +410,9 @@ fun LeaderboardScreen(
                             MetricFilter.DISTANCE -> "Distance"
                             MetricFilter.BOUCLES -> "Boucles"
                         }
-                        val bgColor = if (isSelected) Color(0xFF00875A).copy(alpha = 0.1f) else Color.Transparent
-                        val borderStroke = if (isSelected) BorderStroke(1.5.dp, Color(0xFF00875A)) else BorderStroke(1.dp, Color(0xFFE5E5EA))
-                        val contentColor = if (isSelected) Color(0xFF00875A) else Color(0xFF6E6E73)
+                        val bgColor = if (isSelected) BrandGreen.copy(alpha = 0.1f) else Color.Transparent
+                        val borderStroke = if (isSelected) BorderStroke(1.5.dp, BrandGreen) else BorderStroke(1.dp, Color(0xFFE5E5EA))
+                        val contentColor = if (isSelected) BrandGreen else Color(0xFF6E6E73)
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -430,7 +435,7 @@ fun LeaderboardScreen(
 
                 if (isLoading) {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFF00875A))
+                        CircularProgressIndicator(color = BrandGreen)
                     }
                 } else if (selectedSocialFilter == SocialFilter.LOCAL && userLatState == null) {
                     Box(
@@ -606,7 +611,7 @@ fun LeaderboardScreen(
                     shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00875A).copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.3f))
                 ) {
                     PlayerRow(
                         rank = meIndex + 1,
@@ -626,7 +631,7 @@ fun LeaderboardScreen(
                     shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00875A).copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.3f))
                 ) {
                     ClanRow(
                         rank = myClanIndex + 1,
@@ -642,8 +647,9 @@ fun LeaderboardScreen(
         // Detailed profile view Dialog
         if (selectedPlayerForProfile != null) {
             val player = selectedPlayerForProfile!!
-            val parsedColor = remember(player.empireColor) {
-                try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { Color(0xFF00875A) }
+            val fallbackColor = BrandGreen
+            val parsedColor = remember(player.empireColor, fallbackColor) {
+                try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { fallbackColor }
             }
             val friendStatus = friendsStatusMap[player.id]
             val me = players.firstOrNull { it.id == userId }
@@ -683,7 +689,8 @@ fun LeaderboardScreen(
                                 }
                             }
                             if (player.guildeNom != null) {
-                                val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color(0xFF00875A) }
+                                val fallbackColor = BrandGreen
+                                val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { fallbackColor }
                                 Text(
                                     text = "Clan: ${player.guildeNom}",
                                     fontWeight = FontWeight.SemiBold,
@@ -775,7 +782,7 @@ fun LeaderboardScreen(
                             ) {
                                 Text(
                                     text = "Aller sur son territoire",
-                                    color = Color(0xFF00875A),
+                                    color = BrandGreen,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
                                 )
@@ -793,11 +800,12 @@ fun LeaderboardScreen(
 
                         // Friend invitation action
                         if (player.id != userId) {
+                            val brandGreenColor = BrandGreen
                             val (friendBtnText, friendBtnEnabled, friendBtnColor) = when (friendStatus) {
-                                "accepte" -> Triple("✓ Amis", false, Color(0xFF00875A))
+                                "accepte" -> Triple("✓ Amis", false, brandGreenColor)
                                 "en_attente_envoye" -> Triple("Demande envoyée", false, Color.Gray)
-                                "en_attente_recu" -> Triple("Répondre (demande reçue)", false, Color(0xFF00875A))
-                                else -> Triple("Demander en ami", true, Color(0xFF00875A))
+                                "en_attente_recu" -> Triple("Répondre (demande reçue)", false, brandGreenColor)
+                                else -> Triple("Demander en ami", true, brandGreenColor)
                             }
 
                             Button(
@@ -805,14 +813,14 @@ fun LeaderboardScreen(
                                 enabled = friendBtnEnabled,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = friendBtnColor,
-                                    disabledContainerColor = if (friendStatus == "accepte") Color(0xFF00875A).copy(alpha = 0.1f) else Color.LightGray
+                                    disabledContainerColor = if (friendStatus == "accepte") brandGreenColor.copy(alpha = 0.1f) else Color.LightGray
                                 ),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
                                     text = friendBtnText,
-                                    color = if (friendStatus == "accepte") Color(0xFF00875A) else Color.White,
+                                    color = if (friendStatus == "accepte") brandGreenColor else Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -846,11 +854,11 @@ fun LeaderboardScreen(
                                     else -> {
                                         OutlinedButton(
                                             onClick = { inviteToGuild(player.id) },
-                                            border = BorderStroke(1.5.dp, Color(0xFF00875A)),
+                                            border = BorderStroke(1.5.dp, BrandGreen),
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Text("Inviter dans le clan", color = Color(0xFF00875A), fontWeight = FontWeight.Bold)
+                                            Text("Inviter dans le clan", color = BrandGreen, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }

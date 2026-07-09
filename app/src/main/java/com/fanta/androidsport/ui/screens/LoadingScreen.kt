@@ -41,20 +41,42 @@ fun LoadingScreen() {
                         .build()
 
                     webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            val url = request?.url
+                            android.util.Log.d("ArpentWebView", "shouldInterceptRequest (new API): $url")
+                            val response = url?.let { assetLoader.shouldInterceptRequest(it) }
+                            android.util.Log.d("ArpentWebView", "Response for $url: ${if (response != null) "FOUND" else "NULL"}")
+                            return response
+                        }
+
                         @Deprecated("Deprecated in Java")
                         override fun shouldInterceptRequest(
                             view: WebView?,
                             url: String?
                         ): WebResourceResponse? {
-                            // Deprecated override kept for compatibility with older devices/OS versions
-                            return null
+                            android.util.Log.d("ArpentWebView", "shouldInterceptRequest (old API): $url")
+                            val response = url?.let { assetLoader.shouldInterceptRequest(android.net.Uri.parse(it)) }
+                            android.util.Log.d("ArpentWebView", "Response for $url: ${if (response != null) "FOUND" else "NULL"}")
+                            return response
                         }
 
-                        override fun shouldInterceptRequest(
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                            android.util.Log.d("ArpentWebView", "onPageStarted: $url")
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            android.util.Log.d("ArpentWebView", "onPageFinished: $url")
+                        }
+
+                        override fun onReceivedError(
                             view: WebView?,
-                            request: WebResourceRequest?
-                        ): WebResourceResponse? {
-                            return request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+                            request: WebResourceRequest?,
+                            error: android.webkit.WebResourceError?
+                        ) {
+                            android.util.Log.e("ArpentWebView", "onReceivedError for ${request?.url}: description=${error?.description}, errorCode=${error?.errorCode}")
                         }
                     }
 

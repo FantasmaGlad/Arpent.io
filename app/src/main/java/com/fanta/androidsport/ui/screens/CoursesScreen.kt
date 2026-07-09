@@ -1,6 +1,7 @@
 package com.fanta.androidsport.ui.screens
 
 import android.widget.Toast
+import com.fanta.androidsport.ui.theme.BrandGreen
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -337,8 +338,9 @@ fun CoursesScreen(
         }
     }
 
+    val activePrimary = BrandGreen
     val lightScheme = lightColorScheme(
-        primary = Color(0xFF00875A),
+        primary = activePrimary,
         background = Color(0xFFF4F5F7),
         surface = Color.White,
         onSurface = Color(0xFF1E1E1E),
@@ -363,14 +365,14 @@ fun CoursesScreen(
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 12.sp,
                         letterSpacing = 1.5.sp,
-                        color = Color(0xFF00875A)
+                        color = BrandGreen
                     ),
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
 
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFF00875A))
+                        CircularProgressIndicator(color = BrandGreen)
                     }
                 } else if (feedCourses.isEmpty()) {
                     Box(
@@ -393,7 +395,7 @@ fun CoursesScreen(
                                 Icon(
                                     imageVector = Icons.Default.DirectionsRun,
                                     contentDescription = null,
-                                    tint = Color(0xFF00875A),
+                                    tint = BrandGreen,
                                     modifier = Modifier.size(48.dp)
                                 )
                             }
@@ -506,10 +508,11 @@ fun FeedCourseCard(
     val userReactionBaamix = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" }
     val baamixCount = course.reactions.count { it.type_reaction == "baamix" }
 
+    val fallbackColor = BrandGreen
     val parsedEmpireColor = try {
         Color(android.graphics.Color.parseColor(course.empireColor ?: "#00875A"))
     } catch (_: Exception) {
-        Color(0xFF00875A)
+        fallbackColor
     }
 
     val parsedGuildColor = try {
@@ -584,10 +587,10 @@ fun FeedCourseCard(
                         else -> "+ Ami"
                     }
                     val buttonColor = when (friendStatus) {
-                        "accepte" -> Color(0xFF00875A)
+                        "accepte" -> BrandGreen
                         "en_attente_envoye" -> Color.Gray
-                        "en_attente_recu" -> Color(0xFF00875A)
-                        else -> Color(0xFF00875A)
+                        "en_attente_recu" -> BrandGreen
+                        else -> BrandGreen
                     }
                     val isClickable = friendStatus == null
 
@@ -597,7 +600,7 @@ fun FeedCourseCard(
                             .background(if (friendStatus == "accepte" || friendStatus == "en_attente_envoye") Color.Transparent else buttonColor)
                             .border(
                                 1.dp,
-                                if (friendStatus == "en_attente_envoye") Color.Gray else Color(0xFF00875A),
+                                if (friendStatus == "en_attente_envoye") Color.Gray else BrandGreen,
                                 RoundedCornerShape(20.dp)
                             )
                             .clickable(enabled = isClickable) {
@@ -727,10 +730,10 @@ fun FeedCourseCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isLiked) Color(0xFF00875A).copy(alpha = 0.1f) else Color(0xFFF4F5F7))
+                        .background(if (isLiked) BrandGreen.copy(alpha = 0.1f) else Color(0xFFF4F5F7))
                         .border(
                             1.dp,
-                            if (isLiked) Color(0xFF00875A) else Color(0xFFE5E5EA),
+                            if (isLiked) BrandGreen else Color(0xFFE5E5EA),
                             RoundedCornerShape(8.dp)
                         )
                         .clickable { onReact("baamix", userReactionBaamix) }
@@ -746,14 +749,14 @@ fun FeedCourseCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Baamix",
-                            color = if (isLiked) Color(0xFF00875A) else Color(0xFF1E1E1E),
+                            color = if (isLiked) BrandGreen else Color(0xFF1E1E1E),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = baamixCount.toString(),
-                            color = if (isLiked) Color(0xFF00875A) else Color(0xFF6E6E73),
+                            color = if (isLiked) BrandGreen else Color(0xFF6E6E73),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -764,7 +767,7 @@ fun FeedCourseCard(
                     TextButton(onClick = onToggleComments) {
                         Text(
                             text = if (course.commentaires.isEmpty()) "Commenter" else "Commentaires (${course.commentaires.size})",
-                            color = Color(0xFF00875A),
+                            color = BrandGreen,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -797,7 +800,7 @@ fun FeedCourseCard(
                             Text(
                                 text = comment.pseudonyme,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00875A),
+                                color = BrandGreen,
                                 fontSize = 12.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -839,10 +842,10 @@ fun FeedCourseCard(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF00875A),
+                            focusedBorderColor = BrandGreen,
                             focusedTextColor = Color(0xFF1E1E1E),
                             unfocusedTextColor = Color(0xFF1E1E1E),
-                            cursorColor = Color(0xFF00875A),
+                            cursorColor = BrandGreen,
                             unfocusedBorderColor = Color(0xFFE5E5EA)
                         )
                     )
@@ -854,7 +857,7 @@ fun FeedCourseCard(
                         Icon(
                             imageVector = Icons.Default.Send,
                             contentDescription = "Envoyer",
-                            tint = if (newCommentText.isNotBlank()) Color(0xFF00875A) else Color.Gray
+                            tint = if (newCommentText.isNotBlank()) BrandGreen else Color.Gray
                         )
                     }
                 }
@@ -886,6 +889,7 @@ fun RoutePreviewCanvas(
     points: List<GPSPoint>,
     modifier: Modifier = Modifier
 ) {
+    val traceColor = BrandGreen
     if (points.isEmpty()) {
         Box(
             modifier = modifier
@@ -1000,7 +1004,7 @@ fun RoutePreviewCanvas(
                 )
                 drawPath(
                     path = path,
-                    color = Color(0xFF00875A),
+                    color = traceColor,
                     style = Stroke(
                         width = 4f,
                         cap = StrokeCap.Round,
@@ -1010,7 +1014,7 @@ fun RoutePreviewCanvas(
 
                 // Start & End markers
                 drawCircle(color = Color.White, radius = 11f, center = pathPoints.first())
-                drawCircle(color = Color(0xFF00875A), radius = 8f, center = pathPoints.first())
+                drawCircle(color = traceColor, radius = 8f, center = pathPoints.first())
                 drawCircle(color = Color.White, radius = 11f, center = pathPoints.last())
                 drawCircle(color = Color.Red, radius = 8f, center = pathPoints.last())
             }
@@ -1130,7 +1134,7 @@ fun CourseDetailsDialog(
 
                 Text(
                     text = "Temps de passage (Splits)",
-                    color = Color(0xFF00875A),
+                    color = BrandGreen,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -1165,7 +1169,7 @@ fun CourseDetailsDialog(
                                 )
                                 Text(
                                     text = split.timeFormatted,
-                                    color = Color(0xFF00875A),
+                                    color = BrandGreen,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1176,7 +1180,7 @@ fun CourseDetailsDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("FERMER", color = Color(0xFF00875A), fontWeight = FontWeight.Bold)
+                Text("FERMER", color = BrandGreen, fontWeight = FontWeight.Bold)
             }
         },
         containerColor = Color.White,

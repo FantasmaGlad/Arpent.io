@@ -56,6 +56,8 @@ import com.fanta.androidsport.data.model.LeaderboardPlayer
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.CapsuleTabSelector
+import com.fanta.androidsport.ui.viewmodel.LeaderboardViewModel
+import androidx.compose.runtime.collectAsState
 import com.mapbox.geojson.Point
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
@@ -272,399 +274,50 @@ fun LeaderboardScreen(
     isActive: Boolean = false,
     userId: String,
     userGuildId: String? = null,
+    viewModel: LeaderboardViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onPlayerClick: (Point) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var players by remember { mutableStateOf<List<LeaderboardPlayer>>(emptyList()) }
-    var clans by remember { mutableStateOf<List<LeaderboardClan>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Joueurs, 1 = Clans
+    val players by viewModel.playersList.collectAsState()
+    val clans by viewModel.clansList.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val selectedTab by viewModel.selectedTab.collectAsState()
 
-    var selectedSocialFilter by remember { mutableStateOf(SocialFilter.GLOBAL) }
-    var selectedMetric by remember { mutableStateOf(MetricFilter.TERRITOIRE) }
-    var lastFilters by remember { mutableStateOf(Triple(SocialFilter.GLOBAL, MetricFilter.TERRITOIRE, 0)) }
-    var userLatState by remember { mutableStateOf<Double?>(null) }
-    var userLonState by remember { mutableStateOf<Double?>(null) }
+    val selectedSocialFilter by viewModel.selectedSocialFilter.collectAsState()
+    val selectedMetric by viewModel.selectedMetric.collectAsState()
+    val userLatState by viewModel.userLat.collectAsState()
 
-    var friendsStatusMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var sentGuildInvitationsSet by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val friendsStatusMap by viewModel.friendsStatusMap.collectAsState()
+    val sentGuildInvitationsSet by viewModel.sentGuildInvitationsSet.collectAsState()
     var selectedPlayerForProfile by remember { mutableStateOf<LeaderboardPlayer?>(null) }
 
-    fun loadLeaderboardData() {
-        scope.launch {
-            try {
-                try {
-                    val userProfileRes = withContext(Dispatchers.IO) {
-                        supabase.postgrest["profiles"].select {
-                            filter {
-                                eq("id", userId)
-                            }
-                        }
-                    }
-                    val jsonArray = Json.parseToJsonElement(userProfileRes.data) as? JsonArray
-                    val userObj = jsonArray?.firstOrNull() as? JsonObject
-                    val shareLoc = userObj?.get("share_location")?.jsonPrimitive?.booleanOrNull ?: false
-                    if (shareLoc) {
-                        userLatState = userObj?.get("latitude")?.jsonPrimitive?.doubleOrNull
-                        userLonState = userObj?.get("longitude")?.jsonPrimitive?.doubleOrNull
-                    } else {
-                        userLatState = null
-                        userLonState = null
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("Arpent", "Failed to fetch user coordinates", e)
-                }
-
-                val sortByColumn = when (selectedMetric) {
-                    MetricFilter.TERRITOIRE -> "total_area_m2"
-                    MetricFilter.DISTANCE -> "distance_totale"
-                    MetricFilter.BOUCLES -> "loop_count"
-                }
-
-                // Fetch players
-                val fetchedPlayers = when (selectedSocialFilter) {
-                    SocialFilter.LOCAL -> {
-                        val lat = userLatState
-                        val lon = userLonState
-                        if (lat != null && lon != null) {
-                            val params = buildJsonObject {
-                                put("user_lat", lat)
-                                put("user_lon", lon)
-                                put("max_dist_meters", 50000.0) // 50km
-                            }
-                            val response = withContext(Dispatchers.IO) {
-                                supabase.postgrest.rpc("get_local_leaderboard", params)
-                            }
-                            withContext(Dispatchers.Default) {
-                                val jsonArray = Json.parseToJsonElement(response.data) as? JsonArray
-                                jsonArray?.mapNotNull { element ->
-                                    val obj = element as? JsonObject ?: return@mapNotNull null
-                                    val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                    val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur_${id.take(8)}"
-                                    val tag = obj["tag"]?.jsonPrimitive?.contentOrNull
-                                    val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                    val pLat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
-                                    val pLon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
-                                    val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                    val loopCount = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                    val distTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                    val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                                    val gNom = obj["guilde_nom"]?.jsonPrimitive?.contentOrNull
-                                    val gColor = obj["guilde_couleur"]?.jsonPrimitive?.contentOrNull
-                                    LeaderboardPlayer(id, pseudo, tag, color, pLat, pLon, areaM2, loopCount, distTotale, avatar, gNom, gColor)
-                                } ?: emptyList()
-                            }
-                        } else {
-                            emptyList()
-                        }
-                    }
-                    SocialFilter.AMIS -> {
-                        val friendsResponse = withContext(Dispatchers.IO) {
-                            supabase.postgrest["amis"].select {
-                                filter {
-                                    or {
-                                        eq("demandeur_id", userId)
-                                        eq("destinataire_id", userId)
-                                    }
-                                }
-                            }
-                        }
-                        val friendIds = withContext(Dispatchers.Default) {
-                            val jsonArray = Json.parseToJsonElement(friendsResponse.data) as? JsonArray
-                            val ids = jsonArray?.mapNotNull { element ->
-                                val obj = element as? JsonObject ?: return@mapNotNull null
-                                val dem = obj["demandeur_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val dest = obj["destinataire_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val stat = obj["statut"]?.jsonPrimitive?.content ?: "en_attente"
-                                if (stat == "accepte") {
-                                    if (dem == userId) dest else dem
-                                } else null
-                            } ?: emptyList()
-                            ids + userId
-                        }
-
-                        val response = withContext(Dispatchers.IO) {
-                            supabase.postgrest["leaderboard"].select {
-                                filter {
-                                    isIn("id", friendIds)
-                                }
-                                order(sortByColumn, io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                            }
-                        }
-                        withContext(Dispatchers.Default) {
-                            val jsonArray = Json.parseToJsonElement(response.data) as? JsonArray
-                            jsonArray?.mapNotNull { element ->
-                                val obj = element as? JsonObject ?: return@mapNotNull null
-                                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur_${id.take(8)}"
-                                val tag = obj["tag"]?.jsonPrimitive?.contentOrNull
-                                val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                val pLat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
-                                val pLon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
-                                val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                val loopCount = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                val distTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                                val gNom = obj["guilde_nom"]?.jsonPrimitive?.contentOrNull
-                                val gColor = obj["guilde_couleur"]?.jsonPrimitive?.contentOrNull
-                                LeaderboardPlayer(id, pseudo, tag, color, pLat, pLon, areaM2, loopCount, distTotale, avatar, gNom, gColor)
-                            } ?: emptyList()
-                        }
-                    }
-                    SocialFilter.GLOBAL -> {
-                        val response = withContext(Dispatchers.IO) {
-                            supabase.postgrest["leaderboard"].select {
-                                order(sortByColumn, io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                            }
-                        }
-                        withContext(Dispatchers.Default) {
-                            val jsonArray = Json.parseToJsonElement(response.data) as? JsonArray
-                            jsonArray?.mapNotNull { element ->
-                                val obj = element as? JsonObject ?: return@mapNotNull null
-                                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur_${id.take(8)}"
-                                val tag = obj["tag"]?.jsonPrimitive?.contentOrNull
-                                val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                val pLat = obj["latitude"]?.jsonPrimitive?.doubleOrNull
-                                val pLon = obj["longitude"]?.jsonPrimitive?.doubleOrNull
-                                val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                val loopCount = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                val distTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                                val gNom = obj["guilde_nom"]?.jsonPrimitive?.contentOrNull
-                                val gColor = obj["guilde_couleur"]?.jsonPrimitive?.contentOrNull
-                                LeaderboardPlayer(id, pseudo, tag, color, pLat, pLon, areaM2, loopCount, distTotale, avatar, gNom, gColor)
-                            } ?: emptyList()
-                        }
-                    }
-                }
-
-                players = if (selectedSocialFilter == SocialFilter.LOCAL) {
-                    when (selectedMetric) {
-                        MetricFilter.TERRITOIRE -> fetchedPlayers.sortedByDescending { it.totalAreaM2 }
-                        MetricFilter.DISTANCE -> fetchedPlayers.sortedByDescending { it.distanceTotale }
-                        MetricFilter.BOUCLES -> fetchedPlayers.sortedByDescending { it.loopCount }
-                    }
-                } else {
-                    fetchedPlayers
-                }
-
-                // Fetch clans
-                val fetchedClans = when (selectedSocialFilter) {
-                    SocialFilter.LOCAL -> {
-                        val lat = userLatState
-                        val lon = userLonState
-                        if (lat != null && lon != null) {
-                            val params = buildJsonObject {
-                                put("user_lat", lat)
-                                put("user_lon", lon)
-                                put("max_dist_meters", 50000.0) // 50km
-                            }
-                            val response = withContext(Dispatchers.IO) {
-                                supabase.postgrest.rpc("get_local_clan_leaderboard", params)
-                            }
-                            withContext(Dispatchers.Default) {
-                                val jsonArray = Json.parseToJsonElement(response.data) as? JsonArray
-                                jsonArray?.mapNotNull { element ->
-                                    val obj = element as? JsonObject ?: return@mapNotNull null
-                                    val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                    val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
-                                    val tag = obj["tag"]?.jsonPrimitive?.contentOrNull
-                                    val color = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                    val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                                    val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                    val membreCount = obj["membre_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                    val loopCount = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                    val distTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                    LeaderboardClan(id, nom, tag, color, avatarUrl, areaM2, membreCount, loopCount, distTotale)
-                                } ?: emptyList()
-                            }
-                        } else {
-                            emptyList()
-                        }
-                    }
-                    SocialFilter.AMIS -> {
-                        val response = withContext(Dispatchers.IO) {
-                            supabase.postgrest["clan_leaderboard"].select {
-                                order(sortByColumn, io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                            }
-                        }
-                        val allClans = withContext(Dispatchers.Default) {
-                            val jsonArray = Json.parseToJsonElement(response.data) as? JsonArray
-                            jsonArray?.mapNotNull { element ->
-                                val obj = element as? JsonObject ?: return@mapNotNull null
-                                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
-                                val tag = obj["tag"]?.jsonPrimitive?.contentOrNull
-                                val color = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                                val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                val membreCount = obj["membre_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                val loopCount = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                val distTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                LeaderboardClan(id, nom, tag, color, avatarUrl, areaM2, membreCount, loopCount, distTotale)
-                            } ?: emptyList()
-                        }
-                        val friendClans = players.filter { it.id == userId || friendsStatusMap[it.id] == "accepte" }
-                            .mapNotNull { it.guildeNom }
-                            .toSet()
-                        allClans.filter { it.nom in friendClans }
-                    }
-                    SocialFilter.GLOBAL -> {
-                        val response = withContext(Dispatchers.IO) {
-                            supabase.postgrest["clan_leaderboard"].select {
-                                order(sortByColumn, io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                            }
-                        }
-                        withContext(Dispatchers.Default) {
-                            val jsonArray = Json.parseToJsonElement(response.data) as? JsonArray
-                            jsonArray?.mapNotNull { element ->
-                                val obj = element as? JsonObject ?: return@mapNotNull null
-                                val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
-                                val tag = obj["tag"]?.jsonPrimitive?.contentOrNull
-                                val color = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                  val avatarUrl = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
-                                val areaM2 = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                val membreCount = obj["membre_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                val loopCount = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
-                                val distTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                                LeaderboardClan(id, nom, tag, color, avatarUrl, areaM2, membreCount, loopCount, distTotale)
-                            } ?: emptyList()
-                        }
-                    }
-                }
-
-                clans = if (selectedSocialFilter == SocialFilter.LOCAL) {
-                    when (selectedMetric) {
-                        MetricFilter.TERRITOIRE -> fetchedClans.sortedByDescending { it.totalAreaM2 }
-                        MetricFilter.DISTANCE -> fetchedClans.sortedByDescending { it.distanceTotale }
-                        MetricFilter.BOUCLES -> fetchedClans.sortedByDescending { it.loopCount }
-                    }
-                } else {
-                    fetchedClans
-                }
-
-                // Fetch friendships
-                val friendsResponse = withContext(Dispatchers.IO) {
-                    supabase.postgrest["amis"].select {
-                        filter {
-                            or {
-                                eq("demandeur_id", userId)
-                                eq("destinataire_id", userId)
-                            }
-                        }
-                    }
-                }
-                val fetchedFriends = withContext(Dispatchers.Default) {
-                    val jsonArray = Json.parseToJsonElement(friendsResponse.data) as? JsonArray
-                    jsonArray?.mapNotNull { element ->
-                        val obj = element as? JsonObject ?: return@mapNotNull null
-                        val dem = obj["demandeur_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                        val dest = obj["destinataire_id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                        val stat = obj["statut"]?.jsonPrimitive?.content ?: "en_attente"
-                        val otherUser = if (dem == userId) dest else dem
-                        val mappedStatus = if (stat == "en_attente") {
-                            if (dem == userId) "en_attente_envoye" else "en_attente_recu"
-                        } else {
-                            stat
-                        }
-                        otherUser to mappedStatus
-                    }?.toMap() ?: emptyMap()
-                }
-
-                // Fetch guild invitations
-                val fetchedInvites = if (userGuildId != null) {
-                    val invitesResponse = withContext(Dispatchers.IO) {
-                        supabase.postgrest["guilde_invitations"].select {
-                            filter {
-                                eq("guilde_id", userGuildId)
-                                eq("statut", "en_attente")
-                            }
-                        }
-                    }
-                    withContext(Dispatchers.Default) {
-                        val jsonArray = Json.parseToJsonElement(invitesResponse.data) as? JsonArray
-                        jsonArray?.mapNotNull { element ->
-                            val obj = element as? JsonObject ?: return@mapNotNull null
-                            obj["destinataire_id"]?.jsonPrimitive?.content
-                        }?.toSet() ?: emptySet()
-                    }
-                } else {
-                    emptySet()
-                }
-
-                friendsStatusMap = fetchedFriends
-                sentGuildInvitationsSet = fetchedInvites
-            } catch (e: Exception) {
-                android.util.Log.e("Arpent", "Failed to fetch leaderboard data", e)
-            } finally {
-                isLoading = false
-            }
-        }
+    LaunchedEffect(userId, userGuildId) {
+        viewModel.init(userId, userGuildId)
     }
 
-    // Pre-fetch data once on composition entry (background warm-up) so the user
-    // doesn't see a spinner on first tab visit.
-    var hasPreFetched by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!hasPreFetched) {
-            hasPreFetched = true
-            loadLeaderboardData()
+    // When the screen becomes active or visible, refresh the data.
+    // It will show the cached/warmed data immediately and load updates silently in the background.
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            viewModel.loadLeaderboardData(forceRefresh = true)
         }
-    }
-
-    // Refresh when the tab becomes active or when filters change.
-    LaunchedEffect(isActive, selectedSocialFilter, selectedMetric, selectedTab) {
-        if (!isActive) return@LaunchedEffect
-        val filtersChanged = lastFilters.first != selectedSocialFilter ||
-                             lastFilters.second != selectedMetric ||
-                             lastFilters.third != selectedTab
-        lastFilters = Triple(selectedSocialFilter, selectedMetric, selectedTab)
-        val isListEmpty = if (selectedTab == 0) players.isEmpty() else clans.isEmpty()
-        if (isListEmpty || filtersChanged) {
-            isLoading = true
-        }
-        loadLeaderboardData()
     }
 
     fun sendFriendRequest(otherUserId: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val insertObj = buildJsonObject {
-                    put("demandeur_id", userId)
-                    put("destinataire_id", otherUserId)
-                    put("statut", "en_attente")
-                }
-                supabase.postgrest["amis"].insert(insertObj)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Demande d'ami envoyée.", Toast.LENGTH_SHORT).show()
-                }
-                loadLeaderboardData()
-            } catch (e: Exception) {
-                android.util.Log.e("Arpent", "Failed to send friend request", e)
+        viewModel.sendFriendRequest(otherUserId) { success ->
+            if (success) {
+                Toast.makeText(context, "Demande d'ami envoyée.", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     fun inviteToGuild(otherUserId: String) {
         if (userGuildId == null) return
-        scope.launch(Dispatchers.IO) {
-            try {
-                val insertObj = buildJsonObject {
-                    put("guilde_id", userGuildId)
-                    put("destinataire_id", otherUserId)
-                    put("statut", "en_attente")
-                }
-                supabase.postgrest["guilde_invitations"].insert(insertObj)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Invitation au clan envoyée.", Toast.LENGTH_SHORT).show()
-                }
-                loadLeaderboardData()
-            } catch (e: Exception) {
-                android.util.Log.e("Arpent", "Failed to invite to guild", e)
+        viewModel.inviteToGuild(otherUserId) { success ->
+            if (success) {
+                Toast.makeText(context, "Invitation au clan envoyée.", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -701,7 +354,7 @@ fun LeaderboardScreen(
                 CapsuleTabSelector(
                     tabs = listOf("JOUEURS", "CLANS"),
                     selectedTabIndex = selectedTab,
-                    onTabSelected = { selectedTab = it },
+                    onTabSelected = { viewModel.selectTab(it) },
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
@@ -725,7 +378,7 @@ fun LeaderboardScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(bgColor)
-                                .clickable { selectedSocialFilter = filter }
+                                .clickable { viewModel.selectSocialFilter(filter) }
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
                             Text(
@@ -761,7 +414,7 @@ fun LeaderboardScreen(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(bgColor)
                                 .border(borderStroke, RoundedCornerShape(8.dp))
-                                .clickable { selectedMetric = metric }
+                                .clickable { viewModel.selectMetric(metric) }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {

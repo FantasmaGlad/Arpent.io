@@ -68,6 +68,7 @@ data class FeedCourseItem(
     val superficieConquise: Double,
     val totalSteps: Int,
     val averageCadence: Int,
+    val imageUrl: String? = null,
     val pointsGps: List<GPSPoint>,
     val reactions: List<CourseReaction>,
     val commentaires: List<CourseCommentaire>

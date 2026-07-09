@@ -221,8 +221,8 @@ export default function StatsPage() {
           display: 'flex', 
           alignItems: 'center', 
           gap: '12px', 
-          background: 'rgba(204, 255, 0, 0.03)', 
-          border: '1px solid rgba(204, 255, 0, 0.1)', 
+          background: 'var(--primary-green-subtle)', 
+          border: '1px solid rgba(46, 111, 64, 0.2)', 
           padding: '8px 16px', 
           borderRadius: '6px' 
         }}>
@@ -245,7 +245,7 @@ export default function StatsPage() {
           <div style={{
             padding: '12px',
             borderRadius: '8px',
-            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            backgroundColor: 'var(--bg-dark)',
             color: 'var(--text-white)'
           }}>
             <Users size={24} />
@@ -275,7 +275,7 @@ export default function StatsPage() {
           <div style={{
             padding: '12px',
             borderRadius: '8px',
-            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            backgroundColor: 'var(--bg-dark)',
             color: 'var(--text-white)'
           }}>
             <MapIcon size={24} />
@@ -314,11 +314,11 @@ export default function StatsPage() {
               <Zap size={20} style={{ color: 'var(--primary-green)' }} /> Statistiques Analytiques
             </h3>
             
-            <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px' }}>
+            <div style={{ display: 'flex', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px' }}>
               <button 
                 onClick={() => setActiveChartTab('users')} 
                 style={{
-                  background: activeChartTab === 'users' ? 'rgba(204, 255, 0, 0.1)' : 'none',
+                  background: activeChartTab === 'users' ? 'rgba(46, 111, 64, 0.1)' : 'none',
                   border: 'none',
                   color: activeChartTab === 'users' ? 'var(--primary-green)' : 'var(--text-muted)',
                   padding: '6px 12px',
@@ -335,7 +335,7 @@ export default function StatsPage() {
               <button 
                 onClick={() => setActiveChartTab('activity')} 
                 style={{
-                  background: activeChartTab === 'activity' ? 'rgba(204, 255, 0, 0.1)' : 'none',
+                  background: activeChartTab === 'activity' ? 'rgba(46, 111, 64, 0.1)' : 'none',
                   border: 'none',
                   color: activeChartTab === 'activity' ? 'var(--primary-green)' : 'var(--text-muted)',
                   padding: '6px 12px',
@@ -357,12 +357,12 @@ export default function StatsPage() {
               <ResponsiveContainer width="100%" height={300}>
                 {activeChartTab === 'users' ? (
                   <BarChart data={topUsersData} margin={{ top: 20, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                     <XAxis dataKey="name" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                     <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} unit=" km²" />
                     <Tooltip 
                       contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                      labelStyle={{ color: '#FFFFFF', fontWeight: 'bold' }}
+                      labelStyle={{ color: 'var(--text-white)', fontWeight: 'bold' }}
                     />
                     <Bar dataKey="area" radius={[4, 4, 0, 0]}>
                       {topUsersData.map((entry: any, index: number) => (
@@ -378,12 +378,12 @@ export default function StatsPage() {
                         <stop offset="95%" stopColor="var(--primary-green)" stopOpacity={0.0}/>
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                     <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
                     <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} unit=" km" />
                     <Tooltip 
                       contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                      labelStyle={{ color: '#FFFFFF', fontWeight: 'bold' }}
+                      labelStyle={{ color: 'var(--text-white)', fontWeight: 'bold' }}
                     />
                     <Area type="monotone" dataKey="distance" stroke="var(--primary-green)" strokeWidth={2} fillOpacity={1} fill="url(#colorDist)" />
                   </AreaChart>
@@ -422,7 +422,7 @@ export default function StatsPage() {
                   <div 
                     key={item.id}
                     style={{
-                      background: 'rgba(255, 255, 255, 0.01)',
+                      background: 'var(--bg-dark)',
                       border: '1px solid var(--border-color)',
                       borderRadius: '8px',
                       padding: '10px 14px',

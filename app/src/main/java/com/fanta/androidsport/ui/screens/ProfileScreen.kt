@@ -106,6 +106,11 @@ fun ProfileScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var selectedTabIndex by remember { mutableStateOf(0) }
 
+    val currentLevelXpStart = remember(level) { getCumulativeXpForLevel(level) }
+    val nextLevelXpStart = remember(level) { getCumulativeXpForLevel(level + 1) }
+    val xpInCurrentLevel = remember(xp, currentLevelXpStart) { (xp - currentLevelXpStart).coerceAtLeast(0) }
+    val xpNeededForNextLevel = remember(currentLevelXpStart, nextLevelXpStart) { nextLevelXpStart - currentLevelXpStart }
+
     LaunchedEffect(shareLocationEnabled) {
         if (shareLocationEnabled == userShareLocation) return@LaunchedEffect
         delay(300) // debounce update
@@ -533,7 +538,7 @@ fun ProfileScreen(
                                         )
                                     }
                                     Text(
-                                        text = "$xp / 100 XP",
+                                        text = "$xpInCurrentLevel / $xpNeededForNextLevel XP",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.SemiBold,
                                         color = textSecondary
@@ -541,7 +546,7 @@ fun ProfileScreen(
                                 }
                                 Spacer(modifier = Modifier.height(10.dp))
                                 LinearProgressIndicator(
-                                    progress = { xp.toFloat() / 100f },
+                                    progress = { if (xpNeededForNextLevel > 0) xpInCurrentLevel.toFloat() / xpNeededForNextLevel.toFloat() else 0f },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(8.dp)
@@ -1079,5 +1084,16 @@ fun StatCard(
             )
         }
     }
+}
+
+private fun getCumulativeXpForLevel(level: Int): Int {
+    if (level <= 1) return 0
+    var sum = 0.0
+    var currentStep = 100.0
+    for (i in 1 until level) {
+        sum += currentStep
+        currentStep *= 1.15
+    }
+    return sum.toInt()
 }
 

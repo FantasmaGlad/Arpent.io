@@ -23,11 +23,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.filled.AddComment
+import androidx.compose.material.icons.filled.Comment
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -165,6 +171,7 @@ fun CoursesScreen(
                         val superficieConquise = obj["superficie_conquise"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                         val totalSteps = obj["total_steps"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
                         val averageCadence = obj["average_cadence"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+                        val imageUrl = obj["image_url"]?.jsonPrimitive?.contentOrNull
 
                         val ptsArray = obj["points_gps"] as? kotlinx.serialization.json.JsonArray
                         val points = ptsArray?.mapNotNull { ptElem ->
@@ -223,6 +230,7 @@ fun CoursesScreen(
                             superficieConquise = superficieConquise,
                             totalSteps = totalSteps,
                             averageCadence = averageCadence,
+                            imageUrl = imageUrl,
                             pointsGps = points,
                             reactions = reactions,
                             commentaires = commentaires
@@ -359,16 +367,7 @@ fun CoursesScreen(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text(
-                    text = "FEED DES CONQUÊTES",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 12.sp,
-                        letterSpacing = 1.5.sp,
-                        color = BrandGreen
-                    ),
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
+
 
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -506,7 +505,6 @@ fun FeedCourseCard(
     onSendFriendRequest: () -> Unit
 ) {
     val userReactionBaamix = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" }
-    val baamixCount = course.reactions.count { it.type_reaction == "baamix" }
 
     val fallbackColor = BrandGreen
     val parsedEmpireColor = try {
@@ -515,353 +513,408 @@ fun FeedCourseCard(
         fallbackColor
     }
 
-    val parsedGuildColor = try {
-        Color(android.graphics.Color.parseColor(course.guildeCouleur ?: "#1E1E1E"))
-    } catch (_: Exception) {
-        Color(0xFF1E1E1E)
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Color(0xFFE5E5EA))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 24.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        // 1. The Main Premium Black Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black)
         ) {
-            // Header: User Info & Friend button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 28.dp)
             ) {
-                AvatarImage(
-                    avatarUrl = course.avatarUrl,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .border(1.5.dp, parsedEmpireColor, CircleShape)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = course.pseudonyme,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color(0xFF1E1E1E)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(parsedEmpireColor.copy(alpha = 0.1f))
-                                .padding(horizontal = 5.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = "Niveau ${course.level}",
-                                color = parsedEmpireColor,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    if (!course.guildeNom.isNullOrEmpty()) {
-                        Text(
-                            text = "Clan: ${course.guildeNom}",
-                            color = parsedGuildColor.copy(alpha = 0.8f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                // Friend invitation button
-                if (course.utilisateurId != currentUserId) {
-                    val buttonText = when (friendStatus) {
-                        "accepte" -> "Ami"
-                        "en_attente_envoye" -> "En attente"
-                        "en_attente_recu" -> "Répondre"
-                        else -> "+ Ami"
-                    }
-                    val buttonColor = when (friendStatus) {
-                        "accepte" -> BrandGreen
-                        "en_attente_envoye" -> Color.Gray
-                        "en_attente_recu" -> BrandGreen
-                        else -> BrandGreen
-                    }
-                    val isClickable = friendStatus == null
-
+                // Header: User Info & Friend button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (friendStatus == "accepte" || friendStatus == "en_attente_envoye") Color.Transparent else buttonColor)
-                            .border(
-                                1.dp,
-                                if (friendStatus == "en_attente_envoye") Color.Gray else BrandGreen,
-                                RoundedCornerShape(20.dp)
-                            )
-                            .clickable(enabled = isClickable) {
-                                onSendFriendRequest()
-                            }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .size(40.dp)
+                            .background(Color.White, CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = buttonText,
-                            color = if (friendStatus == "accepte" || friendStatus == "en_attente_envoye") buttonColor else Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                        AvatarImage(
+                            avatarUrl = course.avatarUrl,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
 
-                if (course.utilisateurId == currentUserId) {
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Supprimer la course",
-                            tint = Color.Red.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
+                    Spacer(modifier = Modifier.width(12.dp))
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Run Name and Legend
-            Text(
-                text = course.nom ?: "Course Arpent.io",
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp,
-                color = Color(0xFF1E1E1E)
-            )
-            val formattedDate = remember(course.dateDebut) {
-                try {
-                    val instant = java.time.Instant.parse(course.dateDebut)
-                    val formatter = java.time.format.DateTimeFormatter
-                        .ofPattern("dd MMMM yyyy à HH:mm")
-                        .withZone(java.time.ZoneId.systemDefault())
-                    formatter.format(instant)
-                } catch (_: Exception) {
-                    course.dateDebut
-                }
-            }
-            Text(
-                text = formattedDate,
-                fontSize = 11.sp,
-                color = Color(0xFF6E6E73)
-            )
-
-            if (!course.legende.isNullOrEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFF4F5F7), shape = RoundedCornerShape(8.dp))
-                        .padding(10.dp)
-                ) {
-                    Text(
-                        text = "« ${course.legende} »",
-                        fontSize = 13.sp,
-                        fontStyle = FontStyle.Italic,
-                        color = Color(0xFF1E1E1E)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Metrics Grid
-            SimpleFlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalGap = 16.dp,
-                verticalGap = 12.dp
-            ) {
-                MetricWidget(label = "Distance", value = "%.2f km".format(course.distanceTotale))
-                val min = (course.dureeSecondes / 60).toInt()
-                val sec = (course.dureeSecondes % 60).toInt()
-                MetricWidget(label = "Durée", value = "%dm %02ds".format(min, sec))
-                
-                val allureMin = course.allureMoyenne.toInt()
-                val allureSec = ((course.allureMoyenne - allureMin) * 60).toInt()
-                val allureStr = if (course.allureMoyenne > 0) "%d:%02d /km".format(allureMin, allureSec) else "--:--"
-                MetricWidget(label = "Allure", value = allureStr)
-
-                if (course.denivelePositif > 0) {
-                    MetricWidget(label = "Dénivelé", value = "+${course.denivelePositif.toInt()}m")
-                }
-                if (course.totalSteps > 0) {
-                    MetricWidget(label = "Cadence Moy.", value = "${course.averageCadence} ppm")
-                    MetricWidget(label = "Pas", value = "${course.totalSteps} pas")
-                }
-                MetricWidget(label = "Calories", value = "${course.caloriesEstimees.toInt()} kcal")
-                if (course.estBouclee && course.superficieConquise > 0) {
-                    MetricWidget(label = "Territoire", value = "+${"%.3f".format(course.superficieConquise / 1e6)} km²")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Canvas GPS Track preview
-            if (course.pointsGps.isNotEmpty()) {
-                RoutePreviewCanvas(
-                    points = course.pointsGps,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onViewDetails() }
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Reactions / Action buttons Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Baamix reaction button
-                val isLiked = userReactionBaamix != null
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isLiked) BrandGreen.copy(alpha = 0.1f) else Color(0xFFF4F5F7))
-                        .border(
-                            1.dp,
-                            if (isLiked) BrandGreen else Color(0xFFE5E5EA),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { onReact("baamix", userReactionBaamix) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_baamix),
-                            contentDescription = "Baamix",
-                            modifier = Modifier.size(20.dp),
-                            tint = Color.Unspecified
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Baamix",
-                            color = if (isLiked) BrandGreen else Color(0xFF1E1E1E),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = baamixCount.toString(),
-                            color = if (isLiked) BrandGreen else Color(0xFF6E6E73),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onToggleComments) {
-                        Text(
-                            text = if (course.commentaires.isEmpty()) "Commenter" else "Commentaires (${course.commentaires.size})",
-                            color = BrandGreen,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(onClick = onViewDetails) {
-                        Icon(
-                            imageVector = Icons.Default.Visibility,
-                            contentDescription = "Voir détails",
-                            tint = Color(0xFF6E6E73)
-                        )
-                    }
-                }
-            }
-
-            // Expandable Comments section
-            if (showComments) {
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = Color(0xFFE5E5EA))
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // List comments
-                course.commentaires.forEach { comment ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = comment.pseudonyme,
+                                text = course.pseudonyme,
                                 fontWeight = FontWeight.Bold,
-                                color = BrandGreen,
-                                fontSize = 12.sp
+                                fontSize = 15.sp,
+                                color = Color.White
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val commentDate = try {
-                                val instant = java.time.Instant.parse(comment.date_creation)
-                                val formatter = java.time.format.DateTimeFormatter
-                                    .ofPattern("dd MMM à HH:mm")
-                                    .withZone(java.time.ZoneId.systemDefault())
-                                formatter.format(instant)
-                            } catch (_: Exception) {
-                                comment.date_creation
+                            if (course.utilisateurId != currentUserId) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val isFriend = friendStatus == "accepte"
+                                val text = when (friendStatus) {
+                                    "accepte" -> "Ami"
+                                    "en_attente_envoye" -> "Invité"
+                                    "en_attente_recu" -> "Répondre"
+                                    else -> "+ Ami"
+                                }
+                                Text(
+                                    text = "• $text",
+                                    color = if (isFriend) BrandGreen else Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.clickable(enabled = friendStatus == null) {
+                                        onSendFriendRequest()
+                                    }
+                                )
                             }
+                        }
+                        if (!course.guildeNom.isNullOrEmpty()) {
                             Text(
-                                text = commentDate,
-                                color = Color(0xFF6E6E73),
-                                fontSize = 10.sp
+                                text = course.guildeNom,
+                                color = Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Normal
                             )
                         }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = comment.contenu,
-                            color = Color(0xFF1E1E1E),
+                            text = "Niveau ${course.level}",
+                            color = Color.White,
                             fontSize = 13.sp,
-                            modifier = Modifier.padding(top = 2.dp)
+                            fontWeight = FontWeight.Medium
                         )
+                        if (course.utilisateurId == currentUserId) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(onClick = onDelete) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Supprimer la course",
+                                    tint = Color.Red.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
-                // Add comment input
+                // Two-column Content Layout
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    OutlinedTextField(
-                        value = newCommentText,
-                        onValueChange = onCommentTextChange,
-                        placeholder = { Text("Votre commentaire...", fontSize = 12.sp) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BrandGreen,
-                            focusedTextColor = Color(0xFF1E1E1E),
-                            unfocusedTextColor = Color(0xFF1E1E1E),
-                            cursorColor = BrandGreen,
-                            unfocusedBorderColor = Color(0xFFE5E5EA)
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = onSendComment,
-                        enabled = newCommentText.isNotBlank()
+                    // LEFT COLUMN
+                    Column(
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Envoyer",
-                            tint = if (newCommentText.isNotBlank()) BrandGreen else Color.Gray
+                        // Image Card
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .background(Color.White, shape = RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!course.imageUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = course.imageUrl,
+                                    contentDescription = "Image de la course",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.DirectionsRun,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Arpent.io",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontStyle = FontStyle.Italic
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Description Card
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp)
+                                .background(Color.White, shape = RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(16.dp))
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val desc = course.legende ?: course.nom ?: "Course sans description"
+                            Text(
+                                text = desc,
+                                color = Color.Black,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Action Buttons Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val isLiked = userReactionBaamix != null
+                            // Like Heart Button
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(36.dp)
+                                    .background(Color.White, shape = RoundedCornerShape(50))
+                                    .clickable { onReact("baamix", userReactionBaamix) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = "Like",
+                                    tint = if (isLiked) Color.Red else Color.Black,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Add Comment Button
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(36.dp)
+                                    .background(Color.White, shape = RoundedCornerShape(50))
+                                    .clickable { onToggleComments() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddComment,
+                                    contentDescription = "Commenter",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // RIGHT COLUMN
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // Statistics Block
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Distance
+                            Text(
+                                text = "%.2f km".format(course.distanceTotale),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            // Duration
+                            val min = (course.dureeSecondes / 60).toInt()
+                            val sec = (course.dureeSecondes % 60).toInt()
+                            Text(
+                                text = "%d min %02d sec".format(min, sec),
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            // Pace
+                            val allureMin = course.allureMoyenne.toInt()
+                            val allureSec = ((course.allureMoyenne - allureMin) * 60).toInt()
+                            val allureStr = if (course.allureMoyenne > 0) "%d:%02d minutes : km".format(allureMin, allureSec) else "--:-- minutes : km"
+                            Text(
+                                text = allureStr,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            // Elevation
+                            Text(
+                                text = "+ ${course.denivelePositif.toInt()} m d +",
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            // Area
+                            val areaKm2 = course.superficieConquise / 1e6
+                            Text(
+                                text = "+ %.3f km2".format(areaKm2),
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // GPS Track Map Preview Card
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .background(Color.White, shape = RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onViewDetails() }
+                        ) {
+                            if (course.pointsGps.isNotEmpty()) {
+                                RoutePreviewCanvas(
+                                    points = course.pointsGps,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Aucun tracé",
+                                        color = Color.Gray,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Expandable Comments section inside the black card
+                if (showComments) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Color.DarkGray)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // List comments
+                    if (course.commentaires.isEmpty()) {
+                        Text(
+                            text = "Aucun commentaire pour le moment.",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
+                    } else {
+                        course.commentaires.forEach { comment ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = comment.pseudonyme,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BrandGreen,
+                                        fontSize = 12.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    val commentDate = try {
+                                        val instant = java.time.Instant.parse(comment.date_creation)
+                                        val formatter = java.time.format.DateTimeFormatter
+                                            .ofPattern("dd MMM à HH:mm")
+                                            .withZone(java.time.ZoneId.systemDefault())
+                                        formatter.format(instant)
+                                    } catch (_: Exception) {
+                                        comment.date_creation
+                                    }
+                                    Text(
+                                        text = commentDate,
+                                        color = Color.Gray,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                Text(
+                                    text = comment.contenu,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Add comment input
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newCommentText,
+                            onValueChange = onCommentTextChange,
+                            placeholder = { Text("Votre commentaire...", fontSize = 12.sp, color = Color.Gray) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BrandGreen,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = BrandGreen,
+                                unfocusedBorderColor = Color.DarkGray,
+                                focusedContainerColor = Color(0xFF1A1A1A),
+                                unfocusedContainerColor = Color(0xFF1A1A1A)
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = onSendComment,
+                            enabled = newCommentText.isNotBlank()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Envoyer",
+                                tint = if (newCommentText.isNotBlank()) BrandGreen else Color.Gray
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        // 2. The Protruding Comments Button
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(y = 16.dp)
+                .size(width = 60.dp, height = 32.dp)
+                .background(Color.Black, shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                .clickable { onToggleComments() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Comment,
+                contentDescription = "Commentaires",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

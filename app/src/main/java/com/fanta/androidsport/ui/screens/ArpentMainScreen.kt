@@ -73,6 +73,9 @@ fun ArpentMainScreen(userId: String) {
     var userGuildCouleur by remember { mutableStateOf<String?>(null) }
     var mapTargetPosition by remember { mutableStateOf<Point?>(null) }
     var userStreak by remember { mutableStateOf(0) }
+    var userChange24hPct by remember { mutableStateOf(0.0) }
+    var clanAreaKm2 by remember { mutableStateOf(0.0) }
+    var clanChange24hPct by remember { mutableStateOf(0.0) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
 
@@ -103,10 +106,22 @@ fun ArpentMainScreen(userId: String) {
                         null
                     }
                 }
+                val empireStatsDeferred = async {
+                    try {
+                        val params = kotlinx.serialization.json.buildJsonObject {
+                            put("p_user_id", kotlinx.serialization.json.JsonPrimitive(userId))
+                        }
+                        supabase.postgrest.rpc("get_empire_stats", params)
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to fetch empire stats", e)
+                        null
+                    }
+                }
 
                 val profileRes = profileDeferred.await()
                 val coursesRes = coursesDeferred.await()
                 val streakRes = streakDeferred.await()
+                val empireStatsRes = empireStatsDeferred.await()
 
                 val streak = if (streakRes != null) {
                     try {
@@ -164,6 +179,22 @@ fun ArpentMainScreen(userId: String) {
                         totalDist += obj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
                     }
 
+                    var userChange24h = 0.0
+                    var clanArea = 0.0
+                    var clanChange24h = 0.0
+                    if (empireStatsRes != null) {
+                        try {
+                            val statsArray = Json.parseToJsonElement(empireStatsRes.data) as? JsonArray
+                            val statsObj = statsArray?.firstOrNull() as? JsonObject
+                            userChange24h = statsObj?.get("user_change_24h_pct")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                            val clanAreaM2 = statsObj?.get("clan_current_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                            clanArea = clanAreaM2 / 1_000_000.0
+                            clanChange24h = statsObj?.get("clan_change_24h_pct")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                        } catch (e: Exception) {
+                            android.util.Log.e("Arpent", "Failed to parse empire stats", e)
+                        }
+                    }
+
                     mapOf(
                         "pseudo" to pseudo,
                         "color" to color,
@@ -176,7 +207,10 @@ fun ArpentMainScreen(userId: String) {
                         "loopCount" to loopCount,
                         "maxLoopDistanceKm" to maxLoopDistanceKm,
                         "maxAreaM2" to maxAreaM2,
-                        "areaLostM2" to areaLostM2
+                        "areaLostM2" to areaLostM2,
+                        "userChange24h" to userChange24h,
+                        "clanArea" to clanArea,
+                        "clanChange24h" to clanChange24h
                     )
                 }
 
@@ -198,6 +232,9 @@ fun ArpentMainScreen(userId: String) {
                     userGuildNom = gNom
                     userGuildCouleur = gColor
                     userStreak = streak
+                    userChange24hPct = parsed["userChange24h"] as Double
+                    clanAreaKm2 = parsed["clanArea"] as Double
+                    clanChange24hPct = parsed["clanChange24h"] as Double
                 }
             } catch (e: Exception) {
                 android.util.Log.e("Arpent", "Error fetching stats", e)
@@ -359,7 +396,10 @@ fun ArpentMainScreen(userId: String) {
                         mapTargetPosition = mapTargetPosition,
                         onMapTargetPositionHandled = { mapTargetPosition = null },
                         onRunSaved = { refreshStats() },
-                        bottomPadding = mapBottomPadding
+                        bottomPadding = mapBottomPadding,
+                        userChange24hPct = userChange24hPct,
+                        clanAreaKm2 = clanAreaKm2,
+                        clanChange24hPct = clanChange24hPct
                     )
                 }
 

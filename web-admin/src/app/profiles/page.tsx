@@ -118,7 +118,7 @@ export default function ProfilesPage() {
 
   // Edit fields
   const [newPseudonyme, setNewPseudonyme] = useState('');
-  const [newEmpireColor, setNewEmpireColor] = useState('#00875A');
+  const [newEmpireColor, setNewEmpireColor] = useState('#2E6F40');
   const [newGhostMode, setNewGhostMode] = useState(false);
   
   const [actionLoading, setActionLoading] = useState(false);
@@ -285,7 +285,7 @@ export default function ProfilesPage() {
 
     fetchDetails();
     setNewPseudonyme(selectedProfile.pseudonyme || '');
-    setNewEmpireColor(selectedProfile.empire_color || '#00875A');
+    setNewEmpireColor(selectedProfile.empire_color || '#2E6F40');
     setNewGhostMode(selectedProfile.ghost_mode || false);
     setActiveTab('apercu');
     setMinDistance(0);
@@ -549,10 +549,21 @@ export default function ProfilesPage() {
   };
 
   // XP progression calculation helper
+  const getCumulativeXpForLevel = (l: number) => {
+    if (l <= 1) return 0;
+    let sum = 0;
+    let currentStep = 100;
+    for (let i = 1; i < l; i++) {
+      sum += currentStep;
+      currentStep *= 1.15;
+    }
+    return Math.floor(sum);
+  };
+
   const getXpProgress = (xpValue: number, levelValue: number) => {
-    const minCurrent = Math.pow(levelValue - 1, 2) * 250;
-    const minNext = Math.pow(levelValue, 2) * 250;
-    const progress = xpValue - minCurrent;
+    const minCurrent = getCumulativeXpForLevel(levelValue);
+    const minNext = getCumulativeXpForLevel(levelValue + 1);
+    const progress = Math.max(0, xpValue - minCurrent);
     const target = minNext - minCurrent;
     const percent = Math.min(100, Math.max(0, (progress / target) * 100));
     return {
@@ -667,7 +678,7 @@ export default function ProfilesPage() {
                 <tbody>
                   {profiles.map((p) => {
                     const guild = guilds.find(g => g.id === p.guilde_id);
-                    const color = p.empire_color || '#00875A';
+                    const color = p.empire_color || '#2E6F40';
                     return (
                       <tr key={p.id}>
                         <td>
@@ -799,11 +810,11 @@ export default function ProfilesPage() {
             maxWidth: '800px',
             padding: '0',
             overflow: 'hidden',
-            backgroundColor: '#07090C'
+            backgroundColor: 'var(--card-bg)'
           }}>
             {/* Strava Premium Banner Header */}
             <div style={{
-              background: 'linear-gradient(180deg, #10151E 0%, #0A0D14 100%)',
+              background: 'linear-gradient(180deg, var(--bg-dark) 0%, var(--card-bg) 100%)',
               padding: '28px',
               borderBottom: '1px solid var(--border-color)',
               display: 'flex',
@@ -822,7 +833,7 @@ export default function ProfilesPage() {
                       </div>
                     )}
                     {selectedProfile.ghost_mode && (
-                      <span style={{ position: 'absolute', bottom: '0px', right: '0px', background: '#000000', borderRadius: '50%', padding: '4px', fontSize: '1.1rem', border: '2px solid var(--primary-green)' }} title="Invisible (Mode Fantôme)">👻</span>
+                      <span style={{ position: 'absolute', bottom: '0px', right: '0px', background: 'var(--card-bg)', borderRadius: '50%', padding: '4px', fontSize: '1.1rem', border: '2px solid var(--primary-green)' }} title="Invisible (Mode Fantôme)">👻</span>
                     )}
                   </div>
                   <div>
@@ -865,7 +876,7 @@ export default function ProfilesPage() {
                     top: '20px',
                     right: '20px'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#FFFFFF'}
+                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-white)'}
                   onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
                 >
                   <X size={18} />
@@ -955,7 +966,7 @@ export default function ProfilesPage() {
                     
                     {/* Activity Streak Widget */}
                     <div style={{ 
-                      background: 'rgba(255,255,255,0.01)', 
+                      background: 'var(--bg-dark)', 
                       padding: '20px', 
                       borderRadius: '8px', 
                       border: '1px solid var(--border-color)',
@@ -993,7 +1004,7 @@ export default function ProfilesPage() {
 
                     {/* Empire custom color & status info */}
                     <div style={{ 
-                      background: 'rgba(255,255,255,0.01)', 
+                      background: 'var(--bg-dark)', 
                       padding: '20px', 
                       borderRadius: '8px', 
                       border: '1px solid var(--border-color)',
@@ -1005,8 +1016,8 @@ export default function ProfilesPage() {
                       <div>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Empire / Couleur</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
-                          <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: selectedProfile.empire_color || 'var(--primary-green)', border: '1px solid rgba(255,255,255,0.2)' }} />
-                          <span style={{ fontSize: '0.9rem', fontFamily: 'monospace', color: 'var(--text-white)', fontWeight: 'bold' }}>{selectedProfile.empire_color || '#00875A'}</span>
+                          <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: selectedProfile.empire_color || 'var(--primary-green)', border: '1px solid var(--border-color)' }} />
+                          <span style={{ fontSize: '0.9rem', fontFamily: 'monospace', color: 'var(--text-white)', fontWeight: 'bold' }}>{selectedProfile.empire_color || '#2E6F40'}</span>
                         </div>
                       </div>
 
@@ -1021,7 +1032,7 @@ export default function ProfilesPage() {
 
                   {/* GPS Coordinates & Map Centering Block */}
                   <div style={{ 
-                    background: 'rgba(255, 255, 255, 0.01)', 
+                    background: 'var(--bg-dark)', 
                     padding: '20px', 
                     borderRadius: '8px', 
                     border: '1px solid var(--border-color)',
@@ -1065,7 +1076,7 @@ export default function ProfilesPage() {
                   {/* Performance stats cards grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     
-                    <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Contrôlée Actuelle</span>
                       <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '6px' }}>
                         {(selectedProfile.total_area_m2).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m²
@@ -1075,7 +1086,7 @@ export default function ProfilesPage() {
                       </p>
                     </div>
 
-                    <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Maximale Historique</span>
                       <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '6px' }}>
                         {(selectedProfile.max_area_m2 || selectedProfile.total_area_m2 || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m²
@@ -1085,7 +1096,7 @@ export default function ProfilesPage() {
                       </p>
                     </div>
 
-                    <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Cumulée Conquise (All-Time)</span>
                       <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '6px' }}>
                         {(selectedProfile.all_time_area_m2 || selectedProfile.total_area_m2 || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m²
@@ -1095,7 +1106,7 @@ export default function ProfilesPage() {
                       </p>
                     </div>
 
-                    <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Perdue au profit des rivaux</span>
                       <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#FF4B4B', marginTop: '6px' }}>
                         {(selectedProfile.area_lost_m2 || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m²
@@ -1107,7 +1118,7 @@ export default function ProfilesPage() {
                   </div>
 
                   {/* Conquest Yield analysis */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ background: 'var(--bg-dark)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                       <TrendingUp size={18} style={{ color: 'var(--primary-green)' }} />
                       <h4 style={{ fontSize: '0.9rem', color: 'var(--text-white)', fontWeight: 700 }}>
@@ -1132,27 +1143,27 @@ export default function ProfilesPage() {
                   <div>
                     <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Statistiques d'Activité Cumulées</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Courses Totales</span>
                         <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{totalRuns}</p>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Distance</span>
                         <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{totalDistanceKm.toFixed(2)} km</p>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Temps Cumulé</span>
                         <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '2px' }}>{formatDurationText(totalDurationSec)}</p>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vitesse Moyenne</span>
                         <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{avgSpeed.toFixed(1)} km/h</p>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dénivelé Cumulé</span>
                         <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '2px' }}>+{Math.round(totalElevationPos)}m</p>
                       </div>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Calories</span>
                         <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px' }}>{Math.round(totalCalories)} kcal</p>
                       </div>
@@ -1160,7 +1171,7 @@ export default function ProfilesPage() {
                   </div>
 
                   {/* Loop Conquest Statistics (Strava style) */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
+                  <div style={{ background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
                     <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Métriques de Boucle</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       <div>
@@ -1182,7 +1193,7 @@ export default function ProfilesPage() {
                   <div>
                     <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Volumes Glissants</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Sur les 7 derniers jours</span>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
                           <div>
@@ -1196,7 +1207,7 @@ export default function ProfilesPage() {
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Sur les 30 derniers jours</span>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
                           <div>
@@ -1215,12 +1226,12 @@ export default function ProfilesPage() {
                   {/* Graphic Performance */}
                   <div>
                     <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Graphique d'Évolution (Distance & Temps)</h4>
-                    <div className="glass-card" style={{ padding: '16px', background: 'rgba(255, 255, 255, 0.01)', borderRadius: '8px', minHeight: '220px' }}>
+                    <div className="glass-card" style={{ padding: '16px', background: 'var(--bg-dark)', borderRadius: '8px', minHeight: '220px' }}>
                       {mounted && chartData.length > 0 ? (
                         <div style={{ width: '100%', height: 220 }}>
-                          <ResponsiveContainer width="100%" height="100%">
+                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={chartData} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                               <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                               <YAxis yAxisId="left" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} unit=" km" />
                               <YAxis yAxisId="right" orientation="right" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} unit=" min" />
@@ -1246,7 +1257,7 @@ export default function ProfilesPage() {
                     border: '1px solid var(--border-color)', 
                     borderRadius: '6px', 
                     padding: '12px 16px', 
-                    background: 'rgba(255, 255, 255, 0.01)',
+                    background: 'var(--bg-dark)',
                     display: 'grid',
                     gridTemplateColumns: '1fr 1fr',
                     gap: '16px'
@@ -1300,7 +1311,7 @@ export default function ProfilesPage() {
                             <div 
                               key={c.id}
                               style={{
-                                background: 'rgba(255, 255, 255, 0.01)',
+                                background: 'var(--bg-dark)',
                                 border: '1px solid var(--border-color)',
                                 borderRadius: '8px',
                                 padding: '14px 16px',
@@ -1391,7 +1402,7 @@ export default function ProfilesPage() {
                         const guild = guilds.find(g => g.id === selectedProfile.guilde_id);
                         return (
                           <div style={{ 
-                            background: 'rgba(255,255,255,0.01)', 
+                            background: 'var(--bg-dark)', 
                             border: '1px solid var(--border-color)', 
                             borderRadius: '8px', 
                             padding: '16px',
@@ -1437,7 +1448,7 @@ export default function ProfilesPage() {
                           <div 
                             key={f.id}
                             style={{
-                              background: 'rgba(255, 255, 255, 0.01)',
+                              background: 'var(--bg-dark)',
                               border: '1px solid var(--border-color)',
                               borderRadius: '8px',
                               padding: '12px',
@@ -1479,7 +1490,7 @@ export default function ProfilesPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   
                   {/* Account Moderation Edit Fields */}
-                  <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <h4 style={{ fontSize: '0.9rem', color: 'var(--text-white)', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
                       Modification du Profil
                     </h4>
@@ -1511,14 +1522,14 @@ export default function ProfilesPage() {
                           className="input-field"
                           value={newEmpireColor}
                           onChange={(e) => setNewEmpireColor(e.target.value)}
-                          placeholder="#00875A"
+                          placeholder="#2E6F40"
                           style={{ flexGrow: 1 }}
                         />
                       </div>
                     </div>
 
                     {/* Ghost Mode Toggle */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: '6px', marginTop: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', marginTop: '6px' }}>
                       <div>
                         <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-white)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <EyeOff size={14} style={{ color: 'var(--primary-green)' }} /> Mode Fantôme (Invisible)

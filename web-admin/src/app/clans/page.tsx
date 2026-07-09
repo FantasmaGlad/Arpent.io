@@ -432,7 +432,7 @@ export default function ClansPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: 'var(--bg-dark)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <div>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Membres</span>
                       <p style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-white)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -544,7 +544,7 @@ export default function ClansPage() {
               <button 
                 onClick={() => setSelectedGuild(null)}
                 style={{
-                  background: 'rgba(255,255,255,0.02)',
+                  background: 'var(--bg-dark)',
                   border: '1px solid var(--border-color)',
                   color: 'var(--text-muted)',
                   borderRadius: '50%',
@@ -568,7 +568,7 @@ export default function ClansPage() {
                 padding: '10px 16px',
                 borderRadius: '8px',
                 fontSize: '0.85rem',
-                backgroundColor: message.type === 'success' ? 'rgba(204, 255, 0, 0.05)' : 'rgba(255, 75, 75, 0.05)',
+                backgroundColor: message.type === 'success' ? 'var(--primary-green-subtle)' : 'rgba(255, 75, 75, 0.05)',
                 border: message.type === 'success' ? '1px solid var(--primary-green)' : '1px solid #FF4B4B',
                 color: message.type === 'success' ? 'var(--primary-green)' : '#FF4B4B'
               }}>
@@ -579,7 +579,7 @@ export default function ClansPage() {
             {/* Tabs Row */}
             <div style={{ 
               display: 'flex', 
-              background: 'rgba(255, 255, 255, 0.01)', 
+              background: 'var(--bg-dark)', 
               borderBottom: '1px solid var(--border-color)',
               padding: '0 24px'
             }}>
@@ -650,7 +650,7 @@ export default function ClansPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                       
                       {/* Action buttons */}
-                      <div style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', gap: '12px', background: 'var(--bg-dark)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                         {selectedGuild.avatar_url && (
                           <button className="btn btn-secondary" onClick={handleRemoveAvatar} disabled={actionLoading} style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
                             <ImageIcon size={12} /> Supprimer l'emblème
@@ -696,7 +696,7 @@ export default function ClansPage() {
                       </div>
 
                       {/* Territory totals */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'var(--bg-dark)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                         <div>
                           <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Totale</span>
                           <p style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '4px' }}>
@@ -739,7 +739,7 @@ export default function ClansPage() {
                             <div 
                               key={m.id}
                               style={{
-                                background: 'rgba(255, 255, 255, 0.01)',
+                                background: 'var(--bg-dark)',
                                 border: '1px solid var(--border-color)',
                                 borderRadius: '8px',
                                 padding: '10px 14px',
@@ -764,11 +764,11 @@ export default function ClansPage() {
 
                               <div>
                                 {m.grade === 'chef' ? (
-                                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(204, 255, 0, 0.05)', color: 'var(--primary-green)', border: '1px solid var(--primary-green)', fontWeight: 700 }}>Responsable</span>
+                                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--primary-green-subtle)', color: 'var(--primary-green)', border: '1px solid var(--primary-green)', fontWeight: 700 }}>Responsable</span>
                                 ) : m.grade === 'adjoint' ? (
-                                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-white)', border: '1px solid var(--border-color)', fontWeight: 700 }}>Adjoint</span>
+                                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--bg-dark)', color: 'var(--text-white)', border: '1px solid var(--border-color)', fontWeight: 700 }}>Adjoint</span>
                                 ) : (
-                                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(255, 255, 255, 0.02)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>Membre</span>
+                                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>Membre</span>
                                 )}
                               </div>
                             </div>
@@ -793,7 +793,7 @@ export default function ClansPage() {
                             <div 
                               key={t.id}
                               style={{
-                                background: 'rgba(255, 255, 255, 0.01)',
+                                background: 'var(--bg-dark)',
                                 border: '1px solid var(--border-color)',
                                 borderRadius: '8px',
                                 padding: '12px 16px',

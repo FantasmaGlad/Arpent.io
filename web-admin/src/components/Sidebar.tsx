@@ -105,7 +105,7 @@ export default function Sidebar() {
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        background: '#FAFAFA'
+        background: 'var(--bg-dark)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{

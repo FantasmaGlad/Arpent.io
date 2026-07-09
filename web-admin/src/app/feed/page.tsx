@@ -305,7 +305,7 @@ export default function FeedModerationPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
             {paginatedCourses.map((c) => {
               const distanceKm = c.distance_totale / 1000;
-              const athleteColor = c.profiles?.empire_color === '#CCFF00' ? '#00875A' : (c.profiles?.empire_color || '#00875A');
+              const athleteColor = c.profiles?.empire_color === '#CCFF00' ? '#2E6F40' : (c.profiles?.empire_color || '#2E6F40');
               const dateText = new Date(c.date_debut).toLocaleDateString('fr-FR', {
                 day: 'numeric',
                 month: 'short',

@@ -81,18 +81,20 @@ enum class SocialFilter { GLOBAL, AMIS, LOCAL }
 enum class MetricFilter { TERRITOIRE, DISTANCE, BOUCLES }
 
 fun formatLeaderboardArea(areaM2: Double): String {
-    return if (areaM2 < 10000.0) {
-        "%,.0f m²".format(areaM2).replace(",", " ")
+    val areaKm2 = areaM2 / 1_000_000.0
+    return if (areaKm2 > 0.0 && areaKm2 < 0.001) {
+        "%.4f km²".format(areaKm2)
     } else {
-        "%.1f ha".format(areaM2 / 10000.0)
+        "%.3f km²".format(areaKm2)
     }
 }
 
-fun formatLeaderboardDistance(distanceMeters: Double): String {
+fun formatLeaderboardDistance(distanceKm: Double): String {
+    val distanceMeters = distanceKm * 1000.0
     return if (distanceMeters < 1000.0) {
         "%,.0f m".format(distanceMeters).replace(",", " ")
     } else {
-        "%.1f km".format(distanceMeters / 1000.0)
+        "%.1f km".format(distanceKm)
     }
 }
 
@@ -681,8 +683,9 @@ fun LeaderboardScreen(
                                 )
                                 if (player.tag != null) {
                                     Spacer(modifier = Modifier.width(4.dp))
+                                    val displayTag = if (player.tag.startsWith("#")) player.tag else "#${player.tag}"
                                     Text(
-                                        text = "#${player.tag}",
+                                        text = displayTag,
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Color(0xFF6E6E73)
                                     )

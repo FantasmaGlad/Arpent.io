@@ -1,19 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --bg-dark: #F4F5F7; /* clean light gray canvas background */
-  --card-bg: #FFFFFF;
-  --card-bg-hover: #FAFAFA;
-  --primary-green: #00875A; /* forest green primary color */
-  --primary-green-subtle: #E6F3EE; /* subtle green hover */
-  --text-white: #111827; /* Charcoal/Dark color */
-  --text-muted: #4B5563; /* Medium gray text */
-  --border-color: #E5E7EB; /* Light gray border */
-  --border-hover: #D1D5DB;
+  --bg-dark: #F4F7F5; /* subtle light green-gray tint for premium feel */
+  --card-bg: #FFFFFF; /* Blanc */
+  --card-bg-hover: #FAFCFA;
+  --primary-green: #2E6F40; /* Vert moyen */
+  --primary-green-subtle: #CFFFDC; /* Vert clair */
+  --text-white: #111111; /* Noir */
+  --text-muted: #4A5D50; /* forest gray-green for accessible contrast */
+  --border-color: #D6E0D9; /* subtle forest-gray border matching official colors */
+  --border-hover: #AEC2B4;
   --glass-bg: #FFFFFF;
   --font-outfit: 'Outfit', sans-serif;
   --sidebar-width: 260px;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 1px 3px rgba(37, 61, 44, 0.05), 0 1px 2px rgba(37, 61, 44, 0.02);
+
+  /* Official palette references */
+  --green-dark: #253D2C;
+  --green-medium: #2E6F40;
+  --green-light: #CFFFDC;
 }
 
 * {
@@ -55,7 +60,7 @@ body {
   inset: 0;
   z-index: -1;
   background-image: 
-    radial-gradient(circle at 10% 20%, rgba(0, 135, 90, 0.02) 0%, transparent 50%);
+    radial-gradient(circle at 10% 20%, rgba(46, 111, 64, 0.02) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -108,7 +113,7 @@ body {
   color: #FFFFFF;
 }
 .btn-primary:hover {
-  background-color: #006F48;
+  background-color: var(--green-dark);
   transform: translateY(-1px);
 }
 
@@ -193,7 +198,7 @@ select.input-field option {
 .badge-volt {
   background: var(--primary-green-subtle);
   color: var(--primary-green);
-  border: 1px solid rgba(0, 135, 90, 0.15);
+  border: 1px solid rgba(46, 111, 64, 0.15);
 }
 
 .badge-blue {
@@ -255,7 +260,7 @@ select.input-field option {
 }
 
 .nav-link.active {
-  color: var(--primary-green);
+  color: var(--green-dark);
   background: var(--primary-green-subtle);
 }
 
@@ -292,7 +297,7 @@ select.input-field option {
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-color);
   letter-spacing: 0.5px;
-  background-color: #F8FAFC;
+  background-color: #F3F6F4;
 }
 
 .cyber-table td {
@@ -317,7 +322,7 @@ select.input-field option {
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--border-color);
-  background-color: #F1F5F9;
+  background-color: #EBF0EC;
 }
 
 .avatar-large {
@@ -329,7 +334,7 @@ select.input-field option {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #E2E8F0;
+  background-color: #D6E0D9;
   color: var(--text-muted);
   font-weight: bold;
 }

@@ -142,6 +142,7 @@ fun saveRunToDatabase(
     completedPolygons: androidx.compose.runtime.snapshots.SnapshotStateList<List<Point>>,
     nom: String?,
     legende: String?,
+    imageUrl: String? = null,
     onSuccess: (Double) -> Unit,
     onSyncComplete: () -> Unit
 ) {
@@ -215,7 +216,8 @@ fun saveRunToDatabase(
                 averageCadence = averageCadence,
                 nom = nom,
                 legende = legende,
-                pointsDetailsJson = pointsDetailsJson
+                pointsDetailsJson = pointsDetailsJson,
+                imageUrl = imageUrl
             )
 
             // Save to local offline queue first

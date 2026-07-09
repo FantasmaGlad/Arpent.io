@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,12 +43,16 @@ import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -89,6 +94,19 @@ import com.fanta.androidsport.utils.saveRunToDatabase
 import com.fanta.androidsport.utils.saveTerritoriesLocally
 import com.fanta.androidsport.utils.splitIntoClosedPolygons
 import com.fanta.androidsport.utils.syncTerritoriesFromDatabase
+import com.fanta.androidsport.utils.estimateAreaKm2
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.layout.ContentScale
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import coil.compose.AsyncImage
+import io.github.jan.supabase.storage.storage
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -131,11 +149,34 @@ fun ConquestMapScreen(
     mapTargetPosition: Point?,
     onMapTargetPositionHandled: () -> Unit,
     onRunSaved: () -> Unit,
-    bottomPadding: Dp = 0.dp
+    bottomPadding: Dp = 0.dp,
+    userChange24hPct: Double = 0.0,
+    clanAreaKm2: Double = 0.0,
+    clanChange24hPct: Double = 0.0
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedImageBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var isUploadingImage by remember { mutableStateOf(false) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedImageUri = uri
+            try {
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    selectedImageBytes = inputStream.readBytes()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to read picked image bytes", e)
+                Toast.makeText(context, "Erreur de lecture de l'image", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // Real run tracking states collected from LocationTrackerState flow
     val isRealRunActiveFlow by LocationTrackerState.isRealRunActive.collectAsStateWithLifecycle()
@@ -158,6 +199,7 @@ fun ConquestMapScreen(
     var currentArea by remember { mutableStateOf(initialArea) }
     var sessionGainedArea by remember { mutableStateOf(0.0) }
     var currentSpeed by remember { mutableStateOf(0.0) }
+    var isEmpireCardExpanded by remember { mutableStateOf(true) }
 
     LaunchedEffect(isSpeedLimitExceeded) {
         if (isSpeedLimitExceeded) {
@@ -709,6 +751,194 @@ fun ConquestMapScreen(
 
         // --- OVERLAYS ---
 
+        // Collapsible "Votre Empire" Stats Banner
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .offset(y = (-60).dp)
+        ) {
+            if (isEmpireCardExpanded) {
+                val clanHeaderColor = remember(userGuildCouleur) {
+                    try {
+                        if (!userGuildCouleur.isNullOrEmpty()) Color(android.graphics.Color.parseColor(userGuildCouleur))
+                        else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: MaterialTheme.colorScheme.secondary
+
+                Card(
+                    modifier = Modifier
+                        .padding(end = 16.dp)
+                        .width(250.dp)
+                        .height(150.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Black
+                    ),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        IconButton(
+                            onClick = { isEmpireCardExpanded = false },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowRight,
+                                contentDescription = "Collapse",
+                                tint = Color.White.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            // Mon Empire Section
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Mon Empire",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "%.3f km²", currentArea),
+                                        fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = Color.White
+                                    )
+                                    val isPos = userChange24hPct >= 0.0
+                                    val pctText = if (isPos) String.format(java.util.Locale.US, "+%.1f%%", userChange24hPct) else String.format(java.util.Locale.US, "%.1f%%", userChange24hPct)
+                                    Text(
+                                        text = pctText,
+                                        color = if (isPos) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.1f),
+                                thickness = 1.dp
+                            )
+
+                            // Mon clan Section
+                            if (!userGuildNom.isNullOrEmpty()) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Mon clan ($userGuildNom)",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = clanHeaderColor,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = String.format(java.util.Locale.US, "%.3f km²", clanAreaKm2),
+                                            fontWeight = FontWeight.SemiBold,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = Color.White
+                                        )
+                                        val isClanPos = clanChange24hPct >= 0.0
+                                        val clanPctText = if (isClanPos) String.format(java.util.Locale.US, "+%.1f%%", clanChange24hPct) else String.format(java.util.Locale.US, "%.1f%%", clanChange24hPct)
+                                        Text(
+                                            text = clanPctText,
+                                            color = if (isClanPos) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Mon clan",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Gray,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Aucun clan",
+                                            fontWeight = FontWeight.Normal,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.Gray
+                                        )
+                                        Text(
+                                            text = "—%",
+                                            color = Color.Gray,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(width = 28.dp, height = 64.dp)
+                        .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
+                        .background(MaterialTheme.colorScheme.background)
+                        .border(
+                            BorderStroke(1.dp, MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)),
+                            RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)
+                        )
+                        .clickable { isEmpireCardExpanded = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowLeft,
+                        contentDescription = "Déplier l'empire",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
         // 1. Top Conquest Status Indicator
         if (isRealRunActive) {
             Card(
@@ -774,52 +1004,7 @@ fun ConquestMapScreen(
             }
         }
 
-        // 2. Stats Overlay (Bottom-Left)
-        Card(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + bottomPadding)
-                .width(220.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-            )
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "VOTRE EMPIRE",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "${"%.3f".format(currentArea)} km²",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                if (sessionGainedArea > 0.0) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.AddCircle,
-                            contentDescription = "Capture",
-                            tint = NeonVolt,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "+${"%.3f".format(sessionGainedArea)} km²",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = NeonVolt
-                        )
-                    }
-                }
-            }
-        }
+        // (Stats Overlay supprimé — les métriques sont dans la carte Empire en haut à droite)
 
         // 3. Control Actions Overlay (Floating Column on Right)
         Column(
@@ -914,6 +1099,9 @@ fun ConquestMapScreen(
                             )
                             runSaveName = ""
                             runSaveDescription = ""
+                            selectedImageUri = null
+                            selectedImageBytes = null
+                            isUploadingImage = false
                             showRunSaveDialog = true
                         } else {
                             Toast.makeText(context, "Course annulée (aucun point GPS enregistré).", Toast.LENGTH_SHORT).show()
@@ -1075,122 +1263,341 @@ fun ConquestMapScreen(
 
         if (showRunSaveDialog && pendingRunDataToSave != null) {
             val data = pendingRunDataToSave!!
-            AlertDialog(
+            Dialog(
                 onDismissRequest = {
                     showRunSaveDialog = false
                     pendingRunDataToSave = null
+                    selectedImageUri = null
+                    selectedImageBytes = null
+                    isUploadingImage = false
                     activePathPoints.clear()
                     runDistance = 0.0
                     runStartTime = null
                     LocationTrackerState.stopRun(context)
                 },
-                title = {
-                    Text(
-                        text = "Enregistrer votre course",
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                },
-                text = {
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+                ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp)
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        OutlinedTextField(
-                            value = runSaveName,
-                            onValueChange = { runSaveName = it },
-                            label = { Text("Nom de la course") },
-                            placeholder = { Text("Ex: Session matinale") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = NeonVolt,
-                                focusedLabelColor = NeonVolt,
-                                cursorColor = NeonVolt
-                            )
+                        // Title
+                        Text(
+                            text = "Enregistrer ma Course",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(bottom = 16.dp)
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedTextField(
-                            value = runSaveDescription,
-                            onValueChange = { runSaveDescription = it },
-                            label = { Text("Légende / Description") },
-                            placeholder = { Text("Comment s'est passée votre course ?") },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 2,
-                            maxLines = 4,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = NeonVolt,
-                                focusedLabelColor = NeonVolt,
-                                cursorColor = NeonVolt
-                            )
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val finalName = runSaveName.ifBlank { "Course Arpent.io" }
-                            val finalDescription = runSaveDescription.ifBlank { "" }
 
-                            saveRunToDatabase(
-                                userId = userId,
-                                scope = scope,
-                                context = context,
-                                runStartTime = data.runStartTime,
-                                runDistance = data.runDistance,
-                                isLoop = data.isLoop,
-                                closedPoints = data.closedPoints,
-                                rawPoints = data.rawPoints,
-                                completedPolygons = completedPolygons,
-                                nom = finalName,
-                                legende = finalDescription,
-                                onSuccess = { areaKm2 ->
-                                    if (data.isLoop) {
-                                        completedPolygons.add(data.closedPoints)
-                                        saveTerritoriesLocally(context, completedPolygons)
-                                        currentArea += areaKm2
-                                        sessionGainedArea = areaKm2
-                                        Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                        // Main content row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Left Column: Importer une image & Entrer une description
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                // Image Import Box
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(150.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color.White)
+                                        .clickable { imagePickerLauncher.launch("image/*") },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (selectedImageUri != null) {
+                                        AsyncImage(
+                                            model = selectedImageUri,
+                                            contentDescription = "Course image",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.3f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "Modifier l'image",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                        }
                                     } else {
-                                        Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_SHORT).show()
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(
+                                                imageVector = Icons.Default.AddCircle,
+                                                contentDescription = "Add image",
+                                                tint = Color.Gray,
+                                                modifier = Modifier.size(32.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = "Importer une image",
+                                                color = Color.Gray,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                        }
                                     }
-                                    onRunSaved()
-                                },
-                                onSyncComplete = {
-                                    onRunSaved()
                                 }
-                            )
 
-                            showRunSaveDialog = false
-                            pendingRunDataToSave = null
-                            activePathPoints.clear()
-                            runDistance = 0.0
-                            runStartTime = null
-                            LocationTrackerState.stopRun(context)
+                                // Description Box
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(100.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color.White)
+                                        .padding(12.dp)
+                                ) {
+                                    androidx.compose.foundation.text.BasicTextField(
+                                        value = runSaveDescription,
+                                        onValueChange = { runSaveDescription = it },
+                                        modifier = Modifier.fillMaxSize(),
+                                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.Black),
+                                        decorationBox = { innerTextField ->
+                                            if (runSaveDescription.isEmpty()) {
+                                                Text(
+                                                    text = "Entrer une description",
+                                                    color = Color.Gray,
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
+                                    )
+                                }
+                            }
+
+                            // Right Column: Stats & Route trace preview
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // Stats Section
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val distanceKm = data.runDistance / 1000.0
+                                    val durationSec = ((System.currentTimeMillis() - data.runStartTime) / 1000.0).coerceAtLeast(0.0)
+                                    val durationMin = (durationSec / 60.0).toInt()
+                                    
+                                    val paceMinPerKm = if (distanceKm > 0) (durationSec / 60.0) / distanceKm else 0.0
+                                    val paceMin = paceMinPerKm.toInt()
+                                    val paceSec = ((paceMinPerKm - paceMin) * 60).toInt().coerceIn(0, 59)
+
+                                    var denivelePos = 0.0
+                                    val validAltitudes = data.rawPoints.mapNotNull { it.altitude }
+                                    if (validAltitudes.size > 1) {
+                                        var prevAlt = validAltitudes.first()
+                                        for (i in 1 until validAltitudes.size) {
+                                            val currAlt = validAltitudes[i]
+                                            val diff = currAlt - prevAlt
+                                            if (diff > 0.5) {
+                                                denivelePos += diff
+                                                prevAlt = currAlt
+                                            } else if (diff < -0.5) {
+                                                prevAlt = currAlt
+                                            }
+                                        }
+                                    }
+
+                                    val areaGainedKm2 = if (data.isLoop) estimateAreaKm2(data.closedPoints) else 0.0
+
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "%.2f km", distanceKm),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "$durationMin minutes",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "%d:%02d minutes : km", paceMin, paceSec),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "+ %d m d +", denivelePos.toInt()),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "+ %.3f km2", areaGainedKm2),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                // Route trace Preview Box
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(118.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color.White)
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (data.closedPoints.isNotEmpty()) {
+                                        RouteTraceView(
+                                            points = data.closedPoints,
+                                            modifier = Modifier.fillMaxSize(),
+                                            lineColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Vue du tracé",
+                                            color = Color.Gray,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    ) {
-                        Text("ENREGISTRER", color = NeonVolt, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = {
-                            showRunSaveDialog = false
-                            pendingRunDataToSave = null
-                            activePathPoints.clear()
-                            runDistance = 0.0
-                            runStartTime = null
-                            LocationTrackerState.stopRun(context)
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Action buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isUploadingImage) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = NeonVolt,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = "Enregistrement...",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                TextButton(
+                                    onClick = {
+                                        showRunSaveDialog = false
+                                        pendingRunDataToSave = null
+                                        selectedImageUri = null
+                                        selectedImageBytes = null
+                                        isUploadingImage = false
+                                        activePathPoints.clear()
+                                        runDistance = 0.0
+                                        runStartTime = null
+                                        LocationTrackerState.stopRun(context)
+                                    }
+                                ) {
+                                    Text("ANNULER", color = Color.Gray)
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                TextButton(
+                                    onClick = {
+                                        isUploadingImage = true
+                                        scope.launch {
+                                            var finalImageUrl: String? = null
+                                            if (selectedImageUri != null && selectedImageBytes != null) {
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        val bucket = supabase.storage.from("Images")
+                                                        val filename = "course_${userId}_${System.currentTimeMillis()}.jpg"
+                                                        bucket.upload(filename, selectedImageBytes!!) {
+                                                            upsert = true
+                                                        }
+                                                        val publicUrl = bucket.publicUrl(filename)
+                                                        finalImageUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+                                                    }
+                                                } catch (e: Exception) {
+                                                    Log.e("Arpent", "Failed to upload run image", e)
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Erreur d'envoi de l'image, enregistrement sans image.", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+
+                                            saveRunToDatabase(
+                                                userId = userId,
+                                                scope = scope,
+                                                context = context,
+                                                runStartTime = data.runStartTime,
+                                                runDistance = data.runDistance,
+                                                isLoop = data.isLoop,
+                                                closedPoints = data.closedPoints,
+                                                rawPoints = data.rawPoints,
+                                                completedPolygons = completedPolygons,
+                                                nom = runSaveName.ifBlank { "Course Arpent.io" },
+                                                legende = runSaveDescription.ifBlank { "" },
+                                                imageUrl = finalImageUrl,
+                                                onSuccess = { areaKm2 ->
+                                                    if (data.isLoop) {
+                                                        completedPolygons.add(data.closedPoints)
+                                                        saveTerritoriesLocally(context, completedPolygons)
+                                                        currentArea += areaKm2
+                                                        sessionGainedArea = areaKm2
+                                                        Toast.makeText(context, "Course enregistrée ! Territoire conquis (+${"%.3f".format(areaKm2)} km²)", Toast.LENGTH_LONG).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Course enregistrée avec succès !", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    onRunSaved()
+                                                },
+                                                onSyncComplete = {
+                                                    onRunSaved()
+                                                }
+                                            )
+
+                                            isUploadingImage = false
+                                            showRunSaveDialog = false
+                                            pendingRunDataToSave = null
+                                            selectedImageUri = null
+                                            selectedImageBytes = null
+                                            activePathPoints.clear()
+                                            runDistance = 0.0
+                                            runStartTime = null
+                                            LocationTrackerState.stopRun(context)
+                                        }
+                                    }
+                                ) {
+                                    Text("ENREGISTRER", color = NeonVolt, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
-                    ) {
-                        Text("ANNULER", color = Color.Gray)
                     }
-                },
-                shape = RoundedCornerShape(20.dp),
-                containerColor = Color.White
-            )
+                }
+            }
         }
     }
 }
@@ -1202,3 +1609,60 @@ data class PendingRunSaveData(
     val closedPoints: List<Point>,
     val rawPoints: List<com.fanta.androidsport.TrackerPoint>
 )
+
+@Composable
+fun RouteTraceView(
+    points: List<Point>,
+    modifier: Modifier = Modifier,
+    lineColor: Color = MaterialTheme.colorScheme.primary
+) {
+    Canvas(modifier = modifier) {
+        if (points.isEmpty()) return@Canvas
+
+        var minLng = points.first().longitude()
+        var maxLng = points.first().longitude()
+        var minLat = points.first().latitude()
+        var maxLat = points.first().latitude()
+
+        for (pt in points) {
+            if (pt.longitude() < minLng) minLng = pt.longitude()
+            if (pt.longitude() > maxLng) maxLng = pt.longitude()
+            if (pt.latitude() < minLat) minLat = pt.latitude()
+            if (pt.latitude() > maxLat) maxLat = pt.latitude()
+        }
+
+        val rangeLng = maxLng - minLng
+        val rangeLat = maxLat - minLat
+
+        val margin = 0.1f
+        val width = size.width
+        val height = size.height
+
+        val drawWidth = width * (1f - 2 * margin)
+        val drawHeight = height * (1f - 2 * margin)
+
+        val path = androidx.compose.ui.graphics.Path()
+
+        for (i in points.indices) {
+            val pt = points[i]
+            val x = margin * width + (if (rangeLng > 0) ((pt.longitude() - minLng) / rangeLng) * drawWidth else drawWidth / 2).toFloat()
+            val y = margin * height + (if (rangeLat > 0) ((maxLat - pt.latitude()) / rangeLat) * drawHeight else drawHeight / 2).toFloat()
+
+            if (i == 0) {
+                path.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+
+        drawPath(
+            path = path,
+            color = lineColor,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 4.dp.toPx(),
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+        )
+    }
+}

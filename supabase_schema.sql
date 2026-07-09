@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS public.courses (
     superficie_conquise float DEFAULT 0.0,
     total_steps integer DEFAULT 0,
     average_cadence integer DEFAULT 0,
+    image_url text,
     CONSTRAINT courses_user_date_debut_unique UNIQUE (utilisateur_id, date_debut)
 );
 
@@ -498,34 +499,48 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
+-- Helper function to calculate level based on cumulative XP
+CREATE OR REPLACE FUNCTION public.xp_to_level(p_xp integer)
+RETURNS integer AS $$
+DECLARE
+    v_level integer := 1;
+    v_sum_xp float := 0.0;
+    v_step_xp float := 100.0;
+BEGIN
+    IF p_xp < 0 THEN
+        RETURN 1;
+    END IF;
+    LOOP
+        v_sum_xp := v_sum_xp + v_step_xp;
+        IF p_xp < v_sum_xp THEN
+            RETURN v_level;
+        END IF;
+        v_level := v_level + 1;
+        v_step_xp := v_step_xp * 1.15;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 -- B. Calcul en temps réel de superficie dans le profil (avec gestion rollback)
 CREATE OR REPLACE FUNCTION public.update_profile_cached_area()
 RETURNS trigger AS $$
 DECLARE
-    v_xp_gain integer;
-    v_xp_loss integer;
     v_gain float;
     v_loss float;
     v_is_rollback boolean := COALESCE(current_setting('app.rollback_course_deletion', true) = 'true', false);
 BEGIN
     IF (TG_OP = 'INSERT') THEN
-        v_xp_gain := FLOOR(new.superficie_m2 * 0.05);
         UPDATE public.profiles 
         SET total_area_m2 = total_area_m2 + new.superficie_m2,
             all_time_area_m2 = all_time_area_m2 + new.superficie_m2,
-            max_area_m2 = GREATEST(max_area_m2, total_area_m2 + new.superficie_m2),
-            xp = xp + v_xp_gain,
-            level = FLOOR(SQRT((xp + v_xp_gain) / 250.0)) + 1
+            max_area_m2 = GREATEST(max_area_m2, total_area_m2 + new.superficie_m2)
         WHERE id = new.utilisateur_id;
     ELSIF (TG_OP = 'DELETE') THEN
         IF v_is_rollback THEN
-            v_xp_loss := FLOOR(old.superficie_m2 * 0.05);
             UPDATE public.profiles 
             SET total_area_m2 = GREATEST(0.0, total_area_m2 - old.superficie_m2),
                 all_time_area_m2 = GREATEST(0.0, all_time_area_m2 - old.superficie_m2),
-                max_area_m2 = GREATEST(0.0, max_area_m2 - old.superficie_m2),
-                xp = GREATEST(0, xp - v_xp_loss),
-                level = FLOOR(SQRT(GREATEST(0, xp - v_xp_loss) / 250.0)) + 1
+                max_area_m2 = GREATEST(0.0, max_area_m2 - old.superficie_m2)
             WHERE id = old.utilisateur_id;
         ELSE
             UPDATE public.profiles 
@@ -536,24 +551,18 @@ BEGIN
     ELSIF (TG_OP = 'UPDATE') THEN
         IF (new.superficie_m2 > old.superficie_m2) THEN
             v_gain := new.superficie_m2 - old.superficie_m2;
-            v_xp_gain := FLOOR(v_gain * 0.05);
             UPDATE public.profiles 
             SET total_area_m2 = total_area_m2 + v_gain,
                 all_time_area_m2 = all_time_area_m2 + v_gain,
-                max_area_m2 = GREATEST(max_area_m2, total_area_m2 + v_gain),
-                xp = xp + v_xp_gain,
-                level = FLOOR(SQRT((xp + v_xp_gain) / 250.0)) + 1
+                max_area_m2 = GREATEST(max_area_m2, total_area_m2 + v_gain)
             WHERE id = new.utilisateur_id;
         ELSIF (new.superficie_m2 < old.superficie_m2) THEN
             v_loss := old.superficie_m2 - new.superficie_m2;
             IF v_is_rollback THEN
-                v_xp_loss := FLOOR(v_loss * 0.05);
                 UPDATE public.profiles 
                 SET total_area_m2 = GREATEST(0.0, total_area_m2 - v_loss),
                     all_time_area_m2 = GREATEST(0.0, all_time_area_m2 - v_loss),
-                    max_area_m2 = GREATEST(0.0, max_area_m2 - v_loss),
-                    xp = GREATEST(0, xp - v_xp_loss),
-                    level = FLOOR(SQRT(GREATEST(0, xp - v_xp_loss) / 250.0)) + 1
+                    max_area_m2 = GREATEST(0.0, max_area_m2 - v_loss)
                 WHERE id = new.utilisateur_id;
             ELSE
                 UPDATE public.profiles 
@@ -691,11 +700,11 @@ DECLARE
     v_xp_loss integer;
 BEGIN
     IF (TG_OP = 'INSERT') THEN
-        v_xp_gain := FLOOR(new.distance_totale * 100) + (CASE WHEN new.est_bouclee THEN 200 ELSE 0 END);
+        v_xp_gain := FLOOR(80.0 * new.distance_totale + COALESCE(new.superficie_conquise, 0.0) / 50000.0);
         
         UPDATE public.profiles
-        SET xp = xp + v_xp_gain,
-            level = FLOOR(SQRT((xp + v_xp_gain) / 250.0)) + 1,
+        SET level = public.xp_to_level(xp + v_xp_gain),
+            xp = xp + v_xp_gain,
             loop_count = loop_count + (CASE WHEN new.est_bouclee THEN 1 ELSE 0 END),
             max_loop_distance_km = CASE 
                 WHEN new.est_bouclee THEN GREATEST(max_loop_distance_km, new.distance_totale)
@@ -710,11 +719,11 @@ BEGIN
         WHERE id = new.utilisateur_id;
 
     ELSIF (TG_OP = 'DELETE') THEN
-        v_xp_loss := FLOOR(old.distance_totale * 100) + (CASE WHEN old.est_bouclee THEN 200 ELSE 0 END);
+        v_xp_loss := FLOOR(80.0 * old.distance_totale + COALESCE(old.superficie_conquise, 0.0) / 50000.0);
         
         UPDATE public.profiles
-        SET xp = GREATEST(0, xp - v_xp_loss),
-            level = FLOOR(SQRT(GREATEST(0, xp - v_xp_loss) / 250.0)) + 1,
+        SET level = public.xp_to_level(GREATEST(0, xp - v_xp_loss)),
+            xp = GREATEST(0, xp - v_xp_loss),
             loop_count = GREATEST(0, loop_count - (CASE WHEN old.est_bouclee THEN 1 ELSE 0 END)),
             total_steps = GREATEST(0, total_steps - COALESCE(old.total_steps, 0)),
             average_cadence = COALESCE((
@@ -768,7 +777,8 @@ CREATE OR REPLACE FUNCTION public.enregistrer_course(
     p_average_cadence integer DEFAULT 0,
     p_nom_course text DEFAULT NULL,
     p_legende text DEFAULT NULL,
-    p_points_details jsonb DEFAULT NULL
+    p_points_details jsonb DEFAULT NULL,
+    p_image_url text DEFAULT NULL
 )
 RETURNS void AS $$
 DECLARE
@@ -871,7 +881,7 @@ BEGIN
         utilisateur_id, date_debut, date_fin, distance_totale, duree_secondes, est_bouclee,
         vitesse_moyenne, vitesse_max, allure_moyenne, calories_estimees,
         denivele_positif, denivele_negatif, points_gps_count, nom, legende, superficie_conquise,
-        total_steps, average_cadence
+        total_steps, average_cadence, image_url
     )
     VALUES (
         p_user_id, p_date_debut, p_date_fin, p_distance_totale, p_duree_secondes, p_est_bouclee,
@@ -884,7 +894,7 @@ BEGIN
             END, 
             0
         ),
-        p_nom_course, p_legende, v_superficie, p_total_steps, p_average_cadence
+        p_nom_course, p_legende, v_superficie, p_total_steps, p_average_cadence, p_image_url
     )
     ON CONFLICT (utilisateur_id, date_debut) DO NOTHING
     RETURNING id INTO v_course_id;
@@ -932,9 +942,7 @@ BEGIN
             UNION
             SELECT DISTINCT t.utilisateur_id
             FROM public.territoires t
-            JOIN public.profiles p ON t.utilisateur_id = p.id
             WHERE t.utilisateur_id <> p_user_id 
-              AND (v_guilde_id IS NULL OR p.guilde_id IS NULL OR p.guilde_id <> v_guilde_id)
               AND ST_Intersects(t.contour, v_geom)
         )
         ORDER BY id
@@ -947,9 +955,7 @@ BEGIN
             UNION
             SELECT t.id
             FROM public.territoires t
-            JOIN public.profiles p ON t.utilisateur_id = p.id
             WHERE t.utilisateur_id <> p_user_id 
-              AND (v_guilde_id IS NULL OR p.guilde_id IS NULL OR p.guilde_id <> v_guilde_id)
               AND ST_Intersects(t.contour, v_geom)
         )
         ORDER BY id
@@ -958,9 +964,7 @@ BEGIN
         FOR v_enemy_terr IN 
             SELECT t.id, t.contour
             FROM public.territoires t
-            JOIN public.profiles p ON t.utilisateur_id = p.id
             WHERE t.utilisateur_id <> p_user_id 
-              AND (v_guilde_id IS NULL OR p.guilde_id IS NULL OR p.guilde_id <> v_guilde_id)
               AND ST_Intersects(t.contour, v_geom)
         LOOP
             v_diff_geom := ST_Difference(v_enemy_terr.contour, v_geom);
@@ -980,21 +984,6 @@ BEGIN
                 WHERE id = v_enemy_terr.id;
             END IF;
         END LOOP;
-
-        -- NON-SUPERPOSITION ALLIÉS
-        IF v_guilde_id IS NOT NULL THEN
-            FOR v_team_terr IN 
-                SELECT t.contour
-                FROM public.territoires t
-                JOIN public.profiles p ON t.utilisateur_id = p.id
-                WHERE t.utilisateur_id <> p_user_id 
-                  AND p.guilde_id = v_guilde_id
-                  AND ST_Intersects(t.contour, v_geom)
-            LOOP
-                v_geom := ST_Difference(v_geom, v_team_terr.contour);
-                v_geom := ST_CollectionExtract(v_geom, 3);
-            END LOOP;
-        END IF;
 
         SELECT id, contour INTO v_existing_id, v_existing_contour
         FROM public.territoires
@@ -1036,54 +1025,66 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-REVOKE EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb) FROM public;
-GRANT EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb, text) TO authenticated, service_role;
 
 -- B. Récupération du Feed de Courses (Strava-like)
+--    Amis + clan + local 50 km — tracé GPS, réactions et commentaires agrégés.
+DROP FUNCTION IF EXISTS public.get_feed_courses(uuid);
 CREATE OR REPLACE FUNCTION public.get_feed_courses(p_utilisateur_id uuid)
 RETURNS TABLE (
-    id uuid,
-    utilisateur_id uuid,
-    pseudonyme text,
-    avatar_url text,
-    empire_color text,
-    level integer,
-    guilde_nom text,
-    guilde_couleur text,
-    date_debut text,
-    date_fin text,
-    distance_totale float,
-    duree_secondes float,
-    est_bouclee boolean,
-    vitesse_moyenne float,
-    vitesse_max float,
-    allure_moyenne float,
-    calories_estimees float,
-    denivele_positif float,
-    denivele_negatif float,
-    nom text,
-    legende text,
+    id                  uuid,
+    utilisateur_id      uuid,
+    pseudonyme          text,
+    avatar_url          text,
+    empire_color        text,
+    level               integer,
+    guilde_nom          text,
+    guilde_couleur      text,
+    date_debut          text,
+    date_fin            text,
+    distance_totale     float,
+    duree_secondes      float,
+    est_bouclee         boolean,
+    vitesse_moyenne     float,
+    vitesse_max         float,
+    allure_moyenne      float,
+    calories_estimees   float,
+    denivele_positif    float,
+    denivele_negatif    float,
+    nom                 text,
+    legende             text,
     superficie_conquise float,
-    total_steps integer,
-    average_cadence integer,
-    points_gps jsonb,
-    reactions jsonb,
-    commentaires jsonb
-) AS $$
+    total_steps         integer,
+    average_cadence     integer,
+    image_url           text,
+    points_gps          jsonb,
+    reactions           jsonb,
+    commentaires        jsonb
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 #variable_conflict use_column
 DECLARE
     v_guilde_id uuid;
+    v_user_lat  float;
+    v_user_lon  float;
 BEGIN
-    SELECT guilde_id INTO v_guilde_id FROM public.profiles WHERE id = p_utilisateur_id;
+    SELECT guilde_id, latitude, longitude
+    INTO v_guilde_id, v_user_lat, v_user_lon
+    FROM public.profiles
+    WHERE id = p_utilisateur_id;
 
     RETURN QUERY
-    WITH feed_users AS (
-        -- L'utilisateur lui-même
+    WITH
+
+    -- 1. Utilisateurs dont les courses apparaissent dans le feed
+    feed_users AS (
         SELECT p_utilisateur_id AS user_id
         UNION
-        -- Ses amis acceptés
-        SELECT 
-            CASE 
+        SELECT
+            CASE
                 WHEN demandeur_id = p_utilisateur_id THEN destinataire_id
                 ELSE demandeur_id
             END AS user_id
@@ -1091,58 +1092,75 @@ BEGIN
         WHERE (demandeur_id = p_utilisateur_id OR destinataire_id = p_utilisateur_id)
           AND statut = 'accepte'
         UNION
-        -- Les membres de sa guilde/clan
         SELECT p.id AS user_id
         FROM public.profiles p
-        WHERE p.guilde_id IS NOT NULL AND p.guilde_id = v_guilde_id
+        WHERE p.guilde_id IS NOT NULL
+          AND p.guilde_id = v_guilde_id
     ),
+
+    -- 2. Premier point GPS de chaque course
+    course_start_points AS (
+        SELECT DISTINCT ON (course_id)
+            course_id, latitude, longitude
+        FROM public.points_gps
+        ORDER BY course_id, timestamp_gps ASC, date_creation ASC
+    ),
+
+    -- 3. Tracé complet par course
     course_points AS (
-        -- Regrouper les coordonnées pour dessiner le tracé
-        SELECT 
+        SELECT
             pts.course_id,
             jsonb_agg(
                 jsonb_build_object(
-                    'longitude', pts.longitude,
-                    'latitude', pts.latitude,
-                    'altitude', pts.altitude,
+                    'longitude',     pts.longitude,
+                    'latitude',      pts.latitude,
+                    'altitude',      pts.altitude,
                     'timestamp_gps', pts.timestamp_gps
-                ) ORDER BY pts.timestamp_gps ASC, pts.date_creation ASC
+                )
+                ORDER BY pts.timestamp_gps ASC, pts.date_creation ASC
             ) AS points
         FROM public.points_gps pts
         GROUP BY pts.course_id
     ),
+
+    -- 4. Réactions agrégées
     course_reactions_agg AS (
-        SELECT 
+        SELECT
             r.course_id,
             jsonb_agg(
                 jsonb_build_object(
-                    'id', r.id,
+                    'id',             r.id,
                     'utilisateur_id', r.utilisateur_id,
-                    'pseudonyme', p.pseudonyme,
-                    'type_reaction', r.type_reaction
+                    'pseudonyme',     p.pseudonyme,
+                    'type_reaction',  r.type_reaction
                 )
             ) AS reactions
         FROM public.course_reactions r
         JOIN public.profiles p ON r.utilisateur_id = p.id
         GROUP BY r.course_id
     ),
+
+    -- 5. Commentaires agrégés (ordre chronologique)
     course_comments_agg AS (
-        SELECT 
+        SELECT
             c.course_id,
             jsonb_agg(
                 jsonb_build_object(
-                    'id', c.id,
+                    'id',             c.id,
                     'utilisateur_id', c.utilisateur_id,
-                    'pseudonyme', p.pseudonyme,
-                    'avatar_url', p.avatar_url,
-                    'contenu', c.contenu,
-                    'date_creation', c.date_creation
-                ) ORDER BY c.date_creation ASC
+                    'pseudonyme',     p.pseudonyme,
+                    'avatar_url',     p.avatar_url,
+                    'contenu',        c.contenu,
+                    'date_creation',  c.date_creation
+                )
+                ORDER BY c.date_creation ASC
             ) AS commentaires
         FROM public.course_commentaires c
         JOIN public.profiles p ON c.utilisateur_id = p.id
         GROUP BY c.course_id
     )
+
+    -- 6. Résultat final
     SELECT 
         c.id,
         c.utilisateur_id,
@@ -1168,22 +1186,42 @@ BEGIN
         c.superficie_conquise,
         c.total_steps,
         c.average_cadence,
+        c.image_url,
         COALESCE(pts.points, '[]'::jsonb),
         COALESCE(reacts.reactions, '[]'::jsonb),
         COALESCE(comments.commentaires, '[]'::jsonb)
     FROM public.courses c
     JOIN public.profiles p ON c.utilisateur_id = p.id
-    LEFT JOIN public.guildes g ON p.guilde_id = g.id
-    LEFT JOIN course_points pts ON c.id = pts.course_id
-    LEFT JOIN course_reactions_agg reacts ON c.id = reacts.course_id
-    LEFT JOIN course_comments_agg comments ON c.id = comments.course_id
-    WHERE c.utilisateur_id IN (SELECT user_id FROM feed_users)
+    LEFT JOIN public.guildes g              ON p.guilde_id   = g.id
+    LEFT JOIN course_start_points csp       ON c.id          = csp.course_id
+    LEFT JOIN course_points pts             ON c.id          = pts.course_id
+    LEFT JOIN course_reactions_agg reacts   ON c.id          = reacts.course_id
+    LEFT JOIN course_comments_agg comments  ON c.id          = comments.course_id
+    WHERE
+        c.utilisateur_id IN (SELECT user_id FROM feed_users)
+        OR (
+            v_user_lat IS NOT NULL AND v_user_lon IS NOT NULL
+            AND COALESCE(csp.latitude,  p.latitude)  IS NOT NULL
+            AND COALESCE(csp.longitude, p.longitude) IS NOT NULL
+            AND COALESCE(csp.latitude,  p.latitude)  BETWEEN v_user_lat - 0.5 AND v_user_lat + 0.5
+            AND COALESCE(csp.longitude, p.longitude) BETWEEN v_user_lon - 0.5 AND v_user_lon + 0.5
+            AND ST_DWithin(
+                ST_SetSRID(ST_MakePoint(v_user_lon, v_user_lat), 4326)::geography,
+                ST_SetSRID(
+                    ST_MakePoint(
+                        COALESCE(csp.longitude, p.longitude),
+                        COALESCE(csp.latitude,  p.latitude)
+                    ), 4326
+                )::geography,
+                50000
+            )
+        )
     ORDER BY c.date_debut DESC;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 REVOKE EXECUTE ON FUNCTION public.get_feed_courses(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.get_feed_courses(uuid) TO authenticated, service_role;
+GRANT  EXECUTE ON FUNCTION public.get_feed_courses(uuid) TO authenticated, service_role;
 
 -- B. Récupération des territoires par Viewport (Bounding Box)
 DROP FUNCTION IF EXISTS public.get_territoires_in_bbox(double precision, double precision, double precision, double precision);
@@ -1741,4 +1779,187 @@ UPDATE public.profiles p
 SET grade = 'chef'
 FROM public.guildes g
 WHERE g.chef_id = p.id AND p.guilde_id = g.id;
+
+-- Calcul de gain d'xp passif calculé sur la surface totale de l'empire
+CREATE OR REPLACE FUNCTION public.calculer_gain_xp_passif()
+RETURNS void AS $$
+DECLARE
+    r record;
+    v_xp_gain integer;
+BEGIN
+    FOR r IN SELECT id, total_area_m2, xp FROM public.profiles LOOP
+        v_xp_gain := FLOOR(1.05 * r.total_area_m2 / 100000.0);
+        IF v_xp_gain > 0 THEN
+            UPDATE public.profiles
+            SET level = public.xp_to_level(xp + v_xp_gain),
+                xp = xp + v_xp_gain
+            WHERE id = r.id;
+        END IF;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Activer pg_cron et programmer le calcul à 18h chaque jour (18h local ou UTC selon config)
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    PERFORM cron.unschedule('calcul-xp-passif-18h') FROM cron.job WHERE jobname = 'calcul-xp-passif-18h';
+    PERFORM cron.schedule('calcul-xp-passif-18h', '0 18 * * *', 'SELECT public.calculer_gain_xp_passif();');
+EXCEPTION WHEN OTHERS THEN
+    -- Fallback in case pg_cron cannot be configured or is restricted
+    NULL;
+END;
+$$;
+
+-- ==========================================
+-- EMPIR STATS & 24H AREA VARIATION HISTORY
+-- ==========================================
+
+-- Table de l'historique des superficies des profils
+CREATE TABLE IF NOT EXISTS public.profile_area_history (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    profile_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    total_area_m2 float NOT NULL,
+    recorded_at timestamptz DEFAULT now() NOT NULL
+);
+
+-- Index pour accélérer les requêtes
+CREATE INDEX IF NOT EXISTS profile_area_history_profile_id_recorded_at_idx ON public.profile_area_history(profile_id, recorded_at DESC);
+
+-- Trigger pour enregistrer l'historique lors du changement de total_area_m2 dans profiles
+CREATE OR REPLACE FUNCTION public.log_profile_area_history()
+RETURNS trigger AS $$
+DECLARE
+    v_last_recorded timestamptz;
+BEGIN
+    -- On ne loggue que si la superficie change ou lors de l'insertion
+    IF (TG_OP = 'INSERT' OR OLD.total_area_m2 IS DISTINCT FROM NEW.total_area_m2) THEN
+        -- On limite à un enregistrement par heure maximum par joueur pour économiser de l'espace
+        SELECT MAX(recorded_at) INTO v_last_recorded 
+        FROM public.profile_area_history 
+        WHERE profile_id = NEW.id;
+        
+        IF (v_last_recorded IS NULL OR v_last_recorded < now() - INTERVAL '1 hour') THEN
+            INSERT INTO public.profile_area_history (profile_id, total_area_m2, recorded_at)
+            VALUES (NEW.id, NEW.total_area_m2, now());
+            
+            -- Nettoyage automatique des enregistrements de plus de 8 jours
+            DELETE FROM public.profile_area_history 
+            WHERE profile_id = NEW.id AND recorded_at < now() - INTERVAL '8 days';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS on_profile_area_changed ON public.profiles;
+CREATE TRIGGER on_profile_area_changed
+    AFTER INSERT OR UPDATE OF total_area_m2 ON public.profiles
+    FOR EACH ROW
+    EXECUTE PROCEDURE public.log_profile_area_history();
+
+-- Fonction RPC pour récupérer les stats de l'empire et les variations sur 24h
+CREATE OR REPLACE FUNCTION public.get_empire_stats(p_user_id uuid)
+RETURNS TABLE (
+    user_current_area_m2 float,
+    user_change_24h_pct float,
+    clan_current_area_m2 float,
+    clan_change_24h_pct float
+) AS $$
+DECLARE
+    v_user_current_area float;
+    v_user_area_24h float;
+    v_user_change_pct float;
+    v_guild_id uuid;
+    v_clan_current_area float := 0.0;
+    v_clan_area_24h float := 0.0;
+    v_clan_change_pct float := 0.0;
+    v_member_id uuid;
+    v_member_area float;
+    v_member_area_24h float;
+BEGIN
+    -- 1. Récupérer les infos de l'utilisateur
+    SELECT total_area_m2, guilde_id INTO v_user_current_area, v_guild_id
+    FROM public.profiles
+    WHERE id = p_user_id;
+
+    IF v_user_current_area IS NULL THEN
+        v_user_current_area := 0.0;
+    END IF;
+
+    -- Récupérer la superficie de l'utilisateur il y a 24h
+    SELECT COALESCE(
+        (SELECT total_area_m2 
+         FROM public.profile_area_history 
+         WHERE profile_id = p_user_id AND recorded_at <= now() - INTERVAL '24 hours'
+         ORDER BY recorded_at DESC
+         LIMIT 1),
+        (SELECT total_area_m2 
+         FROM public.profile_area_history 
+         WHERE profile_id = p_user_id 
+         ORDER BY recorded_at ASC
+         LIMIT 1),
+        v_user_current_area
+    ) INTO v_user_area_24h;
+
+    -- Calculer la variation pour l'utilisateur
+    IF v_user_area_24h = 0 THEN
+        IF v_user_current_area > 0 THEN
+            v_user_change_pct := 100.0;
+        ELSE
+            v_user_change_pct := 0.0;
+        END IF;
+    ELSE
+        v_user_change_pct := ((v_user_current_area - v_user_area_24h) / v_user_area_24h) * 100.0;
+    END IF;
+
+    -- 2. Si l'utilisateur appartient à un clan, calculer les stats du clan
+    IF v_guild_id IS NOT NULL THEN
+        -- Somme des superficies actuelles des membres du clan
+        SELECT COALESCE(SUM(total_area_m2), 0.0) INTO v_clan_current_area
+        FROM public.profiles
+        WHERE guilde_id = v_guild_id;
+
+        -- Somme des superficies des membres il y a 24h
+        FOR v_member_id, v_member_area IN
+            SELECT id, total_area_m2 FROM public.profiles WHERE guilde_id = v_guild_id
+        LOOP
+            SELECT COALESCE(
+                (SELECT total_area_m2 
+                 FROM public.profile_area_history 
+                 WHERE profile_id = v_member_id AND recorded_at <= now() - INTERVAL '24 hours'
+                 ORDER BY recorded_at DESC
+                 LIMIT 1),
+                (SELECT total_area_m2 
+                 FROM public.profile_area_history 
+                 WHERE profile_id = v_member_id 
+                 ORDER BY recorded_at ASC
+                 LIMIT 1),
+                v_member_area
+            ) INTO v_member_area_24h;
+            
+            v_clan_area_24h := v_clan_area_24h + v_member_area_24h;
+        END LOOP;
+
+        -- Calculer la variation pour le clan
+        IF v_clan_area_24h = 0 THEN
+            IF v_clan_current_area > 0 THEN
+                v_clan_change_pct := 100.0;
+            ELSE
+                v_clan_change_pct := 0.0;
+            END IF;
+        ELSE
+            v_clan_change_pct := ((v_clan_current_area - v_clan_area_24h) / v_clan_area_24h) * 100.0;
+        END IF;
+    END IF;
+
+    user_current_area_m2 := v_user_current_area;
+    user_change_24h_pct := v_user_change_pct;
+    clan_current_area_m2 := v_clan_current_area;
+    clan_change_24h_pct := v_clan_change_pct;
+    
+    RETURN NEXT;
+END;
+$$ LANGUAGE plpgsql;
+
 

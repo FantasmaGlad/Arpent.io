@@ -36,7 +36,8 @@ data class PendingRun(
     val averageCadence: Int = 0,
     val nom: String? = null,
     val legende: String? = null,
-    val pointsDetailsJson: String? = null
+    val pointsDetailsJson: String? = null,
+    val imageUrl: String? = null
 )
 
 object PendingRunsQueue {
@@ -139,6 +140,7 @@ object PendingRunsQueue {
                     put("p_nom_course", JsonPrimitive(run.nom ?: ""))
                     put("p_legende", JsonPrimitive(run.legende ?: ""))
                     put("p_points_details", pointsDetailsJsonElement)
+                    put("p_image_url", JsonPrimitive(run.imageUrl))
                 }
 
                 supabase.postgrest.rpc("enregistrer_course", params)

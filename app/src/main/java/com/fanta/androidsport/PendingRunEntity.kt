@@ -32,7 +32,8 @@ data class PendingRunEntity(
     val averageCadence: Int = 0,
     val nom: String? = null,
     val legende: String? = null,
-    val pointsDetailsJson: String? = null
+    val pointsDetailsJson: String? = null,
+    val imageUrl: String? = null
 ) {
     fun toPendingRun(): PendingRun {
         return PendingRun(
@@ -55,7 +56,8 @@ data class PendingRunEntity(
             averageCadence = averageCadence,
             nom = nom,
             legende = legende,
-            pointsDetailsJson = pointsDetailsJson
+            pointsDetailsJson = pointsDetailsJson,
+            imageUrl = imageUrl
         )
     }
 
@@ -81,7 +83,8 @@ data class PendingRunEntity(
                 averageCadence = run.averageCadence,
                 nom = run.nom,
                 legende = run.legende,
-                pointsDetailsJson = run.pointsDetailsJson
+                pointsDetailsJson = run.pointsDetailsJson,
+                imageUrl = run.imageUrl
             )
         }
     }

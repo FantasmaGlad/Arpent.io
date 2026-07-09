@@ -193,7 +193,7 @@ export default function MapPage() {
       const geojsonFeatures = geoTerritories.map(t => {
         try {
           const geometry = JSON.parse(t.geojson);
-          const color = t.guilde_couleur || t.empire_color || '#CCFF00';
+          const color = t.guilde_couleur || t.empire_color || '#00875A';
           return {
             type: 'Feature' as const,
             properties: {
@@ -267,8 +267,8 @@ export default function MapPage() {
 
       profiles.forEach(p => {
         if (p.share_location && p.latitude !== null && p.longitude !== null) {
-          const guild = guilds.find(g => g.id === p.guilde_id);
-          const color = guild?.couleur_hex || p.empire_color || '#CCFF00';
+           const guild = guilds.find(g => g.id === p.guilde_id);
+          const color = guild?.couleur_hex || p.empire_color || '#00875A';
 
           const el = document.createElement('div');
           el.className = 'player-marker';
@@ -284,8 +284,8 @@ export default function MapPage() {
             <div style="font-family: var(--font-outfit)">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
                 <div style="width: 8px; height: 8px; border-radius: 50%; background-color: ${color}"></div>
-                <strong style="font-size: 0.95rem; color: #FFFFFF;">${p.pseudonyme || 'Utilisateur'}</strong>
-                <span style="font-size: 0.7rem; color: #8E9BAE; font-family: monospace;">${p.tag || ''}</span>
+                <strong style="font-size: 0.95rem; color: var(--text-white);">${p.pseudonyme || 'Utilisateur'}</strong>
+                <span style="font-size: 0.7rem; color: var(--text-muted); font-family: monospace;">${p.tag || ''}</span>
               </div>
               <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0 0 4px 0;">Groupe: ${guild?.nom || 'Indépendant'}</p>
               <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">Lat: ${p.latitude!.toFixed(5)}, Lng: ${p.longitude!.toFixed(5)}</p>
@@ -347,7 +347,7 @@ export default function MapPage() {
             bottom: '20px',
             left: '20px',
             zIndex: 10,
-            backgroundColor: '#0F1115',
+            backgroundColor: 'var(--card-bg)',
             border: '1px solid var(--border-color)',
             color: 'var(--text-white)',
             padding: '8px 12px',
@@ -358,7 +358,7 @@ export default function MapPage() {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
             transition: 'all 0.2s'
           }}
           onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--primary-green)'}

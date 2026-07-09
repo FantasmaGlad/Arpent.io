@@ -105,14 +105,14 @@ export default function Sidebar() {
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        background: 'rgba(255, 255, 255, 0.01)'
+        background: '#FAFAFA'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
             width: '36px',
             height: '36px',
             borderRadius: '50%',
-            backgroundColor: 'rgba(204, 255, 0, 0.08)',
+            backgroundColor: 'var(--primary-green-subtle)',
             border: '1px solid var(--primary-green)',
             display: 'flex',
             alignItems: 'center',

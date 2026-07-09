@@ -239,7 +239,9 @@ fun CoursesScreen(
 
     LaunchedEffect(isActive) {
         if (!isActive) return@LaunchedEffect
-        isLoading = true
+        if (feedCourses.isEmpty()) {
+            isLoading = true
+        }
         loadFeed()
     }
 

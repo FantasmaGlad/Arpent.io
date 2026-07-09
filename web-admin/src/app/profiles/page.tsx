@@ -118,7 +118,7 @@ export default function ProfilesPage() {
 
   // Edit fields
   const [newPseudonyme, setNewPseudonyme] = useState('');
-  const [newEmpireColor, setNewEmpireColor] = useState('#CCFF00');
+  const [newEmpireColor, setNewEmpireColor] = useState('#00875A');
   const [newGhostMode, setNewGhostMode] = useState(false);
   
   const [actionLoading, setActionLoading] = useState(false);
@@ -285,7 +285,7 @@ export default function ProfilesPage() {
 
     fetchDetails();
     setNewPseudonyme(selectedProfile.pseudonyme || '');
-    setNewEmpireColor(selectedProfile.empire_color || '#CCFF00');
+    setNewEmpireColor(selectedProfile.empire_color || '#00875A');
     setNewGhostMode(selectedProfile.ghost_mode || false);
     setActiveTab('apercu');
     setMinDistance(0);
@@ -667,7 +667,7 @@ export default function ProfilesPage() {
                 <tbody>
                   {profiles.map((p) => {
                     const guild = guilds.find(g => g.id === p.guilde_id);
-                    const color = p.empire_color || '#CCFF00';
+                    const color = p.empire_color || '#00875A';
                     return (
                       <tr key={p.id}>
                         <td>
@@ -695,13 +695,13 @@ export default function ProfilesPage() {
                           </div>
                         </td>
                         <td>
-                          <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#CCFF00', fontWeight: 600 }}>
+                          <span style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--primary-green)', fontWeight: 600 }}>
                             {p.tag || '—'}
                           </span>
                         </td>
                         <td>
                           {guild ? (
-                            <span className="badge animate-hover" style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>
+                            <span className="badge animate-hover" style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>
                               {guild.nom} <span style={{ fontFamily: 'monospace', fontSize: '0.7rem', opacity: 0.8, marginLeft: '4px' }}>{guild.tag}</span>
                             </span>
                           ) : (
@@ -710,9 +710,9 @@ export default function ProfilesPage() {
                         </td>
                         <td>
                           {p.grade === 'chef' ? (
-                            <span className="badge" style={{ backgroundColor: 'rgba(204, 255, 0, 0.05)', color: '#CCFF00', border: '1px solid #CCFF00' }}>Responsable</span>
+                            <span className="badge badge-volt">Responsable</span>
                           ) : p.grade === 'adjoint' ? (
-                            <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-white)', border: '1px solid var(--border-color)' }}>Adjoint</span>
+                            <span className="badge badge-blue">Adjoint</span>
                           ) : p.guilde_id ? (
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Membre</span>
                           ) : (
@@ -733,7 +733,7 @@ export default function ProfilesPage() {
                               className="btn-icon" 
                               title="Ouvrir la fiche utilisateur"
                               onClick={() => setSelectedProfile(p)}
-                              style={{ color: '#CCFF00', borderColor: 'rgba(204, 255, 0, 0.2)' }}
+                              style={{ color: 'var(--primary-green)', borderColor: 'var(--primary-green-subtle)' }}
                             >
                               <Activity size={16} />
                             </button>
@@ -815,14 +815,14 @@ export default function ProfilesPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                   <div style={{ position: 'relative' }}>
                     {selectedProfile.avatar_url ? (
-                      <img src={selectedProfile.avatar_url} alt="" className="avatar avatar-large" style={{ borderColor: selectedProfile.empire_color || '#CCFF00', borderWidth: '3px', boxShadow: '0 4px 14px rgba(0,0,0,0.6)' }} />
+                      <img src={selectedProfile.avatar_url} alt="" className="avatar avatar-large" style={{ borderColor: selectedProfile.empire_color || 'var(--primary-green)', borderWidth: '3px', boxShadow: '0 4px 14px rgba(0,0,0,0.1)' }} />
                     ) : (
-                      <div className="avatar avatar-large avatar-placeholder" style={{ borderColor: selectedProfile.empire_color || '#CCFF00', color: selectedProfile.empire_color || '#CCFF00', borderWidth: '3px', boxShadow: '0 4px 14px rgba(0,0,0,0.6)', fontSize: '1.8rem' }}>
+                      <div className="avatar avatar-large avatar-placeholder" style={{ borderColor: selectedProfile.empire_color || 'var(--primary-green)', color: selectedProfile.empire_color || 'var(--primary-green)', borderWidth: '3px', boxShadow: '0 4px 14px rgba(0,0,0,0.1)', fontSize: '1.8rem' }}>
                         {selectedProfile.pseudonyme ? selectedProfile.pseudonyme.substring(0, 2).toUpperCase() : 'US'}
                       </div>
                     )}
                     {selectedProfile.ghost_mode && (
-                      <span style={{ position: 'absolute', bottom: '0px', right: '0px', background: '#000000', borderRadius: '50%', padding: '4px', fontSize: '1.1rem', border: '2px solid #CCFF00' }} title="Invisible (Mode Fantôme)">👻</span>
+                      <span style={{ position: 'absolute', bottom: '0px', right: '0px', background: '#000000', borderRadius: '50%', padding: '4px', fontSize: '1.1rem', border: '2px solid var(--primary-green)' }} title="Invisible (Mode Fantôme)">👻</span>
                     )}
                   </div>
                   <div>
@@ -830,14 +830,14 @@ export default function ProfilesPage() {
                       <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-white)' }}>
                         {selectedProfile.pseudonyme || 'Athlète'}
                       </h2>
-                      <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
+                      <span className="badge" style={{ backgroundColor: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
                         Niveau {selectedProfile.level || 1}
                       </span>
                       {selectedProfile.grade === 'chef' && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(204, 255, 0, 0.05)', color: '#CCFF00', border: '1px solid #CCFF00', fontSize: '0.7rem' }}>👑 Responsable</span>
+                        <span className="badge badge-volt" style={{ fontSize: '0.7rem' }}>👑 Responsable</span>
                       )}
                     </div>
-                    <p style={{ color: '#CCFF00', fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 700, marginTop: '4px', letterSpacing: '0.5px' }}>
+                    <p style={{ color: 'var(--primary-green)', fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 700, marginTop: '4px', letterSpacing: '0.5px' }}>
                       TAG: {selectedProfile.tag || 'NON DÉFINI'}
                     </p>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -849,7 +849,7 @@ export default function ProfilesPage() {
                 <button 
                   onClick={() => setSelectedProfile(null)}
                   style={{
-                    background: 'rgba(255,255,255,0.02)',
+                    background: 'var(--bg-dark)',
                     border: '1px solid var(--border-color)',
                     color: 'var(--text-muted)',
                     borderRadius: '50%',
@@ -873,13 +873,13 @@ export default function ProfilesPage() {
               </div>
 
               {/* XP Level progress bar */}
-              <div style={{ marginTop: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ marginTop: '8px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px 16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Progression XP</span>
-                  <span style={{ color: '#CCFF00', fontWeight: 'bold' }}>{selectedProfile.xp || 0} XP <span style={{ color: 'var(--text-muted)', fontWeight: 'normal' }}>({xpStats.progress} / {xpStats.target} XP pour Niv { (selectedProfile.level || 1) + 1 })</span></span>
+                  <span style={{ color: 'var(--primary-green)', fontWeight: 'bold' }}>{selectedProfile.xp || 0} XP <span style={{ color: 'var(--text-muted)', fontWeight: 'normal' }}>({xpStats.progress} / {xpStats.target} XP pour Niv { (selectedProfile.level || 1) + 1 })</span></span>
                 </div>
-                <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ width: `${xpStats.percent}%`, height: '100%', backgroundColor: '#CCFF00', borderRadius: '3px', transition: 'width 0.4s ease' }}></div>
+                <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${xpStats.percent}%`, height: '100%', backgroundColor: 'var(--primary-green)', borderRadius: '3px', transition: 'width 0.4s ease' }}></div>
                 </div>
               </div>
             </div>
@@ -891,9 +891,9 @@ export default function ProfilesPage() {
                 padding: '10px 16px',
                 borderRadius: '6px',
                 fontSize: '0.85rem',
-                backgroundColor: message.type === 'success' ? 'rgba(204, 255, 0, 0.05)' : 'rgba(255, 75, 75, 0.05)',
-                border: message.type === 'success' ? '1px solid #CCFF00' : '1px solid #FF4B4B',
-                color: message.type === 'success' ? '#CCFF00' : '#FF4B4B'
+                backgroundColor: message.type === 'success' ? 'var(--primary-green-subtle)' : 'rgba(255, 75, 75, 0.05)',
+                border: message.type === 'success' ? '1px solid var(--primary-green)' : '1px solid #FF4B4B',
+                color: message.type === 'success' ? 'var(--primary-green)' : '#FF4B4B'
               }}>
                 {message.text}
               </div>
@@ -902,7 +902,7 @@ export default function ProfilesPage() {
             {/* Modal Tabs Panel (Sleek Strava-Style Orange/Volt Accent) */}
             <div style={{ 
               display: 'flex', 
-              background: 'rgba(0, 0, 0, 0.4)', 
+              background: 'var(--bg-dark)', 
               borderBottom: '1px solid var(--border-color)',
               padding: '0 24px',
               overflowX: 'auto'
@@ -922,8 +922,8 @@ export default function ProfilesPage() {
                     style={{
                       background: 'none',
                       border: 'none',
-                      borderBottom: activeTab === t.id ? '2px solid #CCFF00' : '2px solid transparent',
-                      color: activeTab === t.id ? '#FFFFFF' : 'var(--text-muted)',
+                      borderBottom: activeTab === t.id ? '2px solid var(--primary-green)' : '2px solid transparent',
+                      color: activeTab === t.id ? 'var(--primary-green)' : 'var(--text-muted)',
                       padding: '14px 16px',
                       fontSize: '0.9rem',
                       fontWeight: 600,
@@ -936,7 +936,7 @@ export default function ProfilesPage() {
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    <ActiveIcon size={14} style={{ color: activeTab === t.id ? '#CCFF00' : 'var(--text-muted)' }} />
+                    <ActiveIcon size={14} style={{ color: activeTab === t.id ? 'var(--primary-green)' : 'var(--text-muted)' }} />
                     {t.label}
                   </button>
                 );
@@ -967,16 +967,16 @@ export default function ProfilesPage() {
                       textAlign: 'center'
                     }}>
                       <div style={{ 
-                        background: 'rgba(204,255,0,0.08)', 
-                        border: '1px solid rgba(204,255,0,0.2)', 
+                        background: 'var(--primary-green-subtle)', 
+                        border: '1px solid var(--primary-green)', 
                         padding: '12px', 
                         borderRadius: '50%',
-                        color: '#CCFF00',
+                        color: 'var(--primary-green)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}>
-                        <Flame size={28} style={{ fill: streak > 0 ? '#CCFF00' : 'none' }} />
+                        <Flame size={28} style={{ fill: streak > 0 ? 'var(--primary-green)' : 'none' }} />
                       </div>
                       <div>
                         <h4 style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -1005,14 +1005,14 @@ export default function ProfilesPage() {
                       <div>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Empire / Couleur</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
-                          <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: selectedProfile.empire_color || '#CCFF00', border: '1px solid rgba(255,255,255,0.2)' }} />
-                          <span style={{ fontSize: '0.9rem', fontFamily: 'monospace', color: 'var(--text-white)', fontWeight: 'bold' }}>{selectedProfile.empire_color || '#CCFF00'}</span>
+                          <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: selectedProfile.empire_color || 'var(--primary-green)', border: '1px solid rgba(255,255,255,0.2)' }} />
+                          <span style={{ fontSize: '0.9rem', fontFamily: 'monospace', color: 'var(--text-white)', fontWeight: 'bold' }}>{selectedProfile.empire_color || '#00875A'}</span>
                         </div>
                       </div>
 
                       <div>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Partage de Position GPS</span>
-                        <p style={{ fontSize: '0.9rem', fontWeight: 'bold', color: selectedProfile.share_location ? '#CCFF00' : '#FF4B4B', marginTop: '4px' }}>
+                        <p style={{ fontSize: '0.9rem', fontWeight: 'bold', color: selectedProfile.share_location ? 'var(--primary-green)' : '#FF4B4B', marginTop: '4px' }}>
                           {selectedProfile.share_location ? 'ACTIVÉ (Position partagée)' : 'DÉSACTIVÉ (Position cachée)'}
                         </p>
                       </div>
@@ -1050,7 +1050,7 @@ export default function ProfilesPage() {
                           onClick={() => centerPlayerOnMap(selectedProfile.latitude!, selectedProfile.longitude!)}
                           style={{ padding: '8px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                         >
-                          <MapPin size={12} style={{ color: '#CCFF00' }} /> Centrer sur la carte
+                          <MapPin size={12} style={{ color: 'var(--primary-green)' }} /> Centrer sur la carte
                         </button>
                       )}
                     </div>
@@ -1067,7 +1067,7 @@ export default function ProfilesPage() {
                     
                     <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Superficie Contrôlée Actuelle</span>
-                      <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#CCFF00', marginTop: '6px' }}>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '6px' }}>
                         {(selectedProfile.total_area_m2).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m²
                       </p>
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -1109,12 +1109,12 @@ export default function ProfilesPage() {
                   {/* Conquest Yield analysis */}
                   <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                      <TrendingUp size={18} style={{ color: '#CCFF00' }} />
+                      <TrendingUp size={18} style={{ color: 'var(--primary-green)' }} />
                       <h4 style={{ fontSize: '0.9rem', color: 'var(--text-white)', fontWeight: 700 }}>
                         Rendement de Conquête
                       </h4>
                     </div>
-                    <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#CCFF00', margin: '4px 0' }}>
+                    <p style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary-green)', margin: '4px 0' }}>
                       {((selectedProfile.all_time_area_m2 || selectedProfile.total_area_m2 || 0) / (totalDistanceKm || 1)).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} m² / km
                     </p>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -1130,7 +1130,7 @@ export default function ProfilesPage() {
                   
                   {/* Cumulative physical statistics */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Statistiques d'Activité Cumulées</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Statistiques d'Activité Cumulées</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Courses Totales</span>
@@ -1142,7 +1142,7 @@ export default function ProfilesPage() {
                       </div>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Temps Cumulé</span>
-                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: '#CCFF00', marginTop: '2px' }}>{formatDurationText(totalDurationSec)}</p>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '2px' }}>{formatDurationText(totalDurationSec)}</p>
                       </div>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vitesse Moyenne</span>
@@ -1150,7 +1150,7 @@ export default function ProfilesPage() {
                       </div>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dénivelé Cumulé</span>
-                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: '#CCFF00', marginTop: '2px' }}>+{Math.round(totalElevationPos)}m</p>
+                        <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '2px' }}>+{Math.round(totalElevationPos)}m</p>
                       </div>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-color)', textAlign: 'center' }}>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Calories</span>
@@ -1161,7 +1161,7 @@ export default function ProfilesPage() {
 
                   {/* Loop Conquest Statistics (Strava style) */}
                   <div style={{ background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Métriques de Boucle</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Métriques de Boucle</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       <div>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Boucles complétées</span>
@@ -1171,7 +1171,7 @@ export default function ProfilesPage() {
                       </div>
                       <div>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Distance de la plus grande boucle</span>
-                        <p style={{ fontSize: '1.3rem', fontWeight: 800, color: '#CCFF00', marginTop: '4px' }}>
+                        <p style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary-green)', marginTop: '4px' }}>
                           {(selectedProfile.max_loop_distance_km || 0).toFixed(2)} km
                         </p>
                       </div>
@@ -1180,7 +1180,7 @@ export default function ProfilesPage() {
 
                   {/* Rolling Activity volumes cards */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Volumes Glissants</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Volumes Glissants</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       <div style={{ background: 'rgba(255, 255, 255, 0.01)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', textTransform: 'uppercase', fontWeight: 600 }}>Sur les 7 derniers jours</span>
@@ -1191,7 +1191,7 @@ export default function ProfilesPage() {
                           </div>
                           <div>
                             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Dénivelé</span>
-                            <p style={{ fontSize: '1.2rem', fontWeight: 800, color: '#CCFF00' }}>+{Math.round(rollingElev7)}m</p>
+                            <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)' }}>+{Math.round(rollingElev7)}m</p>
                           </div>
                         </div>
                       </div>
@@ -1205,7 +1205,7 @@ export default function ProfilesPage() {
                           </div>
                           <div>
                             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Dénivelé</span>
-                            <p style={{ fontSize: '1.2rem', fontWeight: 800, color: '#CCFF00' }}>+{Math.round(rollingElev30)}m</p>
+                            <p style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-green)' }}>+{Math.round(rollingElev30)}m</p>
                           </div>
                         </div>
                       </div>
@@ -1214,7 +1214,7 @@ export default function ProfilesPage() {
 
                   {/* Graphic Performance */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Graphique d'Évolution (Distance & Temps)</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Graphique d'Évolution (Distance & Temps)</h4>
                     <div className="glass-card" style={{ padding: '16px', background: 'rgba(255, 255, 255, 0.01)', borderRadius: '8px', minHeight: '220px' }}>
                       {mounted && chartData.length > 0 ? (
                         <div style={{ width: '100%', height: 220 }}>
@@ -1226,10 +1226,10 @@ export default function ProfilesPage() {
                               <YAxis yAxisId="right" orientation="right" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} unit=" min" />
                               <Tooltip 
                                 contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                                labelStyle={{ color: '#FFFFFF', fontWeight: 'bold' }}
+                                labelStyle={{ color: 'var(--text-white)', fontWeight: 'bold' }}
                               />
-                              <Line yAxisId="left" type="monotone" dataKey="distance" name="Distance" stroke="#CCFF00" strokeWidth={2} dot={{ fill: '#CCFF00', strokeWidth: 1, r: 3 }} activeDot={{ r: 5 }} />
-                              <Line yAxisId="right" type="monotone" dataKey="duration" name="Durée" stroke="#FFFFFF" strokeWidth={2} dot={{ fill: '#FFFFFF', strokeWidth: 1, r: 3 }} activeDot={{ r: 5 }} />
+                              <Line yAxisId="left" type="monotone" dataKey="distance" name="Distance" stroke="var(--primary-green)" strokeWidth={2} dot={{ fill: 'var(--primary-green)', strokeWidth: 1, r: 3 }} activeDot={{ r: 5 }} />
+                              <Line yAxisId="right" type="monotone" dataKey="duration" name="Durée" stroke="#9CA3AF" strokeWidth={2} dot={{ fill: '#9CA3AF', strokeWidth: 1, r: 3 }} activeDot={{ r: 5 }} />
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -1281,7 +1281,7 @@ export default function ProfilesPage() {
 
                   {/* Course list */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Historique des activités ({filteredCourses.length})</h4>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>Historique des activités ({filteredCourses.length})</h4>
                     
                     {loadingCourses ? (
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Chargement des sessions...</p>
@@ -1313,7 +1313,7 @@ export default function ProfilesPage() {
                                   </p>
                                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                                     Statut : {c.est_bouclee ? (
-                                      <span style={{ color: '#CCFF00' }}>Bouclée (Terminée)</span>
+                                      <span style={{ color: 'var(--primary-green)' }}>Bouclée (Terminée)</span>
                                     ) : (
                                       <span style={{ color: 'var(--text-muted)' }}>Non bouclée</span>
                                     )}
@@ -1352,7 +1352,7 @@ export default function ProfilesPage() {
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
                                 <div style={{ textAlign: 'center' }}>
                                   <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Vit. Moy</p>
-                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: '#CCFF00' }}>{(c.vitesse_moyenne || 0).toFixed(1)} km/h</p>
+                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary-green)' }}>{(c.vitesse_moyenne || 0).toFixed(1)} km/h</p>
                                 </div>
                                 <div style={{ textAlign: 'center' }}>
                                   <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Allure</p>
@@ -1364,7 +1364,7 @@ export default function ProfilesPage() {
                                 </div>
                                 <div style={{ textAlign: 'center' }}>
                                   <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>D+/D-</p>
-                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: '#CCFF00' }}>+{Math.round(c.denivele_positif || 0)}/-{Math.round(c.denivele_negatif || 0)}m</p>
+                                  <p style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary-green)' }}>+{Math.round(c.denivele_positif || 0)}/-{Math.round(c.denivele_negatif || 0)}m</p>
                                 </div>
                               </div>
                             </div>
@@ -1383,7 +1383,7 @@ export default function ProfilesPage() {
                   
                   {/* Guild Info Block if available */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px' }}>
                       Affiliation Clan/Guilde
                     </h4>
                     {selectedProfile.guilde_id ? (
@@ -1401,7 +1401,7 @@ export default function ProfilesPage() {
                           }}>
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: guild?.couleur_hex || '#CCFF00' }} />
+                                <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: guild?.couleur_hex || 'var(--primary-green)' }} />
                                 <span style={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text-white)' }}>{guild?.nom}</span>
                                 <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{guild?.tag}</span>
                               </div>
@@ -1421,7 +1421,7 @@ export default function ProfilesPage() {
 
                   {/* Friends section */}
                   <div>
-                    <h4 style={{ fontSize: '0.85rem', color: '#CCFF00', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--primary-green)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700, letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Users size={16} /> Relations Réseau ({friends.length})
                     </h4>
 
@@ -1447,9 +1447,9 @@ export default function ProfilesPage() {
                             }}
                           >
                             {f.avatar_url ? (
-                              <img src={f.avatar_url} alt="" className="avatar" style={{ width: '36px', height: '36px', borderColor: f.empire_color || '#CCFF00', borderWidth: '2px' }} />
+                              <img src={f.avatar_url} alt="" className="avatar" style={{ width: '36px', height: '36px', borderColor: f.empire_color || 'var(--primary-green)', borderWidth: '2px' }} />
                             ) : (
-                              <div className="avatar avatar-placeholder" style={{ width: '36px', height: '36px', borderColor: f.empire_color || '#CCFF00', color: f.empire_color || '#CCFF00', fontSize: '0.8rem', borderWidth: '2px' }}>
+                              <div className="avatar avatar-placeholder" style={{ width: '36px', height: '36px', borderColor: f.empire_color || 'var(--primary-green)', color: f.empire_color || 'var(--primary-green)', fontSize: '0.8rem', borderWidth: '2px' }}>
                                 {f.pseudonyme?.substring(0, 2).toUpperCase() || 'US'}
                               </div>
                             )}
@@ -1462,7 +1462,7 @@ export default function ProfilesPage() {
                               </span>
                             </div>
                             <div style={{ textAlign: 'right' }}>
-                              <p style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#CCFF00' }}>
+                              <p style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--primary-green)' }}>
                                 {(f.total_area_m2 / 1000000).toFixed(3)} km²
                               </p>
                             </div>
@@ -1511,7 +1511,7 @@ export default function ProfilesPage() {
                           className="input-field"
                           value={newEmpireColor}
                           onChange={(e) => setNewEmpireColor(e.target.value)}
-                          placeholder="#CCFF00"
+                          placeholder="#00875A"
                           style={{ flexGrow: 1 }}
                         />
                       </div>
@@ -1521,7 +1521,7 @@ export default function ProfilesPage() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: '6px', marginTop: '6px' }}>
                       <div>
                         <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-white)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <EyeOff size={14} style={{ color: '#CCFF00' }} /> Mode Fantôme (Invisible)
+                          <EyeOff size={14} style={{ color: 'var(--primary-green)' }} /> Mode Fantôme (Invisible)
                         </span>
                         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                           Une fois activé, l'utilisateur est masqué de la carte publique mais reste administrable.
@@ -1532,7 +1532,7 @@ export default function ProfilesPage() {
                           type="checkbox"
                           checked={newGhostMode}
                           onChange={(e) => setNewGhostMode(e.target.checked)}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#CCFF00' }}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary-green)' }}
                         />
                       </label>
                     </div>

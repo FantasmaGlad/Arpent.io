@@ -1,49 +1,82 @@
 package com.fanta.androidsport.ui.screens
 
+import android.annotation.SuppressLint
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.fanta.androidsport.ui.theme.NeonVolt
+import androidx.compose.ui.viewinterop.AndroidView
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun LoadingScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF020617)))),
+            .background(Color.White),
         contentAlignment = Alignment.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            CircularProgressIndicator(
-                color = NeonVolt,
-                strokeWidth = 4.dp,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Chargement d'Arpent...",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    webViewClient = WebViewClient()
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    
+                    settings.apply {
+                        javaScriptEnabled = true
+                        allowFileAccess = true
+                        allowContentAccess = true
+                        domStorageEnabled = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                    }
+                    
+                    val htmlContent = """
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                            <style>
+                                html, body {
+                                    margin: 0;
+                                    padding: 0;
+                                    width: 100%;
+                                    height: 100%;
+                                    overflow: hidden;
+                                    background-color: transparent;
+                                    display: flex;
+                                    justify-content: center;
+                                    align-items: center;
+                                }
+                                embed {
+                                    width: 100%;
+                                    height: 100%;
+                                    border: none;
+                                    object-fit: contain;
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <embed src="file:///android_asset/Chargement.svg" type="image/svg+xml" />
+                        </body>
+                        </html>
+                    """.trimIndent()
+                    
+                    loadDataWithBaseURL("file:///android_asset/", htmlContent, "text/html", "utf-8", null)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
+

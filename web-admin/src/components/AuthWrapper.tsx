@@ -136,14 +136,14 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
           border: '1px solid var(--border-color)',
           borderRadius: '12px',
           padding: '32px',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05)'
         }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{
               display: 'inline-flex',
               padding: '12px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(204, 255, 0, 0.08)',
+              backgroundColor: 'var(--primary-green-subtle)',
               color: 'var(--primary-green)',
               marginBottom: '16px'
             }}>

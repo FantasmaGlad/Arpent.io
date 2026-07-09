@@ -1,17 +1,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --bg-dark: #000000;
-  --card-bg: #0B0D0F;
-  --card-bg-hover: #12161A;
-  --primary-green: #CCFF00;
-  --text-white: #FFFFFF;
-  --text-muted: #8E9BAE;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.16);
-  --glass-bg: #0B0D0F;
+  --bg-dark: #F4F5F7; /* clean light gray canvas background */
+  --card-bg: #FFFFFF;
+  --card-bg-hover: #FAFAFA;
+  --primary-green: #00875A; /* forest green primary color */
+  --primary-green-subtle: #E6F3EE; /* subtle green hover */
+  --text-white: #111827; /* Charcoal/Dark color */
+  --text-muted: #4B5563; /* Medium gray text */
+  --border-color: #E5E7EB; /* Light gray border */
+  --border-hover: #D1D5DB;
+  --glass-bg: #FFFFFF;
   --font-outfit: 'Outfit', sans-serif;
   --sidebar-width: 260px;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 * {
@@ -40,36 +42,36 @@ body {
   background: var(--bg-dark);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--card-bg);
+  background: var(--border-color);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-hover);
 }
 
-/* Background Cyber Grid effect (Sober version) */
+/* Background gradient effect (Professional version) */
 .cyber-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
   background-image: 
-    radial-gradient(circle at 10% 20%, rgba(204, 255, 0, 0.01) 0%, transparent 40%);
+    radial-gradient(circle at 10% 20%, rgba(0, 135, 90, 0.02) 0%, transparent 50%);
   pointer-events: none;
 }
 
-/* Minimalist Cards */
+/* Premium Minimalist Cards */
 .glass-card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 24px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.03);
 }
 
 .glass-card:hover {
   border-color: var(--border-hover);
-  box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.7);
+  box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.06);
   transform: translateY(-1px);
 }
 
@@ -77,7 +79,7 @@ body {
   border-color: var(--primary-green);
 }
 
-/* Neon Glows - Removed shadows for sobriety */
+/* Glow styles - removed text shadow for clean styling */
 .glow-volt {
   text-shadow: none;
 }
@@ -103,20 +105,20 @@ body {
 
 .btn-primary {
   background-color: var(--primary-green);
-  color: #000000;
+  color: #FFFFFF;
 }
 .btn-primary:hover {
-  background-color: #bada00;
+  background-color: #006F48;
   transform: translateY(-1px);
 }
 
 .btn-secondary {
-  background-color: transparent;
+  background-color: #FFFFFF;
   border: 1px solid var(--border-color);
   color: var(--text-white);
 }
 .btn-secondary:hover {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: var(--bg-dark);
   border-color: var(--border-hover);
   transform: translateY(-1px);
 }
@@ -134,14 +136,14 @@ body {
 .btn-icon {
   padding: 8px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--card-bg);
   border: 1px solid var(--border-color);
   color: var(--text-white);
   cursor: pointer;
   transition: all 0.2s;
 }
 .btn-icon:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-dark);
   border-color: var(--border-hover);
 }
 
@@ -149,7 +151,7 @@ body {
 .input-field {
   width: 100%;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.02);
+  background: #FFFFFF;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--text-white);
@@ -161,11 +163,11 @@ body {
 .input-field:focus {
   outline: none;
   border-color: var(--primary-green);
-  background: rgba(255, 255, 255, 0.04);
+  background: #FFFFFF;
 }
 
 select.input-field option {
-  background-color: var(--card-bg) !important;
+  background-color: #FFFFFF !important;
   color: var(--text-white) !important;
 }
 
@@ -189,21 +191,21 @@ select.input-field option {
 }
 
 .badge-volt {
-  background: rgba(204, 255, 0, 0.08);
+  background: var(--primary-green-subtle);
   color: var(--primary-green);
-  border: 1px solid rgba(204, 255, 0, 0.2);
+  border: 1px solid rgba(0, 135, 90, 0.15);
 }
 
 .badge-blue {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-white);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #E0F2FE;
+  color: #0369A1;
+  border: 1px solid #BAE6FD;
 }
 
 .badge-orange {
-  background: rgba(255, 75, 75, 0.08);
-  color: #FF4B4B;
-  border: 1px solid rgba(255, 75, 75, 0.15);
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
 }
 
 /* App Layout Grid */
@@ -214,7 +216,7 @@ select.input-field option {
 
 .sidebar {
   width: var(--sidebar-width);
-  background: #080A0C;
+  background: #FFFFFF;
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -249,12 +251,12 @@ select.input-field option {
 
 .nav-link:hover {
   color: var(--text-white);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-dark);
 }
 
 .nav-link.active {
-  color: var(--text-white);
-  background: rgba(204, 255, 0, 0.03);
+  color: var(--primary-green);
+  background: var(--primary-green-subtle);
 }
 
 .nav-link.active::before {
@@ -290,7 +292,7 @@ select.input-field option {
   color: var(--text-muted);
   border-bottom: 1px solid var(--border-color);
   letter-spacing: 0.5px;
-  background-color: rgba(255, 255, 255, 0.01);
+  background-color: #F8FAFC;
 }
 
 .cyber-table td {
@@ -305,7 +307,7 @@ select.input-field option {
 }
 
 .cyber-table tr:hover td {
-  background: rgba(255, 255, 255, 0.01);
+  background: var(--card-bg-hover);
 }
 
 /* Avatar Placeholder */
@@ -315,7 +317,7 @@ select.input-field option {
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--border-color);
-  background-color: #0E1114;
+  background-color: #F1F5F9;
 }
 
 .avatar-large {
@@ -327,7 +329,7 @@ select.input-field option {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #151A1F;
+  background-color: #E2E8F0;
   color: var(--text-muted);
   font-weight: bold;
 }
@@ -344,7 +346,7 @@ select.input-field option {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(17, 24, 39, 0.4);
   backdrop-filter: blur(4px);
   z-index: 1000;
   display: flex;
@@ -361,7 +363,7 @@ select.input-field option {
   border-radius: 8px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 /* Map specific styling */
@@ -396,7 +398,7 @@ select.input-field option {
   border: 1px solid var(--border-color) !important;
   border-radius: 8px !important;
   padding: 16px !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
   font-family: var(--font-outfit) !important;
 }
 
@@ -427,63 +429,9 @@ select.input-field option {
   }
 }
 
-/* Strava Light Theme Container overrides */
+/* Strava Light Theme Container overrides - legacy container kept for routing safety, matches base theme */
 .strava-theme-container {
-  --bg-dark: #F4F5F7;
-  --card-bg: #FFFFFF;
-  --card-bg-hover: #FAFAFA;
-  --primary-green: #00875A;
-  --text-white: #1E1E1E;
-  --text-muted: #6E6E73;
-  --border-color: #E5E5EA;
-  --border-hover: #D1D1D6;
-  --glass-bg: #FFFFFF;
-  
   background-color: var(--bg-dark);
   color: var(--text-white);
   min-height: 100vh;
-  margin: -40px;
-  padding: 40px;
-}
-
-.strava-theme-container .cyber-bg {
-  display: none;
-}
-
-/* Adjust components inside light theme */
-.strava-theme-container .btn-primary {
-  color: #FFFFFF;
-}
-.strava-theme-container .btn-primary:hover {
-  background-color: #006F48;
-}
-.strava-theme-container .input-field {
-  background: #FFFFFF;
-}
-.strava-theme-container .input-field:focus {
-  background: #FFFFFF;
-  border-color: var(--primary-green);
-}
-.strava-theme-container .btn-secondary {
-  color: #1E1E1E;
-}
-.strava-theme-container .btn-secondary:hover {
-  background-color: rgba(0, 0, 0, 0.04);
-}
-.strava-theme-container .avatar-placeholder {
-  background-color: #E5E5EA;
-  color: var(--text-muted);
-}
-.strava-theme-container .btn-icon {
-  background: #FFFFFF;
-}
-.strava-theme-container .btn-icon:hover {
-  background: #F4F5F7;
-}
-.strava-theme-container .modal-content {
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
-}
-.strava-theme-container select.input-field option {
-  background-color: #FFFFFF !important;
-  color: #1E1E1E !important;
 }

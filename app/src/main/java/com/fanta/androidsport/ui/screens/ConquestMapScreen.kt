@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -128,7 +129,8 @@ fun ConquestMapScreen(
     userGuildNom: String?,
     mapTargetPosition: Point?,
     onMapTargetPositionHandled: () -> Unit,
-    onRunSaved: () -> Unit
+    onRunSaved: () -> Unit,
+    bottomPadding: Dp = 0.dp
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -740,7 +742,7 @@ fun ConquestMapScreen(
         Card(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(16.dp)
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + bottomPadding)
                 .width(220.dp),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(

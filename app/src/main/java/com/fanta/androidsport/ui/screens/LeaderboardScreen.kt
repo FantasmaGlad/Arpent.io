@@ -284,6 +284,7 @@ fun LeaderboardScreen(
 
     var selectedSocialFilter by remember { mutableStateOf(SocialFilter.GLOBAL) }
     var selectedMetric by remember { mutableStateOf(MetricFilter.TERRITOIRE) }
+    var lastFilters by remember { mutableStateOf(Triple(SocialFilter.GLOBAL, MetricFilter.TERRITOIRE, 0)) }
     var userLatState by remember { mutableStateOf<Double?>(null) }
     var userLonState by remember { mutableStateOf<Double?>(null) }
 
@@ -607,7 +608,14 @@ fun LeaderboardScreen(
 
     LaunchedEffect(isActive, selectedSocialFilter, selectedMetric, selectedTab) {
         if (!isActive) return@LaunchedEffect
-        isLoading = true
+        val filtersChanged = lastFilters.first != selectedSocialFilter ||
+                             lastFilters.second != selectedMetric ||
+                             lastFilters.third != selectedTab
+        lastFilters = Triple(selectedSocialFilter, selectedMetric, selectedTab)
+        val isListEmpty = if (selectedTab == 0) players.isEmpty() else clans.isEmpty()
+        if (isListEmpty || filtersChanged) {
+            isLoading = true
+        }
         loadLeaderboardData()
     }
 

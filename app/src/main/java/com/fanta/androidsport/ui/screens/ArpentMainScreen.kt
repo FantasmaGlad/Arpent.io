@@ -5,9 +5,12 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +52,7 @@ import kotlinx.serialization.json.*
 @Composable
 fun ArpentMainScreen(userId: String) {
     var navigationIndex by remember { mutableStateOf(0) }
+    var isFooterExpanded by remember { mutableStateOf(true) }
     val context = LocalContext.current
 
     var userPseudo by remember { mutableStateOf("Visiteur") }
@@ -324,91 +328,6 @@ fun ArpentMainScreen(userId: String) {
                         titleContentColor = MaterialTheme.colorScheme.onBackground
                     )
                 )
-            },
-            bottomBar = {
-                val configuration = LocalConfiguration.current
-                val screenWidth = configuration.screenWidthDp
-                val footerFontSize = when {
-                    screenWidth < 360 -> 9.sp
-                    screenWidth < 400 -> 10.sp
-                    else -> 11.sp
-                }
-                val footerIconSize = when {
-                    screenWidth < 360 -> 18.dp
-                    screenWidth < 400 -> 20.dp
-                    else -> 22.dp
-                }
-
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    tonalElevation = 0.dp
-                ) {
-                    NavigationBarItem(
-                        selected = navigationIndex == 0,
-                        onClick = { navigationIndex = 0 },
-                        icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
-                        label = { Text("Conquête", fontSize = footerFontSize, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF00875A),
-                            selectedTextColor = Color(0xFF00875A),
-                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            indicatorColor = Color.Transparent
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = navigationIndex == 1,
-                        onClick = { navigationIndex = 1 },
-                        icon = { Icon(Icons.Default.Star, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
-                        label = { Text("Classement", fontSize = footerFontSize, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF00875A),
-                            selectedTextColor = Color(0xFF00875A),
-                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            indicatorColor = Color.Transparent
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = navigationIndex == 4,
-                        onClick = { navigationIndex = 4 },
-                        icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
-                        label = { Text("Courses", fontSize = footerFontSize, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF00875A),
-                            selectedTextColor = Color(0xFF00875A),
-                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            indicatorColor = Color.Transparent
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = navigationIndex == 3,
-                        onClick = { navigationIndex = 3 },
-                        icon = { Icon(Icons.Default.Group, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
-                        label = { Text("Guilde", fontSize = footerFontSize, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF00875A),
-                            selectedTextColor = Color(0xFF00875A),
-                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            indicatorColor = Color.Transparent
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = navigationIndex == 2,
-                        onClick = { navigationIndex = 2 },
-                        icon = { Icon(Icons.Default.Person, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
-                        label = { Text("Profil", fontSize = footerFontSize, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF00875A),
-                            selectedTextColor = Color(0xFF00875A),
-                            unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            indicatorColor = Color.Transparent
-                        )
-                    )
-                }
             }
         ) { paddingValues ->
             Box(
@@ -418,6 +337,10 @@ fun ArpentMainScreen(userId: String) {
             ) {
                 // 1. Render map in background for conquest, leaderboard and guild tabs (never destroyed)
                 val isMapVisible = navigationIndex != 2 && navigationIndex != 4
+                val mapBottomPadding = when (navigationIndex) {
+                    0 -> if (isFooterExpanded) 80.dp else 0.dp
+                    else -> 80.dp
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -435,7 +358,8 @@ fun ArpentMainScreen(userId: String) {
                         userGuildNom = userGuildNom,
                         mapTargetPosition = mapTargetPosition,
                         onMapTargetPositionHandled = { mapTargetPosition = null },
-                        onRunSaved = { refreshStats() }
+                        onRunSaved = { refreshStats() },
+                        bottomPadding = mapBottomPadding
                     )
                 }
 
@@ -444,6 +368,7 @@ fun ArpentMainScreen(userId: String) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(bottom = 80.dp)
                         .offset(x = if (isLeaderboardVisible) 0.dp else 10000.dp)
                         .alpha(if (isLeaderboardVisible) 1f else 0f)
                 ) {
@@ -463,6 +388,7 @@ fun ArpentMainScreen(userId: String) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(bottom = 80.dp)
                         .background(if (isProfileVisible) MaterialTheme.colorScheme.background else Color.Transparent)
                         .offset(x = if (isProfileVisible) 0.dp else 10000.dp)
                         .alpha(if (isProfileVisible) 1f else 0f)
@@ -495,6 +421,7 @@ fun ArpentMainScreen(userId: String) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(bottom = 80.dp)
                         .offset(x = if (isGuildVisible) 0.dp else 10000.dp)
                         .alpha(if (isGuildVisible) 1f else 0f)
                 ) {
@@ -518,6 +445,7 @@ fun ArpentMainScreen(userId: String) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(bottom = 80.dp)
                         .background(if (isCoursesVisible) MaterialTheme.colorScheme.background else Color.Transparent)
                         .offset(x = if (isCoursesVisible) 0.dp else 10000.dp)
                         .alpha(if (isCoursesVisible) 1f else 0f)
@@ -526,6 +454,137 @@ fun ArpentMainScreen(userId: String) {
                         userId = userId,
                         isActive = isCoursesVisible
                     )
+                }
+
+                // Collapsible/Expandable Navigation Bar overlay
+                val configuration = LocalConfiguration.current
+                val screenWidth = configuration.screenWidthDp
+                val footerFontSize = when {
+                    screenWidth < 360 -> 9.sp
+                    screenWidth < 400 -> 10.sp
+                    else -> 11.sp
+                }
+                val footerIconSize = when {
+                    screenWidth < 360 -> 18.dp
+                    screenWidth < 400 -> 20.dp
+                    else -> 22.dp
+                }
+
+                // Only allow folding on the home screen (conquest, navigationIndex == 0)
+                val canFold = navigationIndex == 0
+                val bottomBarHeight = 80.dp
+                val footerOffset by animateDpAsState(
+                    targetValue = if (canFold && !isFooterExpanded) bottomBarHeight else 0.dp,
+                    animationSpec = tween(durationMillis = 300),
+                    label = "footer_slide_offset"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(y = footerOffset)
+                        .fillMaxWidth()
+                ) {
+                    // Protruding central tab (languette)
+                    if (canFold) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .offset(y = (-20).dp)
+                                .size(width = 64.dp, height = 28.dp)
+                                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                .background(MaterialTheme.colorScheme.background)
+                                .border(
+                                    BorderStroke(1.dp, MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)),
+                                    RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                                )
+                                .clickable {
+                                    isFooterExpanded = !isFooterExpanded
+                                },
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Icon(
+                                imageVector = if (isFooterExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                contentDescription = if (isFooterExpanded) "Réduire le menu" else "Déplier le menu",
+                                tint = Color(0xFF00875A),
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .size(22.dp)
+                            )
+                        }
+                    }
+
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        tonalElevation = 0.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        NavigationBarItem(
+                            selected = navigationIndex == 0,
+                            onClick = { navigationIndex = 0 },
+                            icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Conquête", fontSize = footerFontSize, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF00875A),
+                                selectedTextColor = Color(0xFF00875A),
+                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                        NavigationBarItem(
+                            selected = navigationIndex == 1,
+                            onClick = { navigationIndex = 1 },
+                            icon = { Icon(Icons.Default.Star, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Classement", fontSize = footerFontSize, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF00875A),
+                                selectedTextColor = Color(0xFF00875A),
+                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                        NavigationBarItem(
+                            selected = navigationIndex == 4,
+                            onClick = { navigationIndex = 4 },
+                            icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Courses", fontSize = footerFontSize, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF00875A),
+                                selectedTextColor = Color(0xFF00875A),
+                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                        NavigationBarItem(
+                            selected = navigationIndex == 3,
+                            onClick = { navigationIndex = 3 },
+                            icon = { Icon(Icons.Default.Group, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Guilde", fontSize = footerFontSize, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF00875A),
+                                selectedTextColor = Color(0xFF00875A),
+                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                        NavigationBarItem(
+                            selected = navigationIndex == 2,
+                            onClick = { navigationIndex = 2 },
+                            icon = { Icon(Icons.Default.Person, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Profil", fontSize = footerFontSize, maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF00875A),
+                                selectedTextColor = Color(0xFF00875A),
+                                unselectedIconColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                indicatorColor = Color.Transparent
+                            )
+                        )
+                    }
                 }
             }
         }

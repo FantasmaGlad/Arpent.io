@@ -120,7 +120,7 @@ export default function StatsPage() {
       const topUsers = (topP || []).map(p => ({
         name: p.pseudonyme || 'Inconnu',
         area: parseFloat((p.total_area_m2 / 1000000).toFixed(4)),
-        color: '#CCFF00'
+        color: 'var(--primary-green)'
       }));
       setTopUsersData(topUsers);
 

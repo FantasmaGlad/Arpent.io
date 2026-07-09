@@ -354,6 +354,18 @@ fun GuildeScreen(
         }
     }
 
+    // Pre-fetch data once on composition entry (background warm-up) so the user
+    // doesn't see a spinner on first tab visit.
+    var hasPreFetched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!hasPreFetched) {
+            hasPreFetched = true
+            loadFriendsData()
+            loadClanData()
+        }
+    }
+
+    // Refresh when the tab becomes active or when filters change.
     LaunchedEffect(isActive, selectedTab, proximityDistanceLimit) {
         if (!isActive) return@LaunchedEffect
         if (selectedTab == 0) {

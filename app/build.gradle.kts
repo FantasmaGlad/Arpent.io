@@ -26,8 +26,8 @@ android {
         applicationId = "com.fanta.androidsport"
         minSdk = 35
         targetSdk = 36
-        versionCode = 16
-        versionName = "3.0"
+        versionCode = 17
+        versionName = "3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -86,6 +86,7 @@ kotlin {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.webkit)
     implementation(libs.material)
 
     // Jetpack Compose

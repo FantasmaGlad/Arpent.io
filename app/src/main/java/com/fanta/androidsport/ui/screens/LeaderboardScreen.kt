@@ -606,6 +606,17 @@ fun LeaderboardScreen(
         }
     }
 
+    // Pre-fetch data once on composition entry (background warm-up) so the user
+    // doesn't see a spinner on first tab visit.
+    var hasPreFetched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!hasPreFetched) {
+            hasPreFetched = true
+            loadLeaderboardData()
+        }
+    }
+
+    // Refresh when the tab becomes active or when filters change.
     LaunchedEffect(isActive, selectedSocialFilter, selectedMetric, selectedTab) {
         if (!isActive) return@LaunchedEffect
         val filtersChanged = lastFilters.first != selectedSocialFilter ||

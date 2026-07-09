@@ -237,6 +237,17 @@ fun CoursesScreen(
         }
     }
 
+    // Pre-fetch data once on composition entry (background warm-up) so the user
+    // doesn't see a spinner on first tab visit.
+    var hasPreFetched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!hasPreFetched) {
+            hasPreFetched = true
+            loadFeed()
+        }
+    }
+
+    // Refresh when the tab becomes active.
     LaunchedEffect(isActive) {
         if (!isActive) return@LaunchedEffect
         if (feedCourses.isEmpty()) {

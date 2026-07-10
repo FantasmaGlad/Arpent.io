@@ -1093,8 +1093,11 @@ fun ConquestMapScreen(
                         }
 
                         if (activePathPoints.isNotEmpty()) {
+                            val endTime = System.currentTimeMillis()
+                            val durationSec = ((endTime - (runStartTime ?: endTime)) / 1000.0).coerceAtLeast(0.0)
                             pendingRunDataToSave = PendingRunSaveData(
                                 runStartTime = runStartTime ?: System.currentTimeMillis(),
+                                runDurationSec = durationSec,
                                 runDistance = runDistance,
                                 isLoop = isLoop,
                                 closedPoints = closedPoints,
@@ -1403,7 +1406,7 @@ fun ConquestMapScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     val distanceKm = data.runDistance / 1000.0
-                                    val durationSec = ((System.currentTimeMillis() - data.runStartTime) / 1000.0).coerceAtLeast(0.0)
+                                    val durationSec = data.runDurationSec
                                     val durationMin = (durationSec / 60.0).toInt()
                                     
                                     val paceMinPerKm = if (distanceKm > 0) (durationSec / 60.0) / distanceKm else 0.0
@@ -1559,6 +1562,7 @@ fun ConquestMapScreen(
                                                 scope = scope,
                                                 context = context,
                                                 runStartTime = data.runStartTime,
+                                                durationSec = data.runDurationSec,
                                                 runDistance = data.runDistance,
                                                 isLoop = data.isLoop,
                                                 closedPoints = data.closedPoints,
@@ -1609,6 +1613,7 @@ fun ConquestMapScreen(
 
 data class PendingRunSaveData(
     val runStartTime: Long,
+    val runDurationSec: Double,
     val runDistance: Double,
     val isLoop: Boolean,
     val closedPoints: List<Point>,

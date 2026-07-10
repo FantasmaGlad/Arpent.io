@@ -135,6 +135,7 @@ fun saveRunToDatabase(
     scope: CoroutineScope,
     context: Context,
     runStartTime: Long,
+    durationSec: Double,
     runDistance: Double,
     isLoop: Boolean,
     closedPoints: List<Point>,
@@ -149,8 +150,7 @@ fun saveRunToDatabase(
     scope.launch(Dispatchers.IO) {
         try {
             val dateDebut = java.time.Instant.ofEpochMilli(runStartTime).toString()
-            val dateFin = java.time.Instant.now().toString()
-            val durationSec = ((System.currentTimeMillis() - runStartTime) / 1000.0)
+            val dateFin = java.time.Instant.ofEpochMilli(runStartTime + (durationSec * 1000).toLong()).toString()
             val distanceKm = runDistance / 1000.0
 
             // Compute Strava-like metrics

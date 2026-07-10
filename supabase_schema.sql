@@ -1715,19 +1715,6 @@ CREATE POLICY "view_course_photos" ON storage.objects
 -- FONCTIONS RPC HIÉRARCHIE DE CLAN
 -- ====================================================================
 
--- Fonction pour promouvoir un membre (Chef uniquement)
-CREATE OR REPLACE FUNCTION public.promouvoir_membre(
-    p_target_id uuid,
-    p_new_grade text
-)
-RETURNS void AS $$
-DECLARE
-    v_caller_grade text;
-    v_caller_guild uuid;
-    v_target_guild uuid;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- Implémentation réelle
 CREATE OR REPLACE FUNCTION public.promouvoir_membre(
     p_target_id uuid,

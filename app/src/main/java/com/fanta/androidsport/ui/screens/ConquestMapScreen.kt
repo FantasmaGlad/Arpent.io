@@ -10,6 +10,7 @@ import android.os.Vibrator
 import android.os.VibrationEffect
 import android.util.Log
 import android.widget.Toast
+import com.fanta.androidsport.BuildConfig
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -1464,9 +1465,7 @@ fun ConquestMapScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(118.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(Color.White)
-                                        .padding(8.dp),
+                                        .clip(RoundedCornerShape(16.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (data.closedPoints.isNotEmpty()) {
@@ -1619,53 +1618,102 @@ fun RouteTraceView(
     modifier: Modifier = Modifier,
     lineColor: Color = MaterialTheme.colorScheme.primary
 ) {
-    Canvas(modifier = modifier) {
-        if (points.isEmpty()) return@Canvas
+    if (points.isEmpty()) {
+        Box(
+            modifier = modifier
+                .background(Color(0xFFF4F5F7), shape = RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Pas de tracé GPS", color = Color(0xFF6E6E73), fontSize = 12.sp)
+        }
+        return
+    }
 
-        var minLng = points.first().longitude()
-        var maxLng = points.first().longitude()
-        var minLat = points.first().latitude()
-        var maxLat = points.first().latitude()
+    val mapboxToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
+    val staticMapUrl = remember(points) {
+        val lats = points.map { it.latitude() }
+        val lons = points.map { it.longitude() }
+        val minLat = lats.minOrNull() ?: 0.0
+        val maxLat = lats.maxOrNull() ?: 0.0
+        val minLon = lons.minOrNull() ?: 0.0
+        val maxLon = lons.maxOrNull() ?: 0.0
+        val centerLat = (minLat + maxLat) / 2.0
+        val centerLon = (minLon + maxLon) / 2.0
 
-        for (pt in points) {
-            if (pt.longitude() < minLng) minLng = pt.longitude()
-            if (pt.longitude() > maxLng) maxLng = pt.longitude()
-            if (pt.latitude() < minLat) minLat = pt.latitude()
-            if (pt.latitude() > maxLat) maxLat = pt.latitude()
+        val latRange = maxLat - minLat
+        val lonRange = maxLon - minLon
+        val maxRange = maxOf(latRange, lonRange)
+        val zoom = when {
+            maxRange > 0.1 -> 11
+            maxRange > 0.05 -> 12
+            maxRange > 0.02 -> 13
+            maxRange > 0.01 -> 14
+            maxRange > 0.005 -> 15
+            maxRange > 0.002 -> 16
+            else -> 17
         }
 
-        val rangeLng = maxLng - minLng
-        val rangeLat = maxLat - minLat
+        val step = if (points.size > 80) points.size / 80 else 1
+        val sampled = points.filterIndexed { i, _ -> i % step == 0 || i == points.size - 1 }
+        val pathCoords = sampled.joinToString(",") { "[${it.longitude()},${it.latitude()}]" }
+        val geoJsonPath = "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
+        val encodedGeoJson = java.net.URLEncoder.encode(geoJsonPath, "UTF-8").replace("+", "%20")
 
-        val margin = 0.1f
-        val width = size.width
-        val height = size.height
+        "https://api.mapbox.com/styles/v1/fantasmaglad/cmqe0myj4002c01qr2jd549n8/static/" +
+            "geojson($encodedGeoJson)/" +
+            "$centerLon,$centerLat,$zoom/600x260@2x" +
+            "?access_token=$mapboxToken&attribution=false&logo=false"
+    }
 
-        val drawWidth = width * (1f - 2 * margin)
-        val drawHeight = height * (1f - 2 * margin)
-
-        val path = androidx.compose.ui.graphics.Path()
-
-        for (i in points.indices) {
-            val pt = points[i]
-            val x = margin * width + (if (rangeLng > 0) ((pt.longitude() - minLng) / rangeLng) * drawWidth else drawWidth / 2).toFloat()
-            val y = margin * height + (if (rangeLat > 0) ((maxLat - pt.latitude()) / rangeLat) * drawHeight else drawHeight / 2).toFloat()
-
-            if (i == 0) {
-                path.moveTo(x, y)
-            } else {
-                path.lineTo(x, y)
-            }
-        }
-
-        drawPath(
-            path = path,
-            color = lineColor,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = 4.dp.toPx(),
-                cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                join = androidx.compose.ui.graphics.StrokeJoin.Round
-            )
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+    ) {
+        AsyncImage(
+            model = staticMapUrl,
+            contentDescription = "Carte du tracé",
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop
         )
+
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(12.dp)
+        ) {
+            val lats = points.map { it.latitude() }
+            val lons = points.map { it.longitude() }
+            val minLat = lats.minOrNull() ?: 0.0
+            val maxLat = lats.maxOrNull() ?: 0.0
+            val minLon = lons.minOrNull() ?: 0.0
+            val maxLon = lons.maxOrNull() ?: 0.0
+
+            val latRange = maxLat - minLat
+            val lonRange = maxLon - minLon
+
+            val sizeX = size.width
+            val sizeY = size.height
+
+            val path = androidx.compose.ui.graphics.Path()
+            for (i in points.indices) {
+                val pt = points[i]
+                val x = if (lonRange > 0) ((pt.longitude() - minLon) / lonRange * sizeX).toFloat() else sizeX / 2
+                val y = if (latRange > 0) (((maxLat - pt.latitude()) / latRange) * sizeY).toFloat() else sizeY / 2
+                if (i == 0) {
+                    path.moveTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                }
+            }
+            drawPath(
+                path = path,
+                color = lineColor,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 4.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round
+                )
+            )
+        }
     }
 }

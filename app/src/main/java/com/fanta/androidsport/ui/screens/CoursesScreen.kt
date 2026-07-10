@@ -1,7 +1,11 @@
 package com.fanta.androidsport.ui.screens
 
 import android.widget.Toast
+import com.fanta.androidsport.R
+import com.google.android.gms.location.LocationServices
 import com.fanta.androidsport.ui.theme.BrandGreen
+import com.fanta.androidsport.ui.theme.SportAndroidTheme
+import com.fanta.androidsport.ui.theme.ThemeManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Comment
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +52,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,13 +66,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -101,6 +114,22 @@ fun CoursesScreen(
     var feedCourses by remember { mutableStateOf<List<FeedCourseItem>>(emptyList()) }
     var friendsStatusMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
+
+    var userLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    LaunchedEffect(Unit) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) {
+                    userLocation = loc
+                }
+            }
+        }
+    }
 
     var selectedDetailCourse by remember { mutableStateOf<FeedCourseItem?>(null) }
     var showDeleteConfirmCourseId by remember { mutableStateOf<String?>(null) }
@@ -351,22 +380,37 @@ fun CoursesScreen(
         }
     }
 
-    val activePrimary = BrandGreen
-    val lightScheme = lightColorScheme(
-        primary = activePrimary,
-        background = Color(0xFFF4F5F7),
-        surface = Color.White,
-        onSurface = Color(0xFF1E1E1E),
-        surfaceVariant = Color(0xFFE9EBEF),
-        onSurfaceVariant = Color(0xFF6E6E73)
-    )
+    SportAndroidTheme(theme = ThemeManager.themeState.value) {
+        val mapCenter = remember(userLocation, feedCourses) {
+            if (userLocation != null) {
+                Pair(userLocation!!.longitude, userLocation!!.latitude)
+            } else if (feedCourses.isNotEmpty()) {
+                val firstCoursePoints = feedCourses.first().pointsGps
+                if (firstCoursePoints.isNotEmpty()) {
+                    Pair(firstCoursePoints.first().longitude, firstCoursePoints.first().latitude)
+                } else {
+                    Pair(2.3522, 48.8566) // Paris default
+                }
+            } else {
+                Pair(2.3522, 48.8566) // Paris default
+            }
+        }
 
-    MaterialTheme(colorScheme = lightScheme) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF4F5F7))
+                .background(MaterialTheme.colorScheme.background)
         ) {
+            // Blurred Mapbox Static Map Background (conquest style)
+            AsyncImage(
+                model = "https://api.mapbox.com/styles/v1/fantasmaglad/cmqe0myj4002c01qr2jd549n8/static/${mapCenter.first},${mapCenter.second},13,0,0/800x1200@2x?access_token=${BuildConfig.MAPBOX_PUBLIC_TOKEN}&attribution=false&logo=false",
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(20.dp),
+                contentScale = ContentScale.Crop,
+                alpha = 0.5f
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -425,6 +469,7 @@ fun CoursesScreen(
                     ) {
                         items(feedCourses) { course ->
                             var showCommentsSection by remember { mutableStateOf(false) }
+                            var showAddCommentField by remember { mutableStateOf(false) }
                             var newCommentText by remember { mutableStateOf("") }
 
                             FeedCourseCard(
@@ -432,12 +477,18 @@ fun CoursesScreen(
                                 currentUserId = userId,
                                 friendStatus = friendsStatusMap[course.utilisateurId],
                                 showComments = showCommentsSection,
+                                showAddComment = showAddCommentField,
                                 newCommentText = newCommentText,
                                 onToggleComments = { showCommentsSection = !showCommentsSection },
+                                onToggleAddComment = {
+                                    showAddCommentField = !showAddCommentField
+                                    if (showAddCommentField) showCommentsSection = false
+                                },
                                 onCommentTextChange = { newCommentText = it },
                                 onSendComment = {
                                     submitComment(course.id, newCommentText)
                                     newCommentText = ""
+                                    showAddCommentField = false
                                 },
                                 onReact = { type, current ->
                                     toggleReaction(course.id, type, current)
@@ -500,8 +551,10 @@ fun FeedCourseCard(
     currentUserId: String,
     friendStatus: String?,
     showComments: Boolean,
+    showAddComment: Boolean,
     newCommentText: String,
     onToggleComments: () -> Unit,
+    onToggleAddComment: () -> Unit,
     onCommentTextChange: (String) -> Unit,
     onSendComment: () -> Unit,
     onReact: (String, CourseReaction?) -> Unit,
@@ -509,26 +562,72 @@ fun FeedCourseCard(
     onDelete: () -> Unit,
     onSendFriendRequest: () -> Unit
 ) {
-    val userReactionBaamix = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" }
-
-    val fallbackColor = BrandGreen
-    val parsedEmpireColor = try {
-        Color(android.graphics.Color.parseColor(course.empireColor ?: "#00875A"))
-    } catch (_: Exception) {
-        fallbackColor
+    // Optimistic like state
+    var optimisticLiked by remember(course.id) {
+        mutableStateOf(course.reactions.any { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" })
     }
+    val userReactionBaamix = course.reactions.firstOrNull { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" }
+    val likeScale by animateFloatAsState(
+        targetValue = if (optimisticLiked) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+    )
+    val likeCount = remember(course.reactions, optimisticLiked) {
+        val baseCount = course.reactions.count { it.type_reaction == "baamix" }
+        val wasLiked = course.reactions.any { it.utilisateur_id == currentUserId && it.type_reaction == "baamix" }
+        if (optimisticLiked && !wasLiked) {
+            baseCount + 1
+        } else if (!optimisticLiked && wasLiked) {
+            maxOf(0, baseCount - 1)
+        } else {
+            baseCount
+        }
+    }
+
+    // Couleur du thème profil de l'utilisateur courant (boutons, accents UI)
+    val themeColor = MaterialTheme.colorScheme.primary
+    // Couleur empire de l'auteur de la carte (gradient de fond)
+    val empireColor = try {
+        Color(android.graphics.Color.parseColor(course.empireColor ?: "#00875A"))
+    } catch (_: Exception) { themeColor }
+    val cardGradient = empireColor.copy(alpha = 0.13f) // voile uniforme
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 24.dp)
     ) {
-        // 1. The Main Premium Black Card
+        // 1. The Main Premium Card with dynamic gradient
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.Black)
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D0D0D)) // fond sombre uniforme
+            ) {
+                // Voile empire uniforme
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(cardGradient)
+                )
+                // Tracé GPS flou en arrière-plan à 30%
+                if (course.pointsGps.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            .alpha(0.30f)
+                            .blur(12.dp)
+                    ) {
+                        RoutePreviewCanvas(
+                            points = course.pointsGps,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -574,7 +673,7 @@ fun FeedCourseCard(
                                 }
                                 Text(
                                     text = "• $text",
-                                    color = if (isFriend) BrandGreen else Color.LightGray,
+                                    color = if (isFriend) empireColor else Color.LightGray,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.clickable(enabled = friendStatus == null) {
@@ -630,8 +729,9 @@ fun FeedCourseCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(140.dp)
-                                .background(Color.White, shape = RoundedCornerShape(16.dp))
-                                .clip(RoundedCornerShape(16.dp)),
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(empireColor.copy(alpha = 0.15f), shape = RoundedCornerShape(16.dp))
+                                .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.35f)), RoundedCornerShape(16.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             if (!course.imageUrl.isNullOrEmpty()) {
@@ -646,13 +746,13 @@ fun FeedCourseCard(
                                     Icon(
                                         imageVector = Icons.Default.DirectionsRun,
                                         contentDescription = null,
-                                        tint = Color.Gray,
+                                        tint = empireColor.copy(alpha = 0.7f),
                                         modifier = Modifier.size(28.dp)
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Arpent.io",
-                                        color = Color.Gray,
+                                        color = empireColor.copy(alpha = 0.7f),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         fontStyle = FontStyle.Italic
@@ -667,16 +767,17 @@ fun FeedCourseCard(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(60.dp)
-                                .background(Color.White, shape = RoundedCornerShape(16.dp))
-                                .clip(RoundedCornerShape(16.dp))
+                                .defaultMinSize(minHeight = 48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.07f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(12.dp))
                                 .padding(8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             val desc = course.legende ?: course.nom ?: "Course sans description"
                             Text(
                                 text = desc,
-                                color = Color.Black,
+                                color = Color.White.copy(alpha = 0.85f),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 2,
@@ -691,39 +792,124 @@ fun FeedCourseCard(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val isLiked = userReactionBaamix != null
-                            // Like Heart Button
+                            // Like Heart Button (optimistic)
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(36.dp)
-                                    .background(Color.White, shape = RoundedCornerShape(50))
-                                    .clickable { onReact("baamix", userReactionBaamix) },
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (optimisticLiked) Color.Red.copy(alpha = 0.18f)
+                                        else Color.White.copy(alpha = 0.10f)
+                                    )
+                                    .border(
+                                        BorderStroke(1.dp,
+                                            if (optimisticLiked) Color.Red.copy(alpha = 0.6f)
+                                            else Color.White.copy(alpha = 0.15f)
+                                        ),
+                                        RoundedCornerShape(50)
+                                    )
+                                    .clickable {
+                                        optimisticLiked = !optimisticLiked
+                                        onReact("baamix", userReactionBaamix)
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = if (isLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                                    contentDescription = "Like",
-                                    tint = if (isLiked) Color.Red else Color.Black,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_baamix_like),
+                                        contentDescription = "Like",
+                                        tint = if (optimisticLiked) Color.Red else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(20.dp).scale(likeScale)
+                                    )
+                                    if (likeCount > 0) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = likeCount.toString(),
+                                            color = if (optimisticLiked) Color.Red else Color.White.copy(alpha = 0.7f),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
 
-                            // Add Comment Button
+                            // Add Comment Button (ouvre le champ rapide inline)
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(36.dp)
-                                    .background(Color.White, shape = RoundedCornerShape(50))
-                                    .clickable { onToggleComments() },
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (showAddComment) empireColor.copy(alpha = 0.22f)
+                                        else Color.White.copy(alpha = 0.10f)
+                                    )
+                                    .border(
+                                        BorderStroke(1.dp,
+                                            if (showAddComment) empireColor.copy(alpha = 0.5f)
+                                            else Color.White.copy(alpha = 0.15f)
+                                        ),
+                                        RoundedCornerShape(50)
+                                    )
+                                    .clickable { onToggleAddComment() },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.AddComment,
-                                    contentDescription = "Commenter",
-                                    tint = Color.Black,
+                                    contentDescription = "Ajouter un commentaire",
+                                    tint = if (showAddComment) empireColor else Color.White.copy(alpha = 0.7f),
                                     modifier = Modifier.size(20.dp)
                                 )
+                            }
+                        }
+
+                        // Quick Add Comment Field (visible si showAddComment) - sans fond
+                        if (showAddComment) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.White.copy(alpha = 0.07f))
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = newCommentText,
+                                    onValueChange = onCommentTextChange,
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.White,
+                                        fontSize = 13.sp
+                                    ),
+                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(empireColor),
+                                    decorationBox = { innerTextField ->
+                                        if (newCommentText.isEmpty()) {
+                                            Text(
+                                                text = "Écrire un commentaire...",
+                                                color = Color.White.copy(alpha = 0.35f),
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                )
+                                IconButton(
+                                    onClick = onSendComment,
+                                    enabled = newCommentText.isNotBlank(),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Send,
+                                        contentDescription = "Envoyer",
+                                        tint = if (newCommentText.isNotBlank()) empireColor else Color.White.copy(alpha = 0.2f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -780,28 +966,31 @@ fun FeedCourseCard(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // GPS Track Map Preview Card
+                        // GPS Track Map Preview Card (Mapbox + tracé)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(120.dp)
-                                .background(Color.White, shape = RoundedCornerShape(16.dp))
                                 .clip(RoundedCornerShape(16.dp))
+                                .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.35f)), RoundedCornerShape(16.dp))
                                 .clickable { onViewDetails() }
                         ) {
                             if (course.pointsGps.isNotEmpty()) {
-                                RoutePreviewCanvas(
+                                RouteMapPreview(
                                     points = course.pointsGps,
+                                    empireColor = empireColor,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
                                 Box(
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF111111)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "Aucun tracé",
-                                        color = Color.Gray,
+                                        color = empireColor.copy(alpha = 0.5f),
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -811,16 +1000,15 @@ fun FeedCourseCard(
                     }
                 }
 
-                // Expandable Comments section inside the black card
+                // Expandable Comments section (déroulée via le bouton comment)
                 if (showComments) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.DarkGray)
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // List comments
                     if (course.commentaires.isEmpty()) {
                         Text(
-                            text = "Aucun commentaire pour le moment.",
+                            text = "Aucun commentaire — soyez le premier !",
                             color = Color.Gray,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(vertical = 8.dp)
@@ -836,7 +1024,7 @@ fun FeedCourseCard(
                                     Text(
                                         text = comment.pseudonyme,
                                         fontWeight = FontWeight.Bold,
-                                        color = BrandGreen,
+                                        color = empireColor,
                                         fontSize = 12.sp
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -846,14 +1034,8 @@ fun FeedCourseCard(
                                             .ofPattern("dd MMM à HH:mm")
                                             .withZone(java.time.ZoneId.systemDefault())
                                         formatter.format(instant)
-                                    } catch (_: Exception) {
-                                        comment.date_creation
-                                    }
-                                    Text(
-                                        text = commentDate,
-                                        color = Color.Gray,
-                                        fontSize = 10.sp
-                                    )
+                                    } catch (_: Exception) { comment.date_creation }
+                                    Text(text = commentDate, color = Color.Gray, fontSize = 10.sp)
                                 }
                                 Text(
                                     text = comment.contenu,
@@ -864,59 +1046,25 @@ fun FeedCourseCard(
                             }
                         }
                     }
-
-                    // Add comment input
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = newCommentText,
-                            onValueChange = onCommentTextChange,
-                            placeholder = { Text("Votre commentaire...", fontSize = 12.sp, color = Color.Gray) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = BrandGreen,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = BrandGreen,
-                                unfocusedBorderColor = Color.DarkGray,
-                                focusedContainerColor = Color(0xFF1A1A1A),
-                                unfocusedContainerColor = Color(0xFF1A1A1A)
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = onSendComment,
-                            enabled = newCommentText.isNotBlank()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "Envoyer",
-                                tint = if (newCommentText.isNotBlank()) BrandGreen else Color.Gray
-                            )
-                        }
-                    }
                 }
             }
-        }
+            } // close background box
+        } // close card
 
-        // 2. The Protruding Comments Button
+        // Protruding Comment Toggle Button (dérouler/replier les commentaires)
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .offset(y = 16.dp)
                 .size(width = 60.dp, height = 32.dp)
-                .background(Color.Black, shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                .background(empireColor) // couleur uniforme
                 .clickable { onToggleComments() },
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Comment,
-                contentDescription = "Commentaires",
+                imageVector = if (showComments) Icons.Default.ExpandLess else Icons.Default.Comment,
+                contentDescription = "Voir les commentaires",
                 tint = Color.White,
                 modifier = Modifier.size(18.dp)
             )
@@ -945,9 +1093,10 @@ fun MetricWidget(label: String, value: String) {
 @Composable
 fun RoutePreviewCanvas(
     points: List<GPSPoint>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    lineColor: Color? = null
 ) {
-    val traceColor = BrandGreen
+    val traceColor = lineColor ?: BrandGreen
     if (points.isEmpty()) {
         Box(
             modifier = modifier
@@ -989,10 +1138,10 @@ fun RoutePreviewCanvas(
         val step = if (points.size > 80) points.size / 80 else 1
         val sampled = points.filterIndexed { i, _ -> i % step == 0 || i == points.size - 1 }
         val pathCoords = sampled.joinToString(",") { "[${it.longitude},${it.latitude}]" }
-        val geoJsonPath = "{\"type\":\"Feature\",\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
-        val encodedGeoJson = java.net.URLEncoder.encode(geoJsonPath, "UTF-8")
+        val geoJsonPath = "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
+        val encodedGeoJson = java.net.URLEncoder.encode(geoJsonPath, "UTF-8").replace("+", "%20")
 
-        "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/" +
+        "https://api.mapbox.com/styles/v1/fantasmaglad/cmqe0myj4002c01qr2jd549n8/static/" +
             "geojson($encodedGeoJson)/" +
             "$centerLon,$centerLat,$zoom/600x260@2x" +
             "?access_token=$mapboxToken&attribution=false&logo=false"
@@ -1078,6 +1227,22 @@ fun RoutePreviewCanvas(
             }
         }
     }
+}
+
+/**
+ * Vue parallèle style Strava : carte Mapbox statique en fond + tracé GPS en surimpression coloré.
+ */
+@Composable
+fun RouteMapPreview(
+    points: List<GPSPoint>,
+    empireColor: Color,
+    modifier: Modifier = Modifier
+) {
+    RoutePreviewCanvas(
+        points = points,
+        modifier = modifier,
+        lineColor = empireColor
+    )
 }
 
 data class SplitItem(

@@ -228,6 +228,30 @@ fun GuildeScreen(
         }
     }
 
+    fun fetchAllClans() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val allRes = supabase.postgrest["guildes"].select()
+                val allArray = kotlinx.serialization.json.Json.parseToJsonElement(allRes.data) as? kotlinx.serialization.json.JsonArray
+                val clans = allArray?.mapNotNull { element ->
+                    val obj = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                    val id = obj["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val nom = obj["nom"]?.jsonPrimitive?.contentOrNull ?: "Clan"
+                    val col = obj["couleur_hex"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
+                    val av = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                    ClanItem(id, nom, col, av)
+                } ?: emptyList()
+                withContext(Dispatchers.Main) {
+                    allClansList = clans
+                    isClanLoading = false
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Error fetching all clans", e)
+                withContext(Dispatchers.Main) { isClanLoading = false }
+            }
+        }
+    }
+
     fun loadClanData() {
         scope.launch(Dispatchers.IO) {
             try {
@@ -367,16 +391,19 @@ fun GuildeScreen(
     // Refresh when the tab becomes active or when filters change.
     LaunchedEffect(isActive, selectedTab, proximityDistanceLimit) {
         if (!isActive) return@LaunchedEffect
-        if (selectedTab == 0) {
-            if (friendsList.isEmpty()) {
-                isFriendsLoading = true
+        when (selectedTab) {
+            0 -> {
+                if (friendsList.isEmpty()) isFriendsLoading = true
+                loadFriendsData()
             }
-            loadFriendsData()
-        } else {
-            if (clanId == null && allClansList.isEmpty() && clanMembers.isEmpty()) {
+            1 -> {
+                if (clanId == null && clanMembers.isEmpty()) isClanLoading = true
+                loadClanData()
+            }
+            2 -> {
                 isClanLoading = true
+                fetchAllClans()
             }
-            loadClanData()
         }
     }
 

@@ -94,6 +94,7 @@ fun GuildeScreen(
 
     // Tabs: 0 = AMIS, 1 = MON CLAN, 2 = CLANS
     var selectedTab by remember { mutableStateOf(0) }
+    var selectedPlayerIdForProfile by remember { mutableStateOf<String?>(null) }
     
     // Friends state
     var friendPseudoInput by remember { mutableStateOf("") }
@@ -604,7 +605,9 @@ fun GuildeScreen(
                             }
                             items(suggestedFriends) { suggestion ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedPlayerIdForProfile = suggestion.id },
                                     shape = RoundedCornerShape(16.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
                                     border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
@@ -798,7 +801,9 @@ fun GuildeScreen(
                         } else {
                             items(friendsList) { friend ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedPlayerIdForProfile = friend.id },
                                     shape = RoundedCornerShape(16.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
                                     border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
@@ -892,7 +897,9 @@ fun GuildeScreen(
                         items(clanMembers) { member ->
                             val isMe = member.id == userId
                             Card(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedPlayerIdForProfile = member.id },
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
                                 border = if (isMe) BorderStroke(1.5.dp, BrandGreen) else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
@@ -1419,6 +1426,14 @@ fun GuildeScreen(
                     }
                 }
             }
+        }
+        
+        if (selectedPlayerIdForProfile != null) {
+            PlayerProfileDialog(
+                playerId = selectedPlayerIdForProfile!!,
+                currentUserId = userId,
+                onDismissRequest = { selectedPlayerIdForProfile = null }
+            )
         }
     }
 }

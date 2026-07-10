@@ -1156,114 +1156,12 @@ fun ConquestMapScreen(
             }
         }
         
-        // Show player details stats dialog when clicked
         if (selectedPlayerStats != null) {
             val player = selectedPlayerStats!!
-            AlertDialog(
-                onDismissRequest = { selectedPlayerStats = null },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val parsedColor = player.empireColor
-                        AvatarImage(
-                            avatarUrl = player.avatarUrl,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .border(2.dp, parsedColor, CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(text = player.pseudo, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black)
-                            if (player.guildeNom != null) {
-                                val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color.Gray }
-                                Text(text = "Clan: ${player.guildeNom}", color = gColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                },
-                text = {
-                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Text(
-                            text = "Statistiques de l'Empire",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color.Gray
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Couleur de l'Empire :", color = Color.Black)
-                            Box(
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clip(CircleShape)
-                                    .background(player.empireColor)
-                                    .border(1.dp, Color.Gray, CircleShape)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Superficie conquise :", color = Color.Black)
-                            val areaStr = "%.3f"
-                                .format(player.totalAreaM2 / 1_000_000.0) + " km²"
-                            Text(
-                                text = areaStr,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        if (loadingPlayerStats) {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = NeonVolt,
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Nombre de courses :", color = Color.Black)
-                                Text(
-                                    text = "${selectedPlayerRunsCount ?: 0}",
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Distance totale courue :", color = Color.Black)
-                                val distStr = "%.2f km".format(selectedPlayerTotalDistance ?: 0.0)
-                                Text(
-                                    text = distStr,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { selectedPlayerStats = null }) {
-                        Text("FERMER", color = NeonVolt, fontWeight = FontWeight.Bold)
-                    }
-                },
-                shape = RoundedCornerShape(20.dp),
-                containerColor = Color.White
+            PlayerProfileDialog(
+                playerId = player.playerId,
+                currentUserId = userId,
+                onDismissRequest = { selectedPlayerStats = null }
             )
         }
 

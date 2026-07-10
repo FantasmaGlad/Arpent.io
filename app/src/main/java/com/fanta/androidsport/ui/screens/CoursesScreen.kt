@@ -400,18 +400,8 @@ fun CoursesScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(Color.Transparent)
         ) {
-            // Blurred Mapbox Static Map Background (conquest style)
-            AsyncImage(
-                model = "https://api.mapbox.com/styles/v1/fantasmaglad/cmqe0myj4002c01qr2jd549n8/static/${mapCenter.first},${mapCenter.second},13,0,0/800x1200@2x?access_token=${BuildConfig.MAPBOX_PUBLIC_TOKEN}&attribution=false&logo=false",
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(30.dp),
-                contentScale = ContentScale.Crop,
-                alpha = 0.30f
-            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -453,13 +443,13 @@ fun CoursesScreen(
                                 text = "Aucune course dans le feed",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E1E1E)
+                                color = MaterialTheme.colorScheme.onBackground
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Ajoutez des amis ou lancez-vous pour commencer la conquête !",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF6E6E73)
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.70f)
                             )
                         }
                     }

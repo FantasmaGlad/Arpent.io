@@ -400,7 +400,7 @@ fun CoursesScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Transparent)
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.30f))
         ) {
             Column(
                 modifier = Modifier
@@ -443,13 +443,13 @@ fun CoursesScreen(
                                 text = "Aucune course dans le feed",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
+                                color = Color(0xFF1E1E1E)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Ajoutez des amis ou lancez-vous pour commencer la conquête !",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.70f)
+                                color = Color(0xFF6E6E73)
                             )
                         }
                     }

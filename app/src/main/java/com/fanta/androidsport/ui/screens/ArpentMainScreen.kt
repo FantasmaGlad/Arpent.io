@@ -532,7 +532,7 @@ fun ArpentMainScreen(userId: String) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(bottom = 80.dp)
-                        .background(if (isCoursesVisible) MaterialTheme.colorScheme.background.copy(alpha = 0.30f) else Color.Transparent)
+                        .background(Color.Transparent)
                         .offset(x = if (isCoursesVisible) 0.dp else 10000.dp)
                         .alpha(if (isCoursesVisible) 1f else 0f)
                 ) {
@@ -608,14 +608,14 @@ fun ArpentMainScreen(userId: String) {
                         NavigationBarItem(
                             selected = navigationIndex == 0,
                             onClick = { navigationIndex = 0 },
-                            icon = { Icon(map_search, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Carte", fontSize = footerFontSize) },
+                            icon = { Icon(map_search, contentDescription = "Carte", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Carte", fontSize = footerFontSize, fontWeight = FontWeight.Medium) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                 indicatorColor = Color.Transparent
                             )
                         )
@@ -623,13 +623,13 @@ fun ArpentMainScreen(userId: String) {
                             selected = navigationIndex == 1,
                             onClick = { navigationIndex = 1 },
                             icon = { Icon(social_leaderboard, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Classement", fontSize = footerFontSize) },
+                            label = { Text("Classement", fontSize = footerFontSize, fontWeight = FontWeight.Medium) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                 indicatorColor = Color.Transparent
                             )
                         )
@@ -637,27 +637,27 @@ fun ArpentMainScreen(userId: String) {
                             selected = navigationIndex == 4,
                             onClick = { navigationIndex = 4 },
                             icon = { Icon(aod_watch, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Courses", fontSize = footerFontSize) },
+                            label = { Text("Courses", fontSize = footerFontSize, fontWeight = FontWeight.Medium) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                 indicatorColor = Color.Transparent
                             )
                         )
                         NavigationBarItem(
                             selected = navigationIndex == 3,
                             onClick = { navigationIndex = 3 },
-                            icon = { Icon(groups, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Social", fontSize = footerFontSize) },
+                            icon = { Icon(groups, contentDescription = "Social", modifier = Modifier.size(footerIconSize)) },
+                            label = { Text("Social", fontSize = footerFontSize, fontWeight = FontWeight.Medium) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                 indicatorColor = Color.Transparent
                             )
                         )
@@ -665,13 +665,13 @@ fun ArpentMainScreen(userId: String) {
                             selected = navigationIndex == 2,
                             onClick = { navigationIndex = 2 },
                             icon = { Icon(raven, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Profil", fontSize = footerFontSize) },
+                            label = { Text("Profil", fontSize = footerFontSize, fontWeight = FontWeight.Medium) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                 indicatorColor = Color.Transparent
                             )
                         )

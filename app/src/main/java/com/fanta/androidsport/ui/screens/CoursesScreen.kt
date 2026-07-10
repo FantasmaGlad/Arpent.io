@@ -239,7 +239,12 @@ fun CoursesScreen(
                 }
                 feedCourses = fetchedCourses
             } catch (e: Exception) {
-                android.util.Log.e("Arpent", "Failed to load feed", e)
+                android.util.Log.e("Arpent", "Failed to load feed: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    if (feedCourses.isEmpty()) {
+                        isLoading = false
+                    }
+                }
             } finally {
                 isLoading = false
             }
@@ -752,7 +757,7 @@ fun FeedCourseCard(
                             // Pace
                             val allureMin = course.allureMoyenne.toInt()
                             val allureSec = ((course.allureMoyenne - allureMin) * 60).toInt()
-                            val allureStr = if (course.allureMoyenne > 0) "%d:%02d minutes : km".format(allureMin, allureSec) else "--:-- minutes : km"
+                            val allureStr = if (course.allureMoyenne > 0) "%d:%02d mins/km".format(allureMin, allureSec) else "--:-- mins/km"
                             Text(
                                 text = allureStr,
                                 color = Color.White,

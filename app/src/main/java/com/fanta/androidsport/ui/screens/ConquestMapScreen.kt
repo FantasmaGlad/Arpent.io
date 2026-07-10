@@ -754,8 +754,8 @@ fun ConquestMapScreen(
         // Collapsible "Votre Empire" Stats Banner
         Box(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .offset(y = (-60).dp)
+                .align(Alignment.TopEnd)
+                .padding(top = 130.dp, end = 0.dp)
         ) {
             if (isEmpireCardExpanded) {
                 val clanHeaderColor = remember(userGuildCouleur) {
@@ -1432,13 +1432,13 @@ fun ConquestMapScreen(
                                         style = MaterialTheme.typography.bodyLarge
                                     )
                                     Text(
-                                        text = "$durationMin minutes",
+                                        text = "$durationMin mins",
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyLarge
                                     )
                                     Text(
-                                        text = String.format(java.util.Locale.US, "%d:%02d minutes : km", paceMin, paceSec),
+                                        text = String.format(java.util.Locale.US, "%d:%02d mins/km", paceMin, paceSec),
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyLarge
@@ -1530,21 +1530,24 @@ fun ConquestMapScreen(
                                         isUploadingImage = true
                                         scope.launch {
                                             var finalImageUrl: String? = null
-                                            if (selectedImageUri != null && selectedImageBytes != null) {
+                                                 if (selectedImageUri != null && selectedImageBytes != null) {
                                                 try {
                                                     withContext(Dispatchers.IO) {
-                                                        val bucket = supabase.storage.from("Images")
+                                                        val imageBytes = selectedImageBytes!!
+                                                        val bucket = supabase.storage.from("course-photos")
                                                         val filename = "course_${userId}_${System.currentTimeMillis()}.jpg"
-                                                        bucket.upload(filename, selectedImageBytes!!) {
+                                                        Log.d("Arpent", "Upload image: $filename (${imageBytes.size} bytes)")
+                                                        bucket.upload(filename, imageBytes) {
                                                             upsert = true
                                                         }
                                                         val publicUrl = bucket.publicUrl(filename)
-                                                        finalImageUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+                                                        finalImageUrl = publicUrl
+                                                        Log.d("Arpent", "Image uploadée : $publicUrl")
                                                     }
                                                 } catch (e: Exception) {
-                                                    Log.e("Arpent", "Failed to upload run image", e)
+                                                    Log.e("Arpent", "Erreur upload image: ${e.message}", e)
                                                     withContext(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Erreur d'envoi de l'image, enregistrement sans image.", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "Erreur d'envoi de l'image : ${e.message?.take(80)}", Toast.LENGTH_LONG).show()
                                                     }
                                                 }
                                             }

@@ -140,7 +140,7 @@ object PendingRunsQueue {
                     put("p_nom_course", JsonPrimitive(run.nom ?: ""))
                     put("p_legende", JsonPrimitive(run.legende ?: ""))
                     put("p_points_details", pointsDetailsJsonElement)
-                    put("p_image_url", JsonPrimitive(run.imageUrl))
+                    put("p_image_url", JsonPrimitive(run.imageUrl ?: ""))
                 }
 
                 supabase.postgrest.rpc("enregistrer_course", params)

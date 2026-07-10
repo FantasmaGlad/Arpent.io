@@ -73,3 +73,20 @@ fun splitIntoClosedPolygons(flatPoints: List<Point>): List<List<Point>> {
     }
     return polygons
 }
+
+fun smoothAltitudes(altitudes: List<Double>): List<Double> {
+    if (altitudes.size < 5) return altitudes
+    val windowSize = 11
+    val halfWindow = windowSize / 2
+    return altitudes.mapIndexed { index, _ ->
+        val start = (index - halfWindow).coerceAtLeast(0)
+        val end = (index + halfWindow).coerceAtMost(altitudes.size - 1)
+        var sum = 0.0
+        var count = 0
+        for (j in start..end) {
+            sum += altitudes[j]
+            count++
+        }
+        sum / count
+    }
+}

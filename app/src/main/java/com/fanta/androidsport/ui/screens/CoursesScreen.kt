@@ -73,6 +73,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Placeable
@@ -407,9 +408,9 @@ fun CoursesScreen(
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .blur(20.dp),
+                    .blur(30.dp),
                 contentScale = ContentScale.Crop,
-                alpha = 0.5f
+                alpha = 0.30f
             )
             Column(
                 modifier = Modifier
@@ -790,24 +791,24 @@ fun FeedCourseCard(
                         // Action Buttons Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Like Heart Button (optimistic)
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(36.dp)
-                                    .clip(RoundedCornerShape(50))
+                                    .size(36.dp)
+                                    .clip(CircleShape)
                                     .background(
-                                        if (optimisticLiked) Color.Red.copy(alpha = 0.18f)
+                                        if (optimisticLiked) themeColor.copy(alpha = 0.18f)
                                         else Color.White.copy(alpha = 0.10f)
                                     )
                                     .border(
                                         BorderStroke(1.dp,
-                                            if (optimisticLiked) Color.Red.copy(alpha = 0.6f)
+                                            if (optimisticLiked) themeColor.copy(alpha = 0.6f)
                                             else Color.White.copy(alpha = 0.15f)
                                         ),
-                                        RoundedCornerShape(50)
+                                        CircleShape
                                     )
                                     .clickable {
                                         optimisticLiked = !optimisticLiked
@@ -815,34 +816,29 @@ fun FeedCourseCard(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_baamix_like),
-                                        contentDescription = "Like",
-                                        tint = if (optimisticLiked) Color.Red else Color.White.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(20.dp).scale(likeScale)
-                                    )
-                                    if (likeCount > 0) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = likeCount.toString(),
-                                            color = if (optimisticLiked) Color.Red else Color.White.copy(alpha = 0.7f),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_baamix_like),
+                                    contentDescription = "Like",
+                                    tint = if (optimisticLiked) themeColor else Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(20.dp).scale(likeScale)
+                                )
                             }
+                            if (likeCount > 0) {
+                                Text(
+                                    text = likeCount.toString(),
+                                    color = if (optimisticLiked) themeColor else Color.White.copy(alpha = 0.7f),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
 
                             // Add Comment Button (ouvre le champ rapide inline)
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(36.dp)
-                                    .clip(RoundedCornerShape(50))
+                                    .size(36.dp)
+                                    .clip(CircleShape)
                                     .background(
                                         if (showAddComment) empireColor.copy(alpha = 0.22f)
                                         else Color.White.copy(alpha = 0.10f)
@@ -852,7 +848,7 @@ fun FeedCourseCard(
                                             if (showAddComment) empireColor.copy(alpha = 0.5f)
                                             else Color.White.copy(alpha = 0.15f)
                                         ),
-                                        RoundedCornerShape(50)
+                                        CircleShape
                                     )
                                     .clickable { onToggleAddComment() },
                                 contentAlignment = Alignment.Center
@@ -1108,42 +1104,31 @@ fun RoutePreviewCanvas(
         return
     }
 
+    val hexColor = remember(traceColor) {
+        try {
+            val argb = traceColor.toArgb()
+            val r = (argb shr 16) and 0xFF
+            val g = (argb shr 8) and 0xFF
+            val b = argb and 0xFF
+            String.format("#%02x%02x%02x", r, g, b)
+        } catch (e: Exception) {
+            "#00E5FF"
+        }
+    }
+
     // Build Mapbox Static Image URL with polyline overlay
     val mapboxToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
-    val staticMapUrl = remember(points) {
-        val lats = points.map { it.latitude }
-        val lons = points.map { it.longitude }
-        val minLat = lats.minOrNull() ?: 0.0
-        val maxLat = lats.maxOrNull() ?: 0.0
-        val minLon = lons.minOrNull() ?: 0.0
-        val maxLon = lons.maxOrNull() ?: 0.0
-        val centerLat = (minLat + maxLat) / 2.0
-        val centerLon = (minLon + maxLon) / 2.0
-
-        // Calculate zoom level from bounding box
-        val latRange = maxLat - minLat
-        val lonRange = maxLon - minLon
-        val maxRange = maxOf(latRange, lonRange)
-        val zoom = when {
-            maxRange > 0.1 -> 11
-            maxRange > 0.05 -> 12
-            maxRange > 0.02 -> 13
-            maxRange > 0.01 -> 14
-            maxRange > 0.005 -> 15
-            maxRange > 0.002 -> 16
-            else -> 17
-        }
-
+    val staticMapUrl = remember(points, hexColor) {
         // Build simplified polyline for the path overlay (sample max 80 points for URL length)
         val step = if (points.size > 80) points.size / 80 else 1
         val sampled = points.filterIndexed { i, _ -> i % step == 0 || i == points.size - 1 }
         val pathCoords = sampled.joinToString(",") { "[${it.longitude},${it.latitude}]" }
-        val geoJsonPath = "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
+        val geoJsonPath = "{\"type\":\"Feature\",\"properties\":{\"stroke\":\"$hexColor\",\"stroke-width\":5,\"stroke-opacity\":0.9},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
         val encodedGeoJson = java.net.URLEncoder.encode(geoJsonPath, "UTF-8").replace("+", "%20")
 
         "https://api.mapbox.com/styles/v1/fantasmaglad/cmqe0myj4002c01qr2jd549n8/static/" +
             "geojson($encodedGeoJson)/" +
-            "$centerLon,$centerLat,$zoom/600x260@2x" +
+            "auto/600x260@2x" +
             "?access_token=$mapboxToken&attribution=false&logo=false"
     }
 
@@ -1158,74 +1143,6 @@ fun RoutePreviewCanvas(
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop
         )
-
-        // Draw the GPS trace on top
-        Canvas(
-            modifier = Modifier
-                .matchParentSize()
-                .padding(12.dp)
-        ) {
-            val lats = points.map { it.latitude }
-            val lons = points.map { it.longitude }
-            val minLat = lats.minOrNull() ?: 0.0
-            val maxLat = lats.maxOrNull() ?: 0.0
-            val minLon = lons.minOrNull() ?: 0.0
-            val maxLon = lons.maxOrNull() ?: 0.0
-
-            val latRange = maxLat - minLat
-            val lonRange = maxLon - minLon
-
-            val sizeX = size.width
-            val sizeY = size.height
-
-            val pathPoints = points.map { pt ->
-                val x = if (lonRange > 0) {
-                    ((pt.longitude - minLon) / lonRange * sizeX).toFloat()
-                } else {
-                    sizeX / 2f
-                }
-                val y = if (latRange > 0) {
-                    (sizeY - ((pt.latitude - minLat) / latRange * sizeY)).toFloat()
-                } else {
-                    sizeY / 2f
-                }
-                Offset(x, y)
-            }
-
-            if (pathPoints.size > 1) {
-                // White outline for contrast
-                val path = Path().apply {
-                    moveTo(pathPoints[0].x, pathPoints[0].y)
-                    for (i in 1 until pathPoints.size) {
-                        lineTo(pathPoints[i].x, pathPoints[i].y)
-                    }
-                }
-                drawPath(
-                    path = path,
-                    color = Color.White,
-                    style = Stroke(
-                        width = 7f,
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-                drawPath(
-                    path = path,
-                    color = traceColor,
-                    style = Stroke(
-                        width = 4f,
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-
-                // Start & End markers
-                drawCircle(color = Color.White, radius = 11f, center = pathPoints.first())
-                drawCircle(color = traceColor, radius = 8f, center = pathPoints.first())
-                drawCircle(color = Color.White, radius = 11f, center = pathPoints.last())
-                drawCircle(color = Color.Red, radius = 8f, center = pathPoints.last())
-            }
-        }
     }
 }
 

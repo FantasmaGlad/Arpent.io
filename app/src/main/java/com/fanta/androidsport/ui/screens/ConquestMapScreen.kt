@@ -73,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +97,7 @@ import com.fanta.androidsport.utils.saveTerritoriesLocally
 import com.fanta.androidsport.utils.splitIntoClosedPolygons
 import com.fanta.androidsport.utils.syncTerritoriesFromDatabase
 import com.fanta.androidsport.utils.estimateAreaKm2
+import com.fanta.androidsport.utils.smoothAltitudes
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
@@ -1411,14 +1413,15 @@ fun ConquestMapScreen(
                                     var denivelePos = 0.0
                                     val validAltitudes = data.rawPoints.mapNotNull { it.altitude }
                                     if (validAltitudes.size > 1) {
-                                        var prevAlt = validAltitudes.first()
-                                        for (i in 1 until validAltitudes.size) {
-                                            val currAlt = validAltitudes[i]
+                                        val smoothed = smoothAltitudes(validAltitudes)
+                                        var prevAlt = smoothed.first()
+                                        for (i in 1 until smoothed.size) {
+                                            val currAlt = smoothed[i]
                                             val diff = currAlt - prevAlt
-                                            if (diff > 0.5) {
+                                            if (diff > 2.0) {
                                                 denivelePos += diff
                                                 prevAlt = currAlt
-                                            } else if (diff < -0.5) {
+                                            } else if (diff < -2.0) {
                                                 prevAlt = currAlt
                                             }
                                         }
@@ -1629,39 +1632,29 @@ fun RouteTraceView(
         return
     }
 
-    val mapboxToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
-    val staticMapUrl = remember(points) {
-        val lats = points.map { it.latitude() }
-        val lons = points.map { it.longitude() }
-        val minLat = lats.minOrNull() ?: 0.0
-        val maxLat = lats.maxOrNull() ?: 0.0
-        val minLon = lons.minOrNull() ?: 0.0
-        val maxLon = lons.maxOrNull() ?: 0.0
-        val centerLat = (minLat + maxLat) / 2.0
-        val centerLon = (minLon + maxLon) / 2.0
-
-        val latRange = maxLat - minLat
-        val lonRange = maxLon - minLon
-        val maxRange = maxOf(latRange, lonRange)
-        val zoom = when {
-            maxRange > 0.1 -> 11
-            maxRange > 0.05 -> 12
-            maxRange > 0.02 -> 13
-            maxRange > 0.01 -> 14
-            maxRange > 0.005 -> 15
-            maxRange > 0.002 -> 16
-            else -> 17
+    val hexColor = remember(lineColor) {
+        try {
+            val argb = lineColor.toArgb()
+            val r = (argb shr 16) and 0xFF
+            val g = (argb shr 8) and 0xFF
+            val b = argb and 0xFF
+            String.format("#%02x%02x%02x", r, g, b)
+        } catch (e: Exception) {
+            "#00E5FF"
         }
+    }
 
+    val mapboxToken = BuildConfig.MAPBOX_PUBLIC_TOKEN
+    val staticMapUrl = remember(points, hexColor) {
         val step = if (points.size > 80) points.size / 80 else 1
         val sampled = points.filterIndexed { i, _ -> i % step == 0 || i == points.size - 1 }
         val pathCoords = sampled.joinToString(",") { "[${it.longitude()},${it.latitude()}]" }
-        val geoJsonPath = "{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
+        val geoJsonPath = "{\"type\":\"Feature\",\"properties\":{\"stroke\":\"$hexColor\",\"stroke-width\":5,\"stroke-opacity\":0.9},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[$pathCoords]}}"
         val encodedGeoJson = java.net.URLEncoder.encode(geoJsonPath, "UTF-8").replace("+", "%20")
 
         "https://api.mapbox.com/styles/v1/fantasmaglad/cmqe0myj4002c01qr2jd549n8/static/" +
             "geojson($encodedGeoJson)/" +
-            "$centerLon,$centerLat,$zoom/600x260@2x" +
+            "auto/600x260@2x" +
             "?access_token=$mapboxToken&attribution=false&logo=false"
     }
 
@@ -1675,45 +1668,5 @@ fun RouteTraceView(
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop
         )
-
-        Canvas(
-            modifier = Modifier
-                .matchParentSize()
-                .padding(12.dp)
-        ) {
-            val lats = points.map { it.latitude() }
-            val lons = points.map { it.longitude() }
-            val minLat = lats.minOrNull() ?: 0.0
-            val maxLat = lats.maxOrNull() ?: 0.0
-            val minLon = lons.minOrNull() ?: 0.0
-            val maxLon = lons.maxOrNull() ?: 0.0
-
-            val latRange = maxLat - minLat
-            val lonRange = maxLon - minLon
-
-            val sizeX = size.width
-            val sizeY = size.height
-
-            val path = androidx.compose.ui.graphics.Path()
-            for (i in points.indices) {
-                val pt = points[i]
-                val x = if (lonRange > 0) ((pt.longitude() - minLon) / lonRange * sizeX).toFloat() else sizeX / 2
-                val y = if (latRange > 0) (((maxLat - pt.latitude()) / latRange) * sizeY).toFloat() else sizeY / 2
-                if (i == 0) {
-                    path.moveTo(x, y)
-                } else {
-                    path.lineTo(x, y)
-                }
-            }
-            drawPath(
-                path = path,
-                color = lineColor,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 4.dp.toPx(),
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                    join = androidx.compose.ui.graphics.StrokeJoin.Round
-                )
-            )
-        }
     }
 }

@@ -175,14 +175,15 @@ fun saveRunToDatabase(
             var deniveleNeg = 0.0
             val validAltitudes = rawPoints.mapNotNull { it.altitude }
             if (validAltitudes.size > 1) {
-                var prevAlt = validAltitudes.first()
-                for (i in 1 until validAltitudes.size) {
-                    val currAlt = validAltitudes[i]
+                val smoothed = smoothAltitudes(validAltitudes)
+                var prevAlt = smoothed.first()
+                for (i in 1 until smoothed.size) {
+                    val currAlt = smoothed[i]
                     val diff = currAlt - prevAlt
-                    if (diff > 0.5) { // filter out minor noise
+                    if (diff > 2.0) { // filter out minor noise
                         denivelePos += diff
                         prevAlt = currAlt
-                    } else if (diff < -0.5) {
+                    } else if (diff < -2.0) {
                         deniveleNeg += -diff
                         prevAlt = currAlt
                     }

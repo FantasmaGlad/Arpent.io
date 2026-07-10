@@ -36,6 +36,7 @@ import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.theme.NeonVolt
 import com.fanta.androidsport.ui.theme.ElectricBlue
 import com.fanta.androidsport.ui.theme.ActiveOrange
+import com.fanta.androidsport.ui.icons.*
 import com.fanta.androidsport.utils.loadTerritoriesLocally
 import com.fanta.androidsport.utils.syncTerritoriesFromDatabase
 import com.fanta.androidsport.utils.isNetworkAvailable
@@ -47,6 +48,9 @@ import kotlinx.coroutines.Dispatchers
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.json.*
+import kotlinx.serialization.Serializable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +80,9 @@ fun ArpentMainScreen(userId: String) {
     var userChange24hPct by remember { mutableStateOf(0.0) }
     var clanAreaKm2 by remember { mutableStateOf(0.0) }
     var clanChange24hPct by remember { mutableStateOf(0.0) }
+
+    var notificationsList by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
+    var showNotificationsModal by remember { mutableStateOf(false) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
 
@@ -150,9 +157,14 @@ fun ArpentMainScreen(userId: String) {
                 val maxAreaM2 = profileObj?.get("max_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
                 val areaLostM2 = profileObj?.get("area_lost_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
 
-                // Cache pseudonym for daily notifications
+                // Cache user info locally for receiver access
                 val prefs = context.getSharedPreferences("arpent_prefs", Context.MODE_PRIVATE)
-                prefs.edit().putString("user_pseudonyme", pseudo).apply()
+                prefs.edit().apply {
+                    putString("user_id", userId)
+                    putString("user_pseudonyme", pseudo)
+                    putInt("user_xp", xp)
+                    putFloat("current_area", (totalAreaM2 / 1_000_000.0).toFloat())
+                }.apply()
 
                 // Fetch guild details if present
                 var gNom: String? = null
@@ -242,6 +254,24 @@ fun ArpentMainScreen(userId: String) {
         }
     }
 
+    fun refreshNotifications() {
+        if (!isNetworkAvailable(context)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val res = supabase.postgrest["notifications"].select {
+                    filter { eq("utilisateur_id", userId) }
+                }
+                val list = Json.decodeFromString<List<NotificationItem>>(res.data)
+                val sorted = list.sortedByDescending { it.date_creation }
+                withContext(Dispatchers.Main) {
+                    notificationsList = sorted
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Error fetching notifications", e)
+            }
+        }
+    }
+
     LaunchedEffect(userId) {
         // Load from local storage immediately so there is zero delay/blank screen
         val localPolys = loadTerritoriesLocally(context)
@@ -249,6 +279,7 @@ fun ArpentMainScreen(userId: String) {
         completedPolygons.addAll(localPolys)
 
         refreshStats()
+        refreshNotifications()
         syncTerritoriesFromDatabase(userId, context, completedPolygons)
         
         // Sync pending offline runs immediately on startup/auth
@@ -350,14 +381,29 @@ fun ArpentMainScreen(userId: String) {
                     },
                     actions = {
                         IconButton(onClick = {
-                            Toast.makeText(context, "Aucune notification pour le moment", Toast.LENGTH_SHORT).show()
+                            showNotificationsModal = true
+                            refreshNotifications()
                         }) {
-                            Icon(
-                                painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_notification),
-                                contentDescription = "Notifications",
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
+                            val unreadCount = notificationsList.count { !it.lu }
+                            BadgedBox(
+                                badge = {
+                                    if (unreadCount > 0) {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError
+                                        ) {
+                                            Text(unreadCount.toString(), fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_notification),
+                                    contentDescription = "Notifications",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -562,65 +608,50 @@ fun ArpentMainScreen(userId: String) {
                         NavigationBarItem(
                             selected = navigationIndex == 0,
                             onClick = { navigationIndex = 0 },
-                            icon = { Icon(Icons.Default.LocationOn, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Conquête", fontSize = footerFontSize, maxLines = 1) },
+                            icon = { Icon(map_search, contentDescription = "Conquête", modifier = Modifier.size(footerIconSize)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
                             )
                         )
                         NavigationBarItem(
                             selected = navigationIndex == 1,
                             onClick = { navigationIndex = 1 },
-                            icon = { Icon(Icons.Default.Star, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Classement", fontSize = footerFontSize, maxLines = 1) },
+                            icon = { Icon(social_leaderboard, contentDescription = "Classement", modifier = Modifier.size(footerIconSize)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
                             )
                         )
                         NavigationBarItem(
                             selected = navigationIndex == 4,
                             onClick = { navigationIndex = 4 },
-                            icon = { Icon(Icons.Default.DirectionsRun, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Courses", fontSize = footerFontSize, maxLines = 1) },
+                            icon = { Icon(aod_watch, contentDescription = "Courses", modifier = Modifier.size(footerIconSize)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
                             )
                         )
                         NavigationBarItem(
                             selected = navigationIndex == 3,
                             onClick = { navigationIndex = 3 },
-                            icon = { Icon(Icons.Default.Group, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Guilde", fontSize = footerFontSize, maxLines = 1) },
+                            icon = { Icon(groups, contentDescription = "Guilde", modifier = Modifier.size(footerIconSize)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
                             )
                         )
                         NavigationBarItem(
                             selected = navigationIndex == 2,
                             onClick = { navigationIndex = 2 },
-                            icon = { Icon(Icons.Default.Person, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
-                            label = { Text("Profil", fontSize = footerFontSize, maxLines = 1) },
+                            icon = { Icon(raven, contentDescription = "Profil", modifier = Modifier.size(footerIconSize)) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onBackground,
-                                unselectedTextColor = MaterialTheme.colorScheme.onBackground,
                                 indicatorColor = Color.Transparent
                             )
                         )
@@ -628,11 +659,297 @@ fun ArpentMainScreen(userId: String) {
                 }
             }
         }
+
+        if (showNotificationsModal) {
+            val unreadCount = notificationsList.count { !it.lu }
+            AlertDialog(
+                onDismissRequest = { showNotificationsModal = false },
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Notifications",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        if (unreadCount > 0) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            supabase.postgrest["notifications"].update(
+                                                mapOf("lu" to true)
+                                            ) {
+                                                filter { eq("utilisateur_id", userId) }
+                                            }
+                                            refreshNotifications()
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text("Tout lire", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                },
+                text = {
+                    if (notificationsList.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Aucune notification",
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(notificationsList) { item ->
+                                NotificationRow(
+                                    item = item,
+                                    onClick = {
+                                        if (!item.lu) {
+                                            scope.launch(Dispatchers.IO) {
+                                                try {
+                                                    supabase.postgrest["notifications"].update(
+                                                        mapOf("lu" to true)
+                                                    ) {
+                                                        filter { eq("id", item.id) }
+                                                    }
+                                                    refreshNotifications()
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            }
+                                        }
+                                        when (item.type) {
+                                            1 -> navigationIndex = 0
+                                            2 -> navigationIndex = 4
+                                            3 -> navigationIndex = 4
+                                            4 -> navigationIndex = 3
+                                        }
+                                        showNotificationsModal = false
+                                    },
+                                    onDelete = {
+                                        scope.launch(Dispatchers.IO) {
+                                            try {
+                                                supabase.postgrest["notifications"].delete {
+                                                    filter { eq("id", item.id) }
+                                                }
+                                                refreshNotifications()
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showNotificationsModal = false }) {
+                        Text("Fermer")
+                    }
+                },
+                shape = RoundedCornerShape(24.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            )
+        }
     } else {
         PermissionRequestScreen(
             onRequestPermissions = {
                 permissionLauncher.launch(requiredPermissions)
             }
         )
+    }
+}
+
+@Serializable
+data class NotificationItem(
+    val id: String,
+    val utilisateur_id: String,
+    val type: Int,
+    val titre: String,
+    val message: String,
+    val lu: Boolean,
+    val date_creation: String,
+    val metadata: JsonElement? = null
+)
+
+@Composable
+fun NotificationRow(
+    item: NotificationItem,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val unreadColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+    val readColor = Color.Transparent
+    val backgroundColor = if (item.lu) readColor else unreadColor
+    
+    val icon = when (item.type) {
+        1 -> Icons.Default.Warning
+        2 -> Icons.Default.Favorite
+        3 -> Icons.Default.Comment
+        4 -> Icons.Default.PersonAdd
+        5 -> Icons.Default.WbSunny
+        6 -> Icons.Default.Star
+        else -> Icons.Default.Notifications
+    }
+    
+    val iconTint = when (item.type) {
+        1 -> Color(0xFFE53935)
+        2 -> Color(0xFFEC407A)
+        3 -> Color(0xFF1E88E5)
+        4 -> Color(0xFF43A047)
+        5 -> Color(0xFFFFB300)
+        6 -> Color(0xFFFDD835)
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    val relativeTime = remember(item.date_creation) {
+        try {
+            val parser = java.time.format.DateTimeFormatter.ISO_DATE_TIME
+            val date = java.time.ZonedDateTime.parse(item.date_creation, parser)
+            val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("UTC"))
+            val diffSeconds = java.time.Duration.between(date, now).seconds
+            
+            when {
+                diffSeconds < 60 -> "À l'instant"
+                diffSeconds < 3600 -> "Il y a ${diffSeconds / 60} min"
+                diffSeconds < 86400 -> "Il y a ${diffSeconds / 3600} h"
+                diffSeconds < 172800 -> "Hier"
+                else -> "Il y a ${diffSeconds / 86400} j"
+            }
+        } catch (e: Exception) {
+            item.date_creation.take(10)
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        border = BorderStroke(
+            1.dp, 
+            if (!item.lu) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) 
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(iconTint.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = item.titre,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = relativeTime,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                        if (!item.lu) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = item.message,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Supprimer",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
     }
 }

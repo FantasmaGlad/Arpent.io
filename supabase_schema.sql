@@ -1,6 +1,6 @@
--- ==========================================
+-- ====================================================================
 -- CONSOLIDATED DATABASE SCHEMA FOR ARPENT.IO
--- ==========================================
+-- ====================================================================
 
 -- 1. Activer l'extension PostGIS et sécuriser spatial_ref_sys
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -157,6 +157,21 @@ CREATE TABLE IF NOT EXISTS public.course_commentaires (
 
 CREATE INDEX IF NOT EXISTS course_commentaires_course_id_idx ON public.course_commentaires(course_id);
 
+-- 10. Table des Notifications
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    utilisateur_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    type integer NOT NULL, -- 1 = Perte territoire, 2 = Like (Baamix), 3 = Commentaire, 4 = Demande d'ami, 5 = 10h matin, 6 = 18h soir (Harvest)
+    titre text NOT NULL,
+    message text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb, -- contient les infos utiles (player_id, course_id, etc.)
+    lu boolean DEFAULT false NOT NULL,
+    date_creation timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS notifications_utilisateur_id_lu_idx ON public.notifications(utilisateur_id, lu);
+CREATE INDEX IF NOT EXISTS notifications_date_creation_idx ON public.notifications(date_creation DESC);
+
 -- Indexation sur les clés étrangères pivots pour la performance
 CREATE INDEX IF NOT EXISTS profiles_guilde_id_idx ON public.profiles(guilde_id);
 CREATE INDEX IF NOT EXISTS territoires_utilisateur_id_idx ON public.territoires(utilisateur_id);
@@ -164,53 +179,7 @@ CREATE INDEX IF NOT EXISTS courses_utilisateur_id_idx ON public.courses(utilisat
 CREATE INDEX IF NOT EXISTS amis_demandeur_id_idx ON public.amis(demandeur_id);
 CREATE INDEX IF NOT EXISTS amis_destinataire_id_idx ON public.amis(destinataire_id);
 
--- Nettoyer les doublons potentiels dans la table courses avant d'appliquer la contrainte d'unicité
-DELETE FROM public.courses c1
-USING public.courses c2
-WHERE c1.id > c2.id
-  AND c1.utilisateur_id = c2.utilisateur_id
-  AND c1.date_debut = c2.date_debut;
-
--- Forcer l'ajout de la contrainte unique sur l'historique des courses
-ALTER TABLE public.courses DROP CONSTRAINT IF EXISTS courses_user_date_debut_unique;
-ALTER TABLE public.courses ADD CONSTRAINT courses_user_date_debut_unique UNIQUE (utilisateur_id, date_debut);
-
--- ==========================================
--- MIGRATION DE MISE À JOUR DES COLONNES EXISTANTES
--- ==========================================
-ALTER TABLE public.guildes ADD COLUMN IF NOT EXISTS avatar_url text;
-ALTER TABLE public.guildes ADD COLUMN IF NOT EXISTS chef_id uuid;
-ALTER TABLE public.guildes ADD COLUMN IF NOT EXISTS tag text UNIQUE;
-
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS total_area_m2 float DEFAULT 0.0 NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS share_location boolean DEFAULT true NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url text;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS empire_color text DEFAULT '#00E676';
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS latitude float;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS longitude float;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS guilde_id uuid REFERENCES public.guildes(id) ON DELETE SET NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS tag text UNIQUE;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS grade text DEFAULT 'membre' CHECK (grade IN ('chef', 'adjoint', 'membre'));
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS max_area_m2 float DEFAULT 0.0 NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS area_lost_m2 float DEFAULT 0.0 NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS xp integer DEFAULT 0 NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS level integer DEFAULT 1 NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS loop_count integer DEFAULT 0 NOT NULL;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS max_loop_distance_km float DEFAULT 0.0 NOT NULL;
-
--- Colonnes Strava enrichies sur courses
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS vitesse_moyenne float DEFAULT 0.0;
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS vitesse_max float DEFAULT 0.0;
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS allure_moyenne float DEFAULT 0.0;
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS calories_estimees float DEFAULT 0.0;
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS denivele_positif float DEFAULT 0.0;
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS denivele_negatif float DEFAULT 0.0;
-ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS points_gps_count integer DEFAULT 0;
-
-ALTER TABLE public.territoires ALTER COLUMN contour TYPE geometry(Geometry, 4326);
-ALTER TABLE public.territoires ADD COLUMN IF NOT EXISTS points text[];
-
--- 8. Table des Administrateurs
+-- 11. Table des Administrateurs
 CREATE TABLE IF NOT EXISTS public.admins (
     id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     role text NOT NULL DEFAULT 'moderateur' CHECK (role IN ('super_admin', 'moderateur')),
@@ -219,6 +188,31 @@ CREATE TABLE IF NOT EXISTS public.admins (
     derniere_connexion timestamp with time zone DEFAULT now(),
     date_creation timestamp with time zone DEFAULT now()
 );
+
+-- 12. Table de l'historique des superficies des profils (Empire Stats Variation)
+CREATE TABLE IF NOT EXISTS public.profile_area_history (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    profile_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    total_area_m2 float NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS profile_area_history_profile_id_recorded_at_idx ON public.profile_area_history(profile_id, recorded_at DESC);
+
+-- ====================================================================
+-- SÉCURITÉ : ROW LEVEL SECURITY (RLS) & POLITIQUES
+-- ====================================================================
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.guildes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.territoires ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.points_gps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.amis ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.course_reactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.course_commentaires ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.guilde_invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
 
 -- Fonction utilitaire pour vérifier si un utilisateur est admin
 CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)
@@ -229,27 +223,6 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
-ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Les admins peuvent lire la table admins" ON public.admins;
-CREATE POLICY "Les admins peuvent lire la table admins" ON public.admins
-    FOR SELECT USING (
-        public.is_admin(auth.uid())
-    );
-
--- ==========================================
--- SÉCURITÉ : ROW LEVEL SECURITY (RLS) & POLITIQUES
--- ==========================================
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.guildes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.territoires ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.points_gps ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.amis ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.course_reactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.course_commentaires ENABLE ROW LEVEL SECURITY;
-
 
 -- Politiques Profiles
 DROP POLICY IF EXISTS "Tout le monde peut lire les profils" ON public.profiles;
@@ -292,9 +265,7 @@ CREATE POLICY "Les admins peuvent supprimer les courses" ON public.courses FOR D
 
 -- Politiques Territoires
 DROP POLICY IF EXISTS "Tout le monde peut voir les territoires" ON public.territoires;
-DROP POLICY IF EXISTS "Les utilisateurs peuvent voir les territoires publics ou les leurs" ON public.territoires;
-CREATE POLICY "Tout le monde peut voir les territoires" ON public.territoires 
-FOR SELECT USING (true);
+CREATE POLICY "Tout le monde peut voir les territoires" ON public.territoires FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent insérer/modifier leurs propres territoires" ON public.territoires;
 CREATE POLICY "Les utilisateurs peuvent insérer/modifier leurs propres territoires" ON public.territoires FOR INSERT WITH CHECK (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
@@ -351,8 +322,6 @@ CREATE POLICY "Les utilisateurs peuvent supprimer une relation d'ami" ON public.
     FOR DELETE USING (auth.uid() = demandeur_id OR auth.uid() = destinataire_id OR public.is_admin(auth.uid()));
 
 -- Politiques Invitations de Guilde
-ALTER TABLE public.guilde_invitations ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "Lecture des invitations de guilde" ON public.guilde_invitations;
 CREATE POLICY "Lecture des invitations de guilde" ON public.guilde_invitations
     FOR SELECT USING (
@@ -383,35 +352,81 @@ CREATE POLICY "Suppression des invitations par l'invitant ou chef/adjoint" ON pu
             AND (SELECT guilde_id FROM public.profiles WHERE id = auth.uid()) = guilde_id)
     );
 
--- Politiques Reactions de Courses
+-- Politiques Reactions de Courses (Unified Select/Insert/Delete)
 DROP POLICY IF EXISTS "Les utilisateurs authentifiés peuvent voir les réactions" ON public.course_reactions;
-CREATE POLICY "Les utilisateurs authentifiés peuvent voir les réactions" ON public.course_reactions
-    FOR SELECT USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "reactions_select" ON public.course_reactions;
+CREATE POLICY "reactions_select" ON public.course_reactions
+    FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent réagir aux courses" ON public.course_reactions;
-CREATE POLICY "Les utilisateurs peuvent réagir aux courses" ON public.course_reactions
-    FOR INSERT WITH CHECK (auth.uid() = utilisateur_id);
+DROP POLICY IF EXISTS "reactions_insert" ON public.course_reactions;
+CREATE POLICY "reactions_insert" ON public.course_reactions
+    FOR INSERT TO authenticated WITH CHECK (utilisateur_id = auth.uid());
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer leur propre réaction" ON public.course_reactions;
-CREATE POLICY "Les utilisateurs peuvent supprimer leur propre réaction" ON public.course_reactions
-    FOR DELETE USING (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
+DROP POLICY IF EXISTS "reactions_delete" ON public.course_reactions;
+CREATE POLICY "reactions_delete" ON public.course_reactions
+    FOR DELETE TO authenticated USING (utilisateur_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- Politiques Commentaires de Courses
+-- Politiques Commentaires de Courses (Unified Select/Insert/Delete)
 DROP POLICY IF EXISTS "Les utilisateurs authentifiés peuvent voir les commentaires" ON public.course_commentaires;
-CREATE POLICY "Les utilisateurs authentifiés peuvent voir les commentaires" ON public.course_commentaires
-    FOR SELECT USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "commentaires_select" ON public.course_commentaires;
+CREATE POLICY "commentaires_select" ON public.course_commentaires
+    FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent commenter les courses" ON public.course_commentaires;
-CREATE POLICY "Les utilisateurs peuvent commenter les courses" ON public.course_commentaires
-    FOR INSERT WITH CHECK (auth.uid() = utilisateur_id);
+DROP POLICY IF EXISTS "commentaires_insert" ON public.course_commentaires;
+CREATE POLICY "commentaires_insert" ON public.course_commentaires
+    FOR INSERT TO authenticated WITH CHECK (utilisateur_id = auth.uid());
 
 DROP POLICY IF EXISTS "Les utilisateurs peuvent supprimer leur propre commentaire" ON public.course_commentaires;
-CREATE POLICY "Les utilisateurs peuvent supprimer leur propre commentaire" ON public.course_commentaires
-    FOR DELETE USING (auth.uid() = utilisateur_id OR public.is_admin(auth.uid()));
+DROP POLICY IF EXISTS "commentaires_delete" ON public.course_commentaires;
+CREATE POLICY "commentaires_delete" ON public.course_commentaires
+    FOR DELETE TO authenticated USING (utilisateur_id = auth.uid() OR public.is_admin(auth.uid()));
 
--- ==========================================
+-- Politiques Notifications
+DROP POLICY IF EXISTS "Users can read their own notifications" ON public.notifications;
+CREATE POLICY "Users can read their own notifications" ON public.notifications 
+    FOR SELECT USING (auth.uid() = utilisateur_id);
+
+DROP POLICY IF EXISTS "Users can update their own notifications" ON public.notifications;
+CREATE POLICY "Users can update their own notifications" ON public.notifications 
+    FOR UPDATE USING (auth.uid() = utilisateur_id);
+
+DROP POLICY IF EXISTS "Users can delete their own notifications" ON public.notifications;
+CREATE POLICY "Users can delete their own notifications" ON public.notifications 
+    FOR DELETE USING (auth.uid() = utilisateur_id);
+
+DROP POLICY IF EXISTS "Anyone can insert notifications" ON public.notifications;
+CREATE POLICY "Anyone can insert notifications" ON public.notifications 
+    FOR INSERT WITH CHECK (true);
+
+-- Politiques Admins
+DROP POLICY IF EXISTS "Les admins peuvent lire la table admins" ON public.admins;
+CREATE POLICY "Les admins peuvent lire la table admins" ON public.admins
+    FOR SELECT USING (public.is_admin(auth.uid()));
+
+-- Activer Realtime pour les notifications si la publication existe (Safe Wrapper)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' 
+          AND schemaname = 'public' 
+          AND tablename = 'notifications'
+    ) THEN
+        NULL;
+    ELSE
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+    END IF;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END;
+$$;
+
+-- ====================================================================
 -- FONCTIONS DÉCLENCHÉES (TRIGGERS)
--- ==========================================
+-- ====================================================================
 
 -- Fonction de génération de tag unique #AA11AA11
 CREATE OR REPLACE FUNCTION public.generate_unique_tag(p_table text)
@@ -473,7 +488,7 @@ CREATE TRIGGER on_guilde_assign_tag
   BEFORE INSERT ON public.guildes
   FOR EACH ROW EXECUTE PROCEDURE public.assign_guilde_tag();
 
--- A. Inscription Automatique d'utilisateurs (avec tag auto-généré via trigger)
+-- Inscription Automatique d'utilisateurs
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -521,7 +536,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
--- B. Calcul en temps réel de superficie dans le profil (avec gestion rollback)
+-- Calcul en temps réel de superficie dans le profil (avec gestion rollback)
 CREATE OR REPLACE FUNCTION public.update_profile_cached_area()
 RETURNS trigger AS $$
 DECLARE
@@ -581,7 +596,7 @@ CREATE TRIGGER on_territoire_changed
     AFTER INSERT OR UPDATE OR DELETE ON public.territoires
     FOR EACH ROW EXECUTE PROCEDURE public.update_profile_cached_area();
 
--- B.2 Retrait de la portion de territoire lors de la suppression d'une course
+-- Retrait de la portion de territoire lors de la suppression d'une course
 CREATE OR REPLACE FUNCTION public.delete_course_territory_portion()
 RETURNS trigger AS $$
 DECLARE
@@ -654,7 +669,7 @@ CREATE TRIGGER on_course_before_delete
     BEFORE DELETE ON public.courses
     FOR EACH ROW EXECUTE PROCEDURE public.delete_course_territory_portion();
 
--- C. Calcul de la série d'activité consécutive (streak)
+-- Calcul de la série d'activité consécutive (streak)
 CREATE OR REPLACE FUNCTION public.get_user_streak(p_user_id uuid)
 RETURNS integer AS $$
 DECLARE
@@ -692,7 +707,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- D. Gestion de l'XP et du niveau sur modification de course
+-- Gestion de l'XP et du niveau sur modification de course
 CREATE OR REPLACE FUNCTION public.update_profile_stats_on_course()
 RETURNS trigger AS $$
 DECLARE
@@ -752,12 +767,131 @@ CREATE TRIGGER on_course_changed
     AFTER INSERT OR DELETE ON public.courses
     FOR EACH ROW EXECUTE PROCEDURE public.update_profile_stats_on_course();
 
--- ==========================================
--- FONCTIONS DU MOTEUR DU JEU (RPC)
--- ==========================================
+-- Trigger sur les Likes (Course Reactions / Baamix)
+CREATE OR REPLACE FUNCTION public.on_course_reaction_inserted()
+RETURNS trigger AS $$
+DECLARE
+    v_player_pseudo text;
+    v_course_owner_id uuid;
+BEGIN
+    SELECT pseudonyme INTO v_player_pseudo FROM public.profiles WHERE id = NEW.utilisateur_id;
+    SELECT utilisateur_id INTO v_course_owner_id FROM public.courses WHERE id = NEW.course_id;
+    
+    IF NEW.type_reaction = 'baamix' AND v_course_owner_id <> NEW.utilisateur_id THEN
+        INSERT INTO public.notifications (utilisateur_id, type, titre, message, metadata)
+        VALUES (
+            v_course_owner_id,
+            2,
+            'Like',
+            COALESCE(v_player_pseudo, 'Un joueur') || ' te félicite pour ta course avec un Baamix !',
+            jsonb_build_object('player_id', NEW.utilisateur_id, 'course_id', NEW.course_id)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- A. Enregistrement de course et fusion MultiPolygon avec Conquête (SECURITY DEFINER + auth.uid() check)
+DROP TRIGGER IF EXISTS tr_course_reaction_inserted ON public.course_reactions;
+CREATE TRIGGER tr_course_reaction_inserted
+AFTER INSERT ON public.course_reactions
+FOR EACH ROW
+EXECUTE FUNCTION public.on_course_reaction_inserted();
+
+-- Trigger sur les Commentaires
+CREATE OR REPLACE FUNCTION public.on_course_comment_inserted()
+RETURNS trigger AS $$
+DECLARE
+    v_player_pseudo text;
+    v_course_owner_id uuid;
+    v_course_title text;
+BEGIN
+    SELECT pseudonyme INTO v_player_pseudo FROM public.profiles WHERE id = NEW.utilisateur_id;
+    SELECT utilisateur_id, COALESCE(nom, 'Course sans titre') INTO v_course_owner_id, v_course_title FROM public.courses WHERE id = NEW.course_id;
+    
+    IF v_course_owner_id <> NEW.utilisateur_id THEN
+        INSERT INTO public.notifications (utilisateur_id, type, titre, message, metadata)
+        VALUES (
+            v_course_owner_id,
+            3,
+            'Commentaire',
+            COALESCE(v_player_pseudo, 'Un joueur') || ' a commenté sous ta course ' || v_course_title || ' : ' || NEW.contenu,
+            jsonb_build_object('player_id', NEW.utilisateur_id, 'course_id', NEW.course_id, 'comment_id', NEW.id)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_course_comment_inserted ON public.course_commentaires;
+CREATE TRIGGER tr_course_comment_inserted
+AFTER INSERT ON public.course_commentaires
+FOR EACH ROW
+EXECUTE FUNCTION public.on_course_comment_inserted();
+
+-- Trigger sur les Demandes d'ami
+CREATE OR REPLACE FUNCTION public.on_friend_request_inserted()
+RETURNS trigger AS $$
+DECLARE
+    v_player_pseudo text;
+BEGIN
+    SELECT pseudonyme INTO v_player_pseudo FROM public.profiles WHERE id = NEW.demandeur_id;
+    
+    IF NEW.statut = 'en_attente' THEN
+        INSERT INTO public.notifications (utilisateur_id, type, titre, message, metadata)
+        VALUES (
+            NEW.destinataire_id,
+            4,
+            'Demande d''ami',
+            COALESCE(v_player_pseudo, 'Un joueur') || ' t''as demandé en ami, clique pour voir son profil !',
+            jsonb_build_object('player_id', NEW.demandeur_id)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_friend_request_inserted ON public.amis;
+CREATE TRIGGER tr_friend_request_inserted
+AFTER INSERT ON public.amis
+FOR EACH ROW
+EXECUTE FUNCTION public.on_friend_request_inserted();
+
+-- Trigger pour enregistrer l'historique lors du changement de total_area_m2 dans profiles
+CREATE OR REPLACE FUNCTION public.log_profile_area_history()
+RETURNS trigger AS $$
+DECLARE
+    v_last_recorded timestamp with time zone;
+BEGIN
+    IF (TG_OP = 'INSERT' OR OLD.total_area_m2 IS DISTINCT FROM NEW.total_area_m2) THEN
+        SELECT MAX(recorded_at) INTO v_last_recorded 
+        FROM public.profile_area_history 
+        WHERE profile_id = NEW.id;
+        
+        IF (v_last_recorded IS NULL OR v_last_recorded < now() - INTERVAL '1 hour') THEN
+            INSERT INTO public.profile_area_history (profile_id, total_area_m2, recorded_at)
+            VALUES (NEW.id, NEW.total_area_m2, now());
+            
+            DELETE FROM public.profile_area_history 
+            WHERE profile_id = NEW.id AND recorded_at < now() - INTERVAL '8 days';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS on_profile_area_changed ON public.profiles;
+CREATE TRIGGER on_profile_area_changed
+    AFTER INSERT OR UPDATE OF total_area_m2 ON public.profiles
+    FOR EACH ROW
+    EXECUTE PROCEDURE public.log_profile_area_history();
+
+-- ====================================================================
+-- FONCTIONS DU MOTEUR DU JEU (RPC)
+-- ====================================================================
+
+-- A. Enregistrement de course et fusion MultiPolygon avec Conquête
 DROP FUNCTION IF EXISTS public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float);
+DROP FUNCTION IF EXISTS public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb, text);
 
 CREATE OR REPLACE FUNCTION public.enregistrer_course(
     p_user_id uuid,
@@ -962,7 +1096,7 @@ BEGIN
         FOR UPDATE;
 
         FOR v_enemy_terr IN 
-            SELECT t.id, t.contour
+            SELECT t.id, t.contour, t.utilisateur_id, t.superficie_m2
             FROM public.territoires t
             WHERE t.utilisateur_id <> p_user_id 
               AND ST_Intersects(t.contour, v_geom)
@@ -970,6 +1104,37 @@ BEGIN
             v_diff_geom := ST_Difference(v_enemy_terr.contour, v_geom);
             v_diff_geom := ST_CollectionExtract(v_diff_geom, 3);
             
+            -- Déclencher la notification de perte de territoire
+            DECLARE
+                v_player_pseudo text;
+                v_pct_stolen float;
+                v_pct_rounded integer;
+            BEGIN
+                SELECT pseudonyme INTO v_player_pseudo FROM public.profiles WHERE id = p_user_id;
+                
+                IF ST_IsEmpty(v_diff_geom) THEN
+                    v_pct_stolen := 100.0;
+                ELSE
+                    v_pct_stolen := (1.0 - (ST_Area(v_diff_geom::geography) / v_enemy_terr.superficie_m2)) * 100.0;
+                END IF;
+                
+                v_pct_rounded := ROUND(v_pct_stolen);
+                IF v_pct_rounded <= 0 THEN
+                    v_pct_rounded := 1;
+                ELSIF v_pct_rounded > 100 THEN
+                    v_pct_rounded := 100;
+                END IF;
+
+                INSERT INTO public.notifications (utilisateur_id, type, titre, message, metadata)
+                VALUES (
+                    v_enemy_terr.utilisateur_id,
+                    1,
+                    'Perte de territoire',
+                    'Attention ! ' || COALESCE(v_player_pseudo, 'Un joueur') || ' vient de te voler ' || v_pct_rounded || ' % de ton territoire !',
+                    jsonb_build_object('player_id', p_user_id, 'percentage', v_pct_rounded)
+                );
+            END;
+
             IF ST_IsEmpty(v_diff_geom) THEN
                 DELETE FROM public.territoires WHERE id = v_enemy_terr.id;
             ELSE
@@ -1028,9 +1193,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 REVOKE EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb, text) TO authenticated, service_role;
 
--- B. Récupération du Feed de Courses (Strava-like)
---    Amis + clan + local 50 km — tracé GPS, réactions et commentaires agrégés.
+-- B. Récupération du Feed de Courses (Strava-like, returning reactions and comments)
 DROP FUNCTION IF EXISTS public.get_feed_courses(uuid);
+
 CREATE OR REPLACE FUNCTION public.get_feed_courses(p_utilisateur_id uuid)
 RETURNS TABLE (
     id                  uuid,
@@ -1078,125 +1243,75 @@ BEGIN
 
     RETURN QUERY
     WITH
-
-    -- 1. Utilisateurs dont les courses apparaissent dans le feed
     feed_users AS (
         SELECT p_utilisateur_id AS user_id
         UNION
-        SELECT
-            CASE
-                WHEN demandeur_id = p_utilisateur_id THEN destinataire_id
-                ELSE demandeur_id
-            END AS user_id
+        SELECT CASE
+            WHEN demandeur_id = p_utilisateur_id THEN destinataire_id
+            ELSE demandeur_id
+        END AS user_id
         FROM public.amis
         WHERE (demandeur_id = p_utilisateur_id OR destinataire_id = p_utilisateur_id)
           AND statut = 'accepte'
         UNION
-        SELECT p.id AS user_id
-        FROM public.profiles p
-        WHERE p.guilde_id IS NOT NULL
-          AND p.guilde_id = v_guilde_id
+        SELECT p.id FROM public.profiles p
+        WHERE p.guilde_id IS NOT NULL AND p.guilde_id = v_guilde_id
     ),
-
-    -- 2. Premier point GPS de chaque course
     course_start_points AS (
-        SELECT DISTINCT ON (course_id)
-            course_id, latitude, longitude
+        SELECT DISTINCT ON (course_id) course_id, latitude, longitude
         FROM public.points_gps
         ORDER BY course_id, timestamp_gps ASC, date_creation ASC
     ),
-
-    -- 3. Tracé complet par course
     course_points AS (
-        SELECT
-            pts.course_id,
-            jsonb_agg(
-                jsonb_build_object(
-                    'longitude',     pts.longitude,
-                    'latitude',      pts.latitude,
-                    'altitude',      pts.altitude,
-                    'timestamp_gps', pts.timestamp_gps
-                )
-                ORDER BY pts.timestamp_gps ASC, pts.date_creation ASC
-            ) AS points
+        SELECT pts.course_id,
+            jsonb_agg(jsonb_build_object(
+                'longitude', pts.longitude, 'latitude', pts.latitude,
+                'altitude', pts.altitude, 'timestamp_gps', pts.timestamp_gps
+            ) ORDER BY pts.timestamp_gps ASC) AS points
         FROM public.points_gps pts
         GROUP BY pts.course_id
     ),
-
-    -- 4. Réactions agrégées
     course_reactions_agg AS (
-        SELECT
-            r.course_id,
-            jsonb_agg(
-                jsonb_build_object(
-                    'id',             r.id,
-                    'utilisateur_id', r.utilisateur_id,
-                    'pseudonyme',     p.pseudonyme,
-                    'type_reaction',  r.type_reaction
-                )
-            ) AS reactions
+        SELECT r.course_id,
+            jsonb_agg(jsonb_build_object(
+                'id', r.id, 'utilisateur_id', r.utilisateur_id,
+                'pseudonyme', p.pseudonyme, 'type_reaction', r.type_reaction
+            )) AS reactions
         FROM public.course_reactions r
         JOIN public.profiles p ON r.utilisateur_id = p.id
         GROUP BY r.course_id
     ),
-
-    -- 5. Commentaires agrégés (ordre chronologique)
     course_comments_agg AS (
-        SELECT
-            c.course_id,
-            jsonb_agg(
-                jsonb_build_object(
-                    'id',             c.id,
-                    'utilisateur_id', c.utilisateur_id,
-                    'pseudonyme',     p.pseudonyme,
-                    'avatar_url',     p.avatar_url,
-                    'contenu',        c.contenu,
-                    'date_creation',  c.date_creation
-                )
-                ORDER BY c.date_creation ASC
-            ) AS commentaires
+        SELECT c.course_id,
+            jsonb_agg(jsonb_build_object(
+                'id', c.id, 'utilisateur_id', c.utilisateur_id,
+                'pseudonyme', p.pseudonyme, 'avatar_url', p.avatar_url,
+                'contenu', c.contenu, 'date_creation', c.date_creation
+            ) ORDER BY c.date_creation ASC) AS commentaires
         FROM public.course_commentaires c
         JOIN public.profiles p ON c.utilisateur_id = p.id
         GROUP BY c.course_id
     )
-
-    -- 6. Résultat final
-    SELECT 
-        c.id,
-        c.utilisateur_id,
-        p.pseudonyme,
-        p.avatar_url,
-        p.empire_color,
-        p.level,
-        g.nom AS guilde_nom,
-        g.couleur_hex AS guilde_couleur,
-        c.date_debut::text,
-        c.date_fin::text,
-        c.distance_totale,
-        c.duree_secondes,
-        c.est_bouclee,
-        c.vitesse_moyenne,
-        c.vitesse_max,
-        c.allure_moyenne,
-        c.calories_estimees,
-        c.denivele_positif,
-        c.denivele_negatif,
-        c.nom,
-        c.legende,
-        c.superficie_conquise,
-        c.total_steps,
-        c.average_cadence,
-        c.image_url,
-        COALESCE(pts.points, '[]'::jsonb),
-        COALESCE(reacts.reactions, '[]'::jsonb),
+    SELECT
+        c.id, c.utilisateur_id,
+        p.pseudonyme, p.avatar_url, p.empire_color, p.level,
+        g.nom AS guilde_nom, g.couleur_hex AS guilde_couleur,
+        c.date_debut::text, c.date_fin::text,
+        c.distance_totale, c.duree_secondes, c.est_bouclee,
+        c.vitesse_moyenne, c.vitesse_max, c.allure_moyenne,
+        c.calories_estimees, c.denivele_positif, c.denivele_negatif,
+        c.nom, c.legende, c.superficie_conquise,
+        c.total_steps, c.average_cadence, c.image_url,
+        COALESCE(pts.points,            '[]'::jsonb),
+        COALESCE(reacts.reactions,      '[]'::jsonb),
         COALESCE(comments.commentaires, '[]'::jsonb)
     FROM public.courses c
     JOIN public.profiles p ON c.utilisateur_id = p.id
-    LEFT JOIN public.guildes g              ON p.guilde_id   = g.id
-    LEFT JOIN course_start_points csp       ON c.id          = csp.course_id
-    LEFT JOIN course_points pts             ON c.id          = pts.course_id
-    LEFT JOIN course_reactions_agg reacts   ON c.id          = reacts.course_id
-    LEFT JOIN course_comments_agg comments  ON c.id          = comments.course_id
+    LEFT JOIN public.guildes g            ON p.guilde_id = g.id
+    LEFT JOIN course_start_points csp     ON c.id = csp.course_id
+    LEFT JOIN course_points pts           ON c.id = pts.course_id
+    LEFT JOIN course_reactions_agg reacts ON c.id = reacts.course_id
+    LEFT JOIN course_comments_agg comments ON c.id = comments.course_id
     WHERE
         c.utilisateur_id IN (SELECT user_id FROM feed_users)
         OR (
@@ -1207,12 +1322,10 @@ BEGIN
             AND COALESCE(csp.longitude, p.longitude) BETWEEN v_user_lon - 0.5 AND v_user_lon + 0.5
             AND ST_DWithin(
                 ST_SetSRID(ST_MakePoint(v_user_lon, v_user_lat), 4326)::geography,
-                ST_SetSRID(
-                    ST_MakePoint(
-                        COALESCE(csp.longitude, p.longitude),
-                        COALESCE(csp.latitude,  p.latitude)
-                    ), 4326
-                )::geography,
+                ST_SetSRID(ST_MakePoint(
+                    COALESCE(csp.longitude, p.longitude),
+                    COALESCE(csp.latitude,  p.latitude)
+                ), 4326)::geography,
                 50000
             )
         )
@@ -1223,7 +1336,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.get_feed_courses(uuid) FROM public;
 GRANT  EXECUTE ON FUNCTION public.get_feed_courses(uuid) TO authenticated, service_role;
 
--- B. Récupération des territoires par Viewport (Bounding Box)
+-- C. Récupération des territoires par Viewport (Bounding Box)
 DROP FUNCTION IF EXISTS public.get_territoires_in_bbox(double precision, double precision, double precision, double precision);
 
 CREATE OR REPLACE FUNCTION public.get_territoires_in_bbox(
@@ -1267,8 +1380,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- C. Suggestions d'amis par proximité géographique
-DROP FUNCTION IF EXISTS public.suggerer_amis_proximite(uuid, int);
+-- D. Suggestions d'amis par proximité géographique
 DROP FUNCTION IF EXISTS public.suggerer_amis_proximite(uuid, double precision);
 
 CREATE OR REPLACE FUNCTION public.suggerer_amis_proximite(
@@ -1341,9 +1453,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- ==========================================
+-- ====================================================================
 -- VUES DU CLASSEMENT (LEADERBOARD)
--- ==========================================
+-- ====================================================================
 
 -- A. Classement individuel des joueurs (avec tag, boucles et distance)
 DROP VIEW IF EXISTS public.leaderboard CASCADE;
@@ -1385,9 +1497,9 @@ FROM public.guildes g
 LEFT JOIN public.profiles p ON p.guilde_id = g.id
 GROUP BY g.id, g.nom, g.tag, g.couleur_hex, g.avatar_url;
 
--- ==========================================
+-- ====================================================================
 -- FONCTIONS D'ACCÈS DU CLASSEMENT LOCAL (POSTGIS)
--- ==========================================
+-- ====================================================================
 
 -- C. Récupérer le classement des joueurs à proximité
 CREATE OR REPLACE FUNCTION public.get_local_leaderboard(
@@ -1495,9 +1607,9 @@ BEGIN
 END;
 $$;
 
--- ==========================================
--- SCRIPT OPTIONNEL DE NETTOYAGE ET FUSION INITIALE DES DOUBLONS
--- ==========================================
+-- ====================================================================
+-- SCRIPT DE NETTOYAGE ET FUSION INITIALE DES DOUBLONS
+-- ====================================================================
 DO $$
 DECLARE
     r record;
@@ -1535,16 +1647,15 @@ SET total_area_m2 = COALESCE(
     0.0
 );
 
--- ==========================================
--- SÉCURISATION ET ACCÈS STOCKAGE AVATARS
--- ==========================================
+-- ====================================================================
+-- SÉCURISATION ET ACCÈS STOCKAGE (AVATARS & PHOTOS DE COURSES)
+-- ====================================================================
 
--- Création du bucket Images si inexistant
+-- 1. Création du bucket Images (Avatars) si inexistant
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('Images', 'Images', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Nettoyer les politiques existantes sur storage.objects pour éviter les conflits à la ré-application
 DROP POLICY IF EXISTS "Images Public Access" ON storage.objects;
 DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
 DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
@@ -1579,11 +1690,45 @@ WITH CHECK (bucket_id = 'Images' AND name LIKE 'guild_%' AND (
     SELECT chef_id::text FROM public.guildes WHERE id::text = substring(name from 'guild_(.*)\.jpg')
 ) = auth.uid()::text);
 
--- ==========================================
+-- 2. Création du bucket course-photos (public, 10 MB max) si inexistant
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'course-photos', 'course-photos', true, 10485760,
+    ARRAY['image/jpeg','image/png','image/webp','image/heic']
+)
+ON CONFLICT (id) DO UPDATE SET
+    public            = true,
+    file_size_limit   = 10485760,
+    allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','image/heic'];
+
+DROP POLICY IF EXISTS "upload_course_photos" ON storage.objects;
+CREATE POLICY "upload_course_photos" ON storage.objects
+    FOR INSERT TO authenticated
+    WITH CHECK (bucket_id = 'course-photos');
+
+DROP POLICY IF EXISTS "view_course_photos" ON storage.objects;
+CREATE POLICY "view_course_photos" ON storage.objects
+    FOR SELECT TO public
+    USING (bucket_id = 'course-photos');
+
+-- ====================================================================
 -- FONCTIONS RPC HIÉRARCHIE DE CLAN
--- ==========================================
+-- ====================================================================
 
 -- Fonction pour promouvoir un membre (Chef uniquement)
+CREATE OR REPLACE FUNCTION public.promouvoir_membre(
+    p_target_id uuid,
+    p_new_grade text
+)
+RETURNS void AS $$
+DECLARE
+    v_caller_grade text;
+    v_caller_guild uuid;
+    v_target_guild uuid;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Implémentation réelle
 CREATE OR REPLACE FUNCTION public.promouvoir_membre(
     p_target_id uuid,
     p_new_grade text
@@ -1709,10 +1854,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- ==========================================
+-- ====================================================================
 -- FONCTION GEOJSON POUR TERRITOIRES (web-admin)
--- ==========================================
-
+-- ====================================================================
 DROP FUNCTION IF EXISTS public.get_territoires_geojson();
 
 CREATE OR REPLACE FUNCTION public.get_territoires_geojson()
@@ -1748,9 +1892,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- ==========================================
+-- ====================================================================
 -- MIGRATION : Rétro-génération des tags et grades
--- ==========================================
+-- ====================================================================
 
 -- Assigner un tag à tous les profils existants sans tag
 DO $$
@@ -1799,64 +1943,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Activer pg_cron et programmer le calcul à 18h chaque jour (18h local ou UTC selon config)
+-- Activer pg_cron et programmer le calcul à 18h chaque jour (Safe Wrapper)
 DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS pg_cron;
     PERFORM cron.unschedule('calcul-xp-passif-18h') FROM cron.job WHERE jobname = 'calcul-xp-passif-18h';
     PERFORM cron.schedule('calcul-xp-passif-18h', '0 18 * * *', 'SELECT public.calculer_gain_xp_passif();');
 EXCEPTION WHEN OTHERS THEN
-    -- Fallback in case pg_cron cannot be configured or is restricted
     NULL;
 END;
 $$;
 
--- ==========================================
--- EMPIR STATS & 24H AREA VARIATION HISTORY
--- ==========================================
-
--- Table de l'historique des superficies des profils
-CREATE TABLE IF NOT EXISTS public.profile_area_history (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    profile_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    total_area_m2 float NOT NULL,
-    recorded_at timestamptz DEFAULT now() NOT NULL
-);
-
--- Index pour accélérer les requêtes
-CREATE INDEX IF NOT EXISTS profile_area_history_profile_id_recorded_at_idx ON public.profile_area_history(profile_id, recorded_at DESC);
-
--- Trigger pour enregistrer l'historique lors du changement de total_area_m2 dans profiles
-CREATE OR REPLACE FUNCTION public.log_profile_area_history()
-RETURNS trigger AS $$
-DECLARE
-    v_last_recorded timestamptz;
-BEGIN
-    -- On ne loggue que si la superficie change ou lors de l'insertion
-    IF (TG_OP = 'INSERT' OR OLD.total_area_m2 IS DISTINCT FROM NEW.total_area_m2) THEN
-        -- On limite à un enregistrement par heure maximum par joueur pour économiser de l'espace
-        SELECT MAX(recorded_at) INTO v_last_recorded 
-        FROM public.profile_area_history 
-        WHERE profile_id = NEW.id;
-        
-        IF (v_last_recorded IS NULL OR v_last_recorded < now() - INTERVAL '1 hour') THEN
-            INSERT INTO public.profile_area_history (profile_id, total_area_m2, recorded_at)
-            VALUES (NEW.id, NEW.total_area_m2, now());
-            
-            -- Nettoyage automatique des enregistrements de plus de 8 jours
-            DELETE FROM public.profile_area_history 
-            WHERE profile_id = NEW.id AND recorded_at < now() - INTERVAL '8 days';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS on_profile_area_changed ON public.profiles;
-CREATE TRIGGER on_profile_area_changed
-    AFTER INSERT OR UPDATE OF total_area_m2 ON public.profiles
-    FOR EACH ROW
-    EXECUTE PROCEDURE public.log_profile_area_history();
+-- ====================================================================
+-- EMPIRE STATS & 24H AREA VARIATION HISTORY RPC
+-- ====================================================================
 
 -- Fonction RPC pour récupérer les stats de l'empire et les variations sur 24h
 CREATE OR REPLACE FUNCTION public.get_empire_stats(p_user_id uuid)
@@ -1961,5 +2061,3 @@ BEGIN
     RETURN NEXT;
 END;
 $$ LANGUAGE plpgsql;
-
-

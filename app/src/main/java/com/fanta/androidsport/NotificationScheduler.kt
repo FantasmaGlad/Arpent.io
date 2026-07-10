@@ -13,7 +13,12 @@ object NotificationScheduler {
     fun scheduleNextAlarm(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         
-        val intent = Intent(context, NotificationReceiver::class.java)
+        // Find the next notification time and its target hour
+        val (nextTriggerTime, targetHour) = getNextTriggerTimeAndHour()
+        
+        val intent = Intent(context, NotificationReceiver::class.java).apply {
+            putExtra("scheduled_hour", targetHour)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             ALARM_REQ_CODE,
@@ -23,9 +28,6 @@ object NotificationScheduler {
 
         // Cancel any existing alarm
         alarmManager.cancel(pendingIntent)
-
-        // Find the next notification time
-        val nextTriggerTime = getNextTriggerTimeMillis()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (alarmManager.canScheduleExactAlarms()) {
@@ -56,9 +58,9 @@ object NotificationScheduler {
         }
     }
 
-    private fun getNextTriggerTimeMillis(): Long {
+    private fun getNextTriggerTimeAndHour(): Pair<Long, Int> {
         val now = Calendar.getInstance()
-        val targetHours = listOf(8, 12, 16, 20)
+        val targetHours = listOf(10, 18)
 
         var nextHour = -1
         for (hour in targetHours) {
@@ -75,20 +77,21 @@ object NotificationScheduler {
         }
 
         val targetCal = Calendar.getInstance()
+        val finalHour = if (nextHour != -1) nextHour else 10
         if (nextHour != -1) {
             targetCal.set(Calendar.HOUR_OF_DAY, nextHour)
             targetCal.set(Calendar.MINUTE, 0)
             targetCal.set(Calendar.SECOND, 0)
             targetCal.set(Calendar.MILLISECOND, 0)
         } else {
-            // Tomorrow at 8 AM
+            // Tomorrow at 10 AM
             targetCal.add(Calendar.DAY_OF_YEAR, 1)
-            targetCal.set(Calendar.HOUR_OF_DAY, 8)
+            targetCal.set(Calendar.HOUR_OF_DAY, 10)
             targetCal.set(Calendar.MINUTE, 0)
             targetCal.set(Calendar.SECOND, 0)
             targetCal.set(Calendar.MILLISECOND, 0)
         }
 
-        return targetCal.timeInMillis
+        return Pair(targetCal.timeInMillis, finalHour)
     }
 }

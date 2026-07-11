@@ -38,6 +38,7 @@ import com.fanta.androidsport.ui.components.ColorWheel
 import com.fanta.androidsport.ui.theme.ThemeManager
 import com.fanta.androidsport.utils.getPolygonArea
 import com.fanta.androidsport.utils.getPolygonCentroid
+import com.fanta.androidsport.utils.map_search
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CameraOptions
 import com.mapbox.maps.extension.compose.MapboxMap
@@ -61,7 +62,17 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
 import java.io.File
+import com.fanta.androidsport.utils.getPolygonCentroid
+import com.fanta.androidsport.utils.getPolygonArea
 
 data class FullFriendItem(
     val id: String,
@@ -83,6 +94,7 @@ fun ProfileScreen(
     userEmpireColor: String,
     userShareLocation: Boolean,
     userAvatarUrl: String?,
+    userBannerUrl: String? = null,
     xp: Int,
     level: Int,
     loopCount: Int,
@@ -93,7 +105,8 @@ fun ProfileScreen(
     userGuildNom: String?,
     userGuildCouleur: String?,
     completedPolygons: List<List<Point>>,
-    onStatsUpdated: () -> Unit
+    onStatsUpdated: () -> Unit,
+    onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
     PlayerProfileContent(
         isMe = true,
@@ -105,6 +118,7 @@ fun ProfileScreen(
         userEmpireColor = userEmpireColor,
         userShareLocation = userShareLocation,
         userAvatarUrl = userAvatarUrl,
+        userBannerUrl = userBannerUrl,
         xp = xp,
         level = level,
         loopCount = loopCount,
@@ -115,7 +129,8 @@ fun ProfileScreen(
         userGuildNom = userGuildNom,
         userGuildCouleur = userGuildCouleur,
         completedPolygons = completedPolygons,
-        onStatsUpdated = onStatsUpdated
+        onStatsUpdated = onStatsUpdated,
+        onNavigateToTerritory = onNavigateToTerritory
     )
 }
 
@@ -131,6 +146,7 @@ fun PlayerProfileContent(
     userEmpireColor: String,
     userShareLocation: Boolean = true,
     userAvatarUrl: String?,
+    userBannerUrl: String? = null,
     xp: Int = 0,
     level: Int = 1,
     loopCount: Int = 0,
@@ -142,7 +158,8 @@ fun PlayerProfileContent(
     userGuildCouleur: String? = null,
     completedPolygons: List<List<Point>> = emptyList(),
     onStatsUpdated: () -> Unit = {},
-    onCloseClick: (() -> Unit)? = null
+    onCloseClick: (() -> Unit)? = null,
+    onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -312,10 +329,13 @@ fun PlayerProfileContent(
         tempPseudo = userPseudo
     }
 
+    // Local state to track the banner URL with cache-busting
+    var localBannerUrl by remember(userId) { mutableStateOf(userBannerUrl) }
+
     // Supabase avatar photo upload picker
-    val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
-    ) { uri: android.net.Uri? ->
+    val imageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
         uri?.let { selectedUri ->
             scope.launch {
                 try {
@@ -341,6 +361,45 @@ fun PlayerProfileContent(
                     Toast.makeText(context, "Avatar mis à jour !", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     android.util.Log.e("Arpent", "Failed to update avatar", e)
+                }
+            }
+        }
+    }
+
+    // Separate banner upload picker
+    val bannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
+                        if (bytes != null) {
+                            val bucket = supabase.storage.from("Images")
+                            val filename = "${userId}_banner.jpg"
+                            bucket.upload(filename, bytes) {
+                                upsert = true
+                            }
+                            val publicUrl = bucket.publicUrl(filename)
+                            val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+                            withContext(Dispatchers.Main) {
+                                localBannerUrl = finalUrl
+                            }
+                            supabase.postgrest["profiles"].update(
+                                mapOf("banner_url" to finalUrl)
+                            ) {
+                                filter { eq("id", userId) }
+                            }
+                        }
+                    }
+                    onStatsUpdated()
+                    Toast.makeText(context, "Bannière mise à jour !", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    android.util.Log.e("Arpent", "Failed to update banner", e)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Erreur lors de l'upload de la bannière", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -376,6 +435,8 @@ fun PlayerProfileContent(
                             tint = Color.White
                         )
                     }
+                } else {
+                    Spacer(modifier = Modifier.size(48.dp))
                 }
                 Text(
                     text = if (isMe) "MON ESPACE" else "PROFIL JOUEUR",
@@ -384,30 +445,99 @@ fun PlayerProfileContent(
                     color = Color.White,
                     letterSpacing = 1.5.sp
                 )
-                if (isMe) {
-                    IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Paramètres",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
+                // Action buttons row (map-search + settings)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Map-search icon: navigates to the player's largest territory centroid
+                    if (onNavigateToTerritory != null) {
+                        IconButton(
+                            onClick = {
+                                if (isMe) {
+                                    // Use already-loaded polygons for own profile
+                                    val largest = completedPolygons.maxByOrNull { polygon ->
+                                        getPolygonArea(polygon)
+                                    }
+                                    if (largest != null) {
+                                        val centroid = getPolygonCentroid(largest)
+                                        if (centroid != null) onNavigateToTerritory(centroid)
+                                    }
+                                } else {
+                                    // Fetch territories from Supabase for other players
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val res = supabase.postgrest["territories"].select {
+                                                filter { eq("user_id", userId) }
+                                            }
+                                            val jsonArray = kotlinx.serialization.json.Json
+                                                .parseToJsonElement(res.data) as? kotlinx.serialization.json.JsonArray
+                                            var largestArea = 0.0
+                                            var largestCentroid: Point? = null
+                                            jsonArray?.forEach { elem ->
+                                                val obj = elem as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                                                val coordsElem = obj["coordinates"] ?: return@forEach
+                                                val polygon: List<Point> = try {
+                                                    val arr = coordsElem as? kotlinx.serialization.json.JsonArray
+                                                        ?: return@forEach
+                                                    arr.mapNotNull { pt ->
+                                                        val ptObj = pt as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                                                        val lon = ptObj["longitude"]?.jsonPrimitive?.doubleOrNull
+                                                            ?: return@mapNotNull null
+                                                        val lat = ptObj["latitude"]?.jsonPrimitive?.doubleOrNull
+                                                            ?: return@mapNotNull null
+                                                        Point.fromLngLat(lon, lat)
+                                                    }
+                                                } catch (_: Exception) { emptyList() }
+                                                if (polygon.isNotEmpty()) {
+                                                    val area = getPolygonArea(polygon)
+                                                    if (area > largestArea) {
+                                                        largestArea = area
+                                                        largestCentroid = getPolygonCentroid(polygon)
+                                                    }
+                                                }
+                                            }
+                                            largestCentroid?.let { pt ->
+                                                withContext(Dispatchers.Main) {
+                                                    onNavigateToTerritory(pt)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = map_search,
+                                contentDescription = "Voir le territoire",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
-                } else {
-                    Spacer(modifier = Modifier.size(48.dp))
+                    if (isMe) {
+                        IconButton(onClick = { showSettingsSheet = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Paramètres",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.size(48.dp))
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. BANNER CARD (White card banner placeholder)
+            // 1. BANNER CARD — tap to import a banner image
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(110.dp)
                     .clickable(enabled = isMe) {
-                        // Clicking Banner when isMe allows quick upload trigger
-                        imageLauncher.launch("image/*")
+                        bannerLauncher.launch("image/*")
                     },
                 shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(4.dp, activeColor),
@@ -417,13 +547,52 @@ fun PlayerProfileContent(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "Banière",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 24.sp,
-                        color = Color.Black,
-                        letterSpacing = 2.sp
-                    )
+                    if (localBannerUrl != null) {
+                        AsyncImage(
+                            model = localBannerUrl,
+                            contentDescription = "Bannière",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        if (isMe) {
+                            // Subtle edit overlay
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.25f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Modifier la bannière",
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            if (isMe) {
+                                Icon(
+                                    imageVector = Icons.Default.AddCircle,
+                                    contentDescription = "Ajouter une bannière",
+                                    tint = activeColor.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                            Text(
+                                text = if (isMe) "Ajouter une bannière" else "Bannière",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp,
+                                color = if (isMe) activeColor.copy(alpha = 0.7f) else Color.Black,
+                                letterSpacing = 1.sp
+                            )
+                        }
+                    }
                 }
             }
 
@@ -1430,7 +1599,8 @@ fun AchievementBadge(
 fun PlayerProfileDialog(
     playerId: String,
     currentUserId: String,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
     var playerProfileDetail by remember(playerId) { mutableStateOf<ProfileDetails?>(null) }
     var isLoading by remember(playerId) { mutableStateOf(true) }
@@ -1522,7 +1692,11 @@ fun PlayerProfileDialog(
                     level = detail.level,
                     loopCount = detail.loopCount,
                     userGuildNom = detail.guildeNom,
-                    onCloseClick = onDismissRequest
+                    onCloseClick = onDismissRequest,
+                    onNavigateToTerritory = if (onNavigateToTerritory != null) { point ->
+                        onDismissRequest()
+                        onNavigateToTerritory(point)
+                    } else null
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

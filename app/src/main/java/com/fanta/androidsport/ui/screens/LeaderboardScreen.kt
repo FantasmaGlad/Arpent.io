@@ -651,7 +651,11 @@ fun LeaderboardScreen(
             PlayerProfileDialog(
                 playerId = selectedPlayerForProfile!!.id,
                 currentUserId = userId,
-                onDismissRequest = { selectedPlayerForProfile = null }
+                onDismissRequest = { selectedPlayerForProfile = null },
+                onNavigateToTerritory = { point ->
+                    selectedPlayerForProfile = null
+                    onPlayerClick(point)
+                }
             )
         }
     }

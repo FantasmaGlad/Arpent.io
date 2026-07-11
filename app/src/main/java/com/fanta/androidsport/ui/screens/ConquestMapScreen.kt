@@ -1161,7 +1161,21 @@ fun ConquestMapScreen(
             PlayerProfileDialog(
                 playerId = player.playerId,
                 currentUserId = userId,
-                onDismissRequest = { selectedPlayerStats = null }
+                onDismissRequest = { selectedPlayerStats = null },
+                onNavigateToTerritory = { point ->
+                    selectedPlayerStats = null
+                    scope.launch {
+                        mapViewportState.flyTo(
+                            CameraOptions.Builder()
+                                .center(point)
+                                .zoom(15.0)
+                                .pitch(60.0)
+                                .bearing(0.0)
+                                .build(),
+                            mapAnimationOptions { duration(2000L) }
+                        )
+                    }
+                }
             )
         }
 

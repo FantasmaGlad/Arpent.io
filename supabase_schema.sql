@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     all_time_area_m2 float DEFAULT 0.0 NOT NULL,
     share_location boolean DEFAULT true NOT NULL,
     avatar_url text,
+    banner_url text,
     empire_color text DEFAULT '#00E676',
     latitude float,
     longitude float,
@@ -45,6 +46,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     total_steps integer DEFAULT 0,
     average_cadence float DEFAULT 0.0
 );
+
+-- S'assurer que la colonne banner_url existe (migration safe)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS banner_url text;
 
 -- S'assurer que la colonne chef_id existe dans guildes avant d'ajouter la contrainte
 ALTER TABLE public.guildes ADD COLUMN IF NOT EXISTS chef_id uuid;
@@ -877,7 +881,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DROP TRIGGER IF EXISTS on_profile_area_changed ON public.profiles;
 CREATE TRIGGER on_profile_area_changed
@@ -2048,3 +2052,20 @@ BEGIN
     RETURN NEXT;
 END;
 $$ LANGUAGE plpgsql;
+
+REVOKE EXECUTE ON FUNCTION public.get_empire_stats(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_empire_stats(uuid) TO authenticated, service_role;
+
+-- Backfill initial de profile_area_history pour les utilisateurs existants
+-- (sans cet historique, le % 24h reste toujours à 0 pour les anciens comptes)
+INSERT INTO public.profile_area_history (profile_id, total_area_m2, recorded_at)
+SELECT 
+    id,
+    total_area_m2,
+    now() - INTERVAL '25 hours'   -- Simuler une entrée vieille de 25h pour activer le calcul dès maintenant
+FROM public.profiles
+WHERE total_area_m2 > 0
+  AND NOT EXISTS (
+      SELECT 1 FROM public.profile_area_history h WHERE h.profile_id = profiles.id
+  );
+

@@ -304,6 +304,7 @@ fun CoursesScreen(
         scope.launch(Dispatchers.IO) {
             try {
                 if (currentReaction != null) {
+                    // Remove existing reaction
                     supabase.postgrest["course_reactions"].delete {
                         filter {
                             eq("course_id", courseId)
@@ -311,17 +312,38 @@ fun CoursesScreen(
                             eq("type_reaction", type)
                         }
                     }
+                    android.util.Log.d("Arpent", "Reaction supprimée: courseId=$courseId type=$type")
                 } else {
+                    // Insert new reaction — use upsert to handle any duplicate gracefully
                     val reactObj = kotlinx.serialization.json.buildJsonObject {
                         put("course_id", courseId)
                         put("utilisateur_id", userId)
                         put("type_reaction", type)
                     }
-                    supabase.postgrest["course_reactions"].insert(reactObj)
+                    try {
+                        supabase.postgrest["course_reactions"].insert(reactObj) {
+                            // onConflict = upsert-like: do nothing on duplicate (unique constraint)
+                        }
+                        android.util.Log.d("Arpent", "Reaction insérée: courseId=$courseId type=$type userId=$userId")
+                    } catch (insertEx: Exception) {
+                        // Duplicate reaction already exists — treat as success (already liked)
+                        val msg = insertEx.message ?: ""
+                        if (msg.contains("23505") || msg.contains("unique", ignoreCase = true) || msg.contains("duplicate", ignoreCase = true)) {
+                            android.util.Log.d("Arpent", "Reaction déjà existante (contrainte unique) — ignorée")
+                        } else {
+                            android.util.Log.e("Arpent", "Erreur insert reaction: ${insertEx.message}", insertEx)
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Erreur Like: ${insertEx.message}", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
                 }
                 loadFeed()
             } catch (e: Exception) {
-                android.util.Log.e("Arpent", "Failed to toggle reaction", e)
+                android.util.Log.e("Arpent", "Failed to toggle reaction: ${e.javaClass.simpleName}: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Erreur réaction: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

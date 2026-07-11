@@ -66,6 +66,7 @@ fun ArpentMainScreen(userId: String) {
     var userEmpireColor by remember { mutableStateOf("#00E676") }
     var userShareLocation by remember { mutableStateOf(true) }
     var userAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var userBannerUrl by remember { mutableStateOf<String?>(null) }
     var userXp by remember { mutableStateOf(0) }
     var userLevel by remember { mutableStateOf(1) }
     var userLoopCount by remember { mutableStateOf(0) }
@@ -147,6 +148,7 @@ fun ArpentMainScreen(userId: String) {
                 val color = profileObj?.get("empire_color")?.jsonPrimitive?.contentOrNull ?: "#00E676"
                 val shareLoc = profileObj?.get("share_location")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
                 val avatarUrl = profileObj?.get("avatar_url")?.jsonPrimitive?.contentOrNull
+                val bannerUrl = profileObj?.get("banner_url")?.jsonPrimitive?.contentOrNull
                 val guildeId = profileObj?.get("guilde_id")?.jsonPrimitive?.contentOrNull
                 val totalAreaM2 = profileObj?.get("total_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
                 val allTimeAreaM2 = profileObj?.get("all_time_area_m2")?.jsonPrimitive?.doubleOrNull ?: totalAreaM2
@@ -240,6 +242,7 @@ fun ArpentMainScreen(userId: String) {
                     userMaxAreaKm2 = (parsed["maxAreaM2"] as Double) / 1_000_000.0
                     userAreaLostKm2 = (parsed["areaLostM2"] as Double) / 1_000_000.0
                     userAvatarUrl = avatarUrl
+                    userBannerUrl = bannerUrl
                     userGuildId = guildeId
                     userGuildNom = gNom
                     userGuildCouleur = gColor
@@ -488,6 +491,7 @@ fun ArpentMainScreen(userId: String) {
                         userEmpireColor = userEmpireColor,
                         userShareLocation = userShareLocation,
                         userAvatarUrl = userAvatarUrl,
+                        userBannerUrl = userBannerUrl,
                         xp = userXp,
                         level = userLevel,
                         loopCount = userLoopCount,
@@ -498,7 +502,11 @@ fun ArpentMainScreen(userId: String) {
                         userGuildNom = userGuildNom,
                         userGuildCouleur = userGuildCouleur,
                         completedPolygons = completedPolygons,
-                        onStatsUpdated = { refreshStats() }
+                        onStatsUpdated = { refreshStats() },
+                        onNavigateToTerritory = { point ->
+                            mapTargetPosition = point
+                            navigationIndex = 0
+                        }
                     )
                 }
 

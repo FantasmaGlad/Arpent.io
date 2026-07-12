@@ -59,9 +59,11 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -107,6 +109,11 @@ import com.fanta.androidsport.data.model.GPSPoint
 import com.fanta.androidsport.BuildConfig
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
+import com.fanta.androidsport.ui.components.TerritoryMapBackground
+import com.fanta.androidsport.utils.fetchPlayerTerritoryPolygons
+import com.fanta.androidsport.utils.getPolygonArea
+import com.fanta.androidsport.utils.getPolygonCentroid
+import com.mapbox.geojson.Point
 import coil.compose.AsyncImage
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
@@ -121,7 +128,8 @@ import kotlinx.serialization.json.put
 @Composable
 fun CoursesScreen(
     userId: String,
-    isActive: Boolean
+    isActive: Boolean,
+    onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -147,6 +155,11 @@ fun CoursesScreen(
 
     var selectedDetailCourse by remember { mutableStateOf<FeedCourseItem?>(null) }
     var showDeleteConfirmCourseId by remember { mutableStateOf<String?>(null) }
+
+    // System back closes the course details panel instead of leaving the screen
+    BackHandler(enabled = selectedDetailCourse != null) {
+        selectedDetailCourse = null
+    }
 
     fun loadFeed() {
         scope.launch(Dispatchers.IO) {
@@ -397,6 +410,27 @@ fun CoursesScreen(
         }
     }
 
+    // Fly to the player's biggest current territory (empire), not their live position
+    fun locatePlayerEmpire(playerId: String) {
+        if (onNavigateToTerritory == null) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val polygons = fetchPlayerTerritoryPolygons(playerId)
+                val largest = polygons.maxByOrNull { getPolygonArea(it) }
+                val centroid = largest?.let { getPolygonCentroid(it) }
+                withContext(Dispatchers.Main) {
+                    if (centroid != null) {
+                        onNavigateToTerritory.invoke(centroid)
+                    } else {
+                        Toast.makeText(context, "Ce joueur n'a pas encore d'empire.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to locate player empire", e)
+            }
+        }
+    }
+
     fun sendFriendRequest(otherUserId: String) {
         scope.launch(Dispatchers.IO) {
             try {
@@ -435,12 +469,28 @@ fun CoursesScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.30f))
+                .background(MaterialTheme.colorScheme.background)
         ) {
+            // Same button-free map background as the profile screen
+            if (isActive) {
+                TerritoryMapBackground(
+                    polygons = emptyList(),
+                    empireColor = MaterialTheme.colorScheme.primary,
+                    fallbackCenter = Point.fromLngLat(mapCenter.first, mapCenter.second),
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            // Readability scrim over the map
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.35f))
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(vertical = 8.dp)
             ) {
 
 
@@ -463,7 +513,7 @@ fun CoursesScreen(
                                 modifier = Modifier
                                     .size(90.dp)
                                     .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.05f)),
+                                    .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.05f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -478,19 +528,19 @@ fun CoursesScreen(
                                 text = "Aucune course dans le feed",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E1E1E)
+                                color = MaterialTheme.colorScheme.onBackground
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Ajoutez des amis ou lancez-vous pour commencer la conquête !",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF6E6E73)
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                             )
                         }
                     }
                 } else {
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(feedCourses) { course ->
@@ -527,6 +577,9 @@ fun CoursesScreen(
                                 },
                                 onSendFriendRequest = {
                                     sendFriendRequest(course.utilisateurId)
+                                },
+                                onAvatarClick = {
+                                    locatePlayerEmpire(course.utilisateurId)
                                 }
                             )
                         }
@@ -538,8 +591,8 @@ fun CoursesScreen(
             if (showDeleteConfirmCourseId != null) {
                 AlertDialog(
                     onDismissRequest = { showDeleteConfirmCourseId = null },
-                    title = { Text("Supprimer la course", color = Color(0xFF1E1E1E)) },
-                    text = { Text("Êtes-vous sûr de vouloir supprimer cette course ? Cette action est irréversible et supprimera le territoire associé.", color = Color(0xFF6E6E73)) },
+                    title = { Text("Supprimer la course") },
+                    text = { Text("Êtes-vous sûr de vouloir supprimer cette course ? Cette action est irréversible et supprimera le territoire associé.") },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -547,21 +600,20 @@ fun CoursesScreen(
                                 showDeleteConfirmCourseId = null
                             }
                         ) {
-                            Text("SUPPRIMER", color = Color.Red, fontWeight = FontWeight.Bold)
+                            Text("SUPPRIMER", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { showDeleteConfirmCourseId = null }) {
-                            Text("ANNULER", color = Color(0xFF6E6E73))
+                            Text("ANNULER")
                         }
-                    },
-                    containerColor = Color.White
+                    }
                 )
             }
 
-            // Detail Dialog with Splits
+            // Full-width course details panel, opened over the feed (stays below the app header)
             if (selectedDetailCourse != null) {
-                CourseDetailsDialog(
+                CourseDetailsPanel(
                     course = selectedDetailCourse!!,
                     onDismiss = { selectedDetailCourse = null }
                 )
@@ -586,7 +638,8 @@ fun FeedCourseCard(
     onReact: (String, CourseReaction?) -> Unit,
     onViewDetails: () -> Unit,
     onDelete: () -> Unit,
-    onSendFriendRequest: () -> Unit
+    onSendFriendRequest: () -> Unit,
+    onAvatarClick: (() -> Unit)? = null
 ) {
     // Optimistic like state
     var optimisticLiked by remember(course.id) {
@@ -620,18 +673,18 @@ fun FeedCourseCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 24.dp)
+            .padding(bottom = 16.dp)
     ) {
-        // 1. The Main Premium Card with dynamic gradient
+        // 1. The Main Premium Card — full screen width, color at 70% opacity over the map
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = Color.Transparent)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF0D0D0D)) // fond sombre uniforme
+                    .background(Color(0xFF0D0D0D).copy(alpha = 0.70f)) // fond sombre translucide
             ) {
                 // Voile empire uniforme
                 Box(
@@ -639,21 +692,6 @@ fun FeedCourseCard(
                         .matchParentSize()
                         .background(cardGradient)
                 )
-                // Tracé GPS flou en arrière-plan à 30%
-                if (course.pointsGps.isNotEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(260.dp)
-                            .alpha(0.30f)
-                            .blur(12.dp)
-                    ) {
-                        RoutePreviewCanvas(
-                            points = course.pointsGps,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -664,10 +702,14 @@ fun FeedCourseCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Avatar — tap to fly to this player's empire on the map
                     Box(
                         modifier = Modifier
                             .size(40.dp)
-                            .background(Color.White, CircleShape),
+                            .background(Color.White, CircleShape)
+                            .clickable(enabled = onAvatarClick != null) {
+                                onAvatarClick?.invoke()
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         AvatarImage(
@@ -985,38 +1027,38 @@ fun FeedCourseCard(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
 
-                        // GPS Track Map Preview Card (Mapbox + tracé)
+                // Full-width Mapbox map under the course trace, Strava style (tap = details)
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.35f)), RoundedCornerShape(16.dp))
+                        .clickable { onViewDetails() }
+                ) {
+                    if (course.pointsGps.isNotEmpty()) {
+                        RouteMapPreview(
+                            points = course.pointsGps,
+                            empireColor = empireColor,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.35f)), RoundedCornerShape(16.dp))
-                                .clickable { onViewDetails() }
+                                .fillMaxSize()
+                                .background(Color(0xFF111111).copy(alpha = 0.7f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            if (course.pointsGps.isNotEmpty()) {
-                                RouteMapPreview(
-                                    points = course.pointsGps,
-                                    empireColor = empireColor,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color(0xFF111111)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Aucun tracé",
-                                        color = empireColor.copy(alpha = 0.5f),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
+                            Text(
+                                text = "Aucun tracé",
+                                color = empireColor.copy(alpha = 0.5f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -1525,11 +1567,12 @@ fun ElevationProfileChart(
 }
 
 @Composable
-fun CourseDetailsDialog(
+fun CourseDetailsPanel(
     course: FeedCourseItem,
     onDismiss: () -> Unit
 ) {
     val themeColor = MaterialTheme.colorScheme.primary
+    val onBackground = MaterialTheme.colorScheme.onBackground
     val empireColor = try {
         Color(android.graphics.Color.parseColor(course.empireColor ?: "#00875A"))
     } catch (_: Exception) {
@@ -1586,205 +1629,155 @@ fun CourseDetailsDialog(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
+    // Full-screen-width panel drawn over the feed; it never overlaps the app header
+    // because it lives inside the tab content area.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            // Consume taps so they don't reach the feed below
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            )
+    ) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.9f),
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF0D0D0D),
-            border = BorderStroke(1.dp, empireColor.copy(alpha = 0.3f))
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .background(onBackground.copy(alpha = 0.08f), CircleShape)
+                        .size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Retour au feed",
+                        tint = onBackground,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = course.nom ?: "Course sans nom",
+                        color = onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "par @${course.pseudonyme}",
+                        color = onBackground.copy(alpha = 0.55f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Scrollable content — full width of the screen
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(20.dp)
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = course.nom ?: "Course sans nom",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            maxLines = 1
-                        )
-                        Text(
-                            text = "par @${course.pseudonyme}",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 12.sp
-                        )
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.1f), CircleShape)
-                            .size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Fermer",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Scrollable content
+                // Card 1: Vue du tracé (30% transparency background)
                 Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .fillMaxWidth()
+                        .background(empireColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                        .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.15f)), RoundedCornerShape(16.dp))
+                        .padding(12.dp)
                 ) {
-                    // Card 1: Vue du tracé (30% transparency background)
-                    Column(
+                    Text(
+                        text = "Vue du tracé",
+                        color = onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    RoutePreviewCanvas(
+                        points = course.pointsGps,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(empireColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-                            .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.15f)), RoundedCornerShape(16.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            text = "Vue du tracé",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        
-                        RoutePreviewCanvas(
-                            points = course.pointsGps,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                                .clip(RoundedCornerShape(12.dp)),
-                            lineColor = empireColor
-                        )
-                    }
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        lineColor = empireColor
+                    )
+                }
 
-                    // Card 2: Vue du D+ par Km (Altitude/Elevation Profile) (30% transparency background)
-                    Column(
+                // Card 2: Vue du D+ par Km (Altitude/Elevation Profile) (30% transparency background)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(empireColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                        .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.15f)), RoundedCornerShape(16.dp))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "Vue du D+ par Km",
+                        color = onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    ElevationProfileChart(
+                        trackPoints = trackPoints,
+                        empireColor = empireColor,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(empireColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-                            .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.15f)), RoundedCornerShape(16.dp))
-                            .padding(12.dp)
-                    ) {
+                            .height(130.dp)
+                    )
+                }
+
+                // Section 3: Temps de passages par km
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Temps de passages par km",
+                        color = onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(vertical = 8.dp)
+                    )
+
+                    if (splits.isEmpty()) {
                         Text(
-                            text = "Vue du D+ par Km",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            text = "Données de splits insuffisantes",
+                            color = onBackground.copy(alpha = 0.4f),
+                            fontSize = 12.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
                         )
-                        
-                        ElevationProfileChart(
-                            trackPoints = trackPoints,
-                            empireColor = empireColor,
+                    } else {
+                        // Column Headers
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(130.dp)
-                        )
-                    }
-
-                    // Section 3: Temps de passages par km
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Temps de passages par km",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(vertical = 8.dp)
-                        )
-                        
-                        if (splits.isEmpty()) {
-                            Text(
-                                text = "Données de splits insuffisantes",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 12.sp,
-                                modifier = Modifier.align(Alignment.CenterHorizontally)
-                            )
-                        } else {
-                            // Column Headers
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Km", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(36.dp))
-                                Text("Allure/Split", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                Text("D+", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
-                                Text("Cumul", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(70.dp))
-                            }
-                            
-                            splits.forEach { split ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = split.label,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        modifier = Modifier.width(36.dp)
-                                    )
-                                    Text(
-                                        text = split.splitTimeFormatted,
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = split.dPlusFormatted,
-                                        color = Color.White.copy(alpha = 0.7f),
-                                        fontSize = 13.sp,
-                                        modifier = Modifier.width(60.dp)
-                                    )
-                                    Text(
-                                        text = split.cumulativeTimeFormatted,
-                                        color = Color.White.copy(alpha = 0.7f),
-                                        fontSize = 13.sp,
-                                        modifier = Modifier.width(70.dp)
-                                    )
-                                }
-                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                            }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Km", color = onBackground.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(36.dp))
+                            Text("Allure/Split", color = onBackground.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("D+", color = onBackground.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
+                            Text("Cumul", color = onBackground.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(70.dp))
                         }
-                    }
 
-                    // Section 4: Meilleurs Temps
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Meilleurs Temps",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(top = 12.dp, bottom = 12.dp)
-                        )
-                        
-                        bestEfforts.forEach { (label, timeMs) ->
+                        splits.forEach { split ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1793,21 +1786,76 @@ fun CourseDetailsDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = label,
-                                    color = Color.White,
+                                    text = split.label,
+                                    color = onBackground,
+                                    fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                    modifier = Modifier.width(36.dp)
                                 )
                                 Text(
-                                    text = formatDuration(timeMs),
-                                    color = if (timeMs != null) empireColor else Color.White.copy(alpha = 0.3f),
+                                    text = split.splitTimeFormatted,
+                                    color = onBackground,
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = split.dPlusFormatted,
+                                    color = onBackground.copy(alpha = 0.7f),
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.width(60.dp)
+                                )
+                                Text(
+                                    text = split.cumulativeTimeFormatted,
+                                    color = onBackground.copy(alpha = 0.7f),
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.width(70.dp)
                                 )
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = onBackground.copy(alpha = 0.1f))
                         }
                     }
+                }
+
+                // Section 4: Meilleurs Temps
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Meilleurs Temps",
+                        color = onBackground,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(top = 12.dp, bottom = 12.dp)
+                    )
+
+                    bestEfforts.forEach { (label, timeMs) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                color = onBackground,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = formatDuration(timeMs),
+                                color = if (timeMs != null) empireColor else onBackground.copy(alpha = 0.3f),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        HorizontalDivider(color = onBackground.copy(alpha = 0.1f))
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }

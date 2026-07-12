@@ -22,7 +22,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -35,19 +37,13 @@ import androidx.compose.ui.window.DialogProperties
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.ColorWheel
+import com.fanta.androidsport.ui.components.TerritoryMapBackground
 import com.fanta.androidsport.ui.theme.ThemeManager
+import com.fanta.androidsport.utils.fetchPlayerTerritoryPolygons
 import com.fanta.androidsport.utils.getPolygonArea
 import com.fanta.androidsport.utils.getPolygonCentroid
 import com.fanta.androidsport.utils.map_search
 import com.mapbox.geojson.Point
-import com.mapbox.maps.CameraOptions
-import com.mapbox.maps.extension.compose.MapboxMap
-import com.mapbox.maps.extension.compose.MapEffect
-import com.mapbox.maps.plugin.gestures.gestures
-import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
-import com.mapbox.maps.extension.compose.annotation.generated.PolygonAnnotation
-import com.mapbox.maps.extension.compose.annotation.generated.PolygonAnnotationState
-import com.mapbox.maps.extension.compose.style.MapStyle
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
@@ -67,12 +63,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
 import java.io.File
-import com.fanta.androidsport.utils.getPolygonCentroid
-import com.fanta.androidsport.utils.getPolygonArea
 
 data class FullFriendItem(
     val id: String,
@@ -106,9 +97,8 @@ fun ProfileScreen(
     userGuildCouleur: String?,
     completedPolygons: List<List<Point>>,
     onStatsUpdated: () -> Unit,
-    forceOpenSettings: Boolean = false,
-    onSettingsOpenedHandled: () -> Unit = {},
-    onNavigateToTerritory: ((Point) -> Unit)? = null
+    onNavigateToTerritory: ((Point) -> Unit)? = null,
+    isActive: Boolean = true
 ) {
     PlayerProfileContent(
         isMe = true,
@@ -132,12 +122,10 @@ fun ProfileScreen(
         userGuildCouleur = userGuildCouleur,
         completedPolygons = completedPolygons,
         onStatsUpdated = onStatsUpdated,
-        forceOpenSettings = forceOpenSettings,
-        onSettingsOpenedHandled = onSettingsOpenedHandled,
-        onNavigateToTerritory = onNavigateToTerritory
+        onNavigateToTerritory = onNavigateToTerritory,
+        isActive = isActive
     )
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,10 +151,9 @@ fun PlayerProfileContent(
     userGuildCouleur: String? = null,
     completedPolygons: List<List<Point>> = emptyList(),
     onStatsUpdated: () -> Unit = {},
-    forceOpenSettings: Boolean = false,
-    onSettingsOpenedHandled: () -> Unit = {},
     onCloseClick: (() -> Unit)? = null,
-    onNavigateToTerritory: ((Point) -> Unit)? = null
+    onNavigateToTerritory: ((Point) -> Unit)? = null,
+    isActive: Boolean = true
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -180,6 +167,7 @@ fun PlayerProfileContent(
     }
 
     var showEditDescriptionDialog by remember { mutableStateOf(false) }
+    var showEditPseudoDialog by remember { mutableStateOf(false) }
 
     // States for colors & theme settings
     val defaultPrimary = MaterialTheme.colorScheme.primary
@@ -206,19 +194,25 @@ fun PlayerProfileContent(
 
     var showColorPicker by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
-    var showStatsSheet by remember { mutableStateOf(false) }
     var showAddFriendDialog by remember { mutableStateOf(false) }
-    var showAchievementsDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(forceOpenSettings) {
-        if (forceOpenSettings) {
-            showSettingsSheet = true
-            onSettingsOpenedHandled()
+    // Accent color: theme primary for own profile, empire color for other players
+    val activeColor = if (isMe) MaterialTheme.colorScheme.primary else parsedUserColor
+
+    // Card style: theme color at 70% opacity for own profile, empire color for others
+    val cardBaseColor = if (isMe) MaterialTheme.colorScheme.surface else parsedUserColor
+    val cardColor = cardBaseColor.copy(alpha = 0.70f)
+    val onCardColor = if (cardBaseColor.luminance() > 0.5f) Color(0xFF15181B) else Color.White
+    val onCardMuted = onCardColor.copy(alpha = 0.65f)
+    val onBackground = MaterialTheme.colorScheme.onBackground
+
+    val parsedGuildColor = remember(userGuildCouleur, onCardMuted) {
+        try {
+            userGuildCouleur?.let { Color(android.graphics.Color.parseColor(it)) }
+        } catch (e: Exception) {
+            null
         }
     }
-
-    // Active color system
-    val activeColor = if (isMe) MaterialTheme.colorScheme.primary else parsedUserColor
 
     // Friend list loading for social card
     var friendsList by remember { mutableStateOf<List<FullFriendItem>>(emptyList()) }
@@ -259,7 +253,7 @@ fun PlayerProfileContent(
                     val guildIds = profArray?.mapNotNull {
                         (it as? JsonObject)?.get("guilde_id")?.jsonPrimitive?.contentOrNull
                     }?.distinct() ?: emptyList()
-                    
+
                     val guildMap = mutableMapOf<String, String>()
                     if (guildIds.isNotEmpty()) {
                         val guildRes = supabase.postgrest["guildes"].select {
@@ -338,13 +332,8 @@ fun PlayerProfileContent(
         }
     }
 
-    var tempPseudo by remember { mutableStateOf(userPseudo) }
-    LaunchedEffect(userPseudo) {
-        tempPseudo = userPseudo
-    }
-
     // Local state to track the banner URL with cache-busting
-    var localBannerUrl by remember(userId) { mutableStateOf(userBannerUrl) }
+    var localBannerUrl by remember(userId, userBannerUrl) { mutableStateOf(userBannerUrl) }
 
     // Supabase avatar photo upload picker
     val imageLauncher = rememberLauncherForActivityResult(
@@ -363,7 +352,7 @@ fun PlayerProfileContent(
                             }
                             val publicUrl = bucket.publicUrl(filename)
                             val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
-                            
+
                             supabase.postgrest["profiles"].update(
                                 mapOf("avatar_url" to finalUrl)
                             ) {
@@ -419,26 +408,42 @@ fun PlayerProfileContent(
         }
     }
 
-    // MAIN CONTAINER (Transparent Background for Mapbox behind)
+    // MAIN CONTAINER — the "Carte" Mapbox map as background, without any button
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(MaterialTheme.colorScheme.background)
     ) {
+        if (isActive) {
+            TerritoryMapBackground(
+                polygons = completedPolygons,
+                empireColor = if (isMe) localColor else parsedUserColor,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        // Readability scrim over the map
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to MaterialTheme.colorScheme.background.copy(alpha = 0.60f),
+                        0.4f to MaterialTheme.colorScheme.background.copy(alpha = 0.25f),
+                        1f to MaterialTheme.colorScheme.background.copy(alpha = 0.60f)
+                    )
+                )
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Custom header with navigation/title (with horizontal padding)
+            // Slim action header (back / map-search / settings) over the map
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (onCloseClick != null) {
@@ -446,181 +451,137 @@ fun PlayerProfileContent(
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Retour",
-                            tint = Color.White
+                            tint = onBackground
                         )
                     }
-                } else {
-                    Spacer(modifier = Modifier.size(48.dp))
                 }
-                Text(
-                    text = if (isMe) "MON ESPACE" else "PROFIL JOUEUR",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White,
-                    letterSpacing = 1.5.sp
-                )
-                // Action buttons row (map-search)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Map-search icon: navigates to the player's largest territory centroid
-                    if (onNavigateToTerritory != null) {
-                        IconButton(
-                            onClick = {
-                                if (isMe) {
-                                    // Use already-loaded polygons for own profile
-                                    val largest = completedPolygons.maxByOrNull { polygon ->
-                                        getPolygonArea(polygon)
-                                    }
-                                    if (largest != null) {
-                                        val centroid = getPolygonCentroid(largest)
-                                        if (centroid != null) onNavigateToTerritory(centroid)
-                                    }
-                                } else {
-                                    // Fetch territories from Supabase for other players
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            val res = supabase.postgrest["territoires"].select {
-                                                filter { eq("utilisateur_id", userId) }
+                Spacer(modifier = Modifier.weight(1f))
+                if (onNavigateToTerritory != null) {
+                    IconButton(
+                        onClick = {
+                            if (completedPolygons.isNotEmpty()) {
+                                val largest = completedPolygons.maxByOrNull { polygon ->
+                                    getPolygonArea(polygon)
+                                }
+                                val centroid = largest?.let { getPolygonCentroid(it) }
+                                if (centroid != null) onNavigateToTerritory(centroid)
+                            } else if (!isMe) {
+                                // Fetch territories from Supabase for other players
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val polygons = fetchPlayerTerritoryPolygons(userId)
+                                        val largest = polygons.maxByOrNull { getPolygonArea(it) }
+                                        val centroid = largest?.let { getPolygonCentroid(it) }
+                                        if (centroid != null) {
+                                            withContext(Dispatchers.Main) {
+                                                onNavigateToTerritory(centroid)
                                             }
-                                            val jsonArray = kotlinx.serialization.json.Json
-                                                .parseToJsonElement(res.data) as? kotlinx.serialization.json.JsonArray
-                                            var largestArea = 0.0
-                                            var largestCentroid: Point? = null
-                                            jsonArray?.forEach { elem ->
-                                                val obj = elem as? kotlinx.serialization.json.JsonObject ?: return@forEach
-                                                val ptsArray = obj["points"] as? kotlinx.serialization.json.JsonArray ?: return@forEach
-                                                val polygon: List<Point> = try {
-                                                    ptsArray.mapNotNull { pt ->
-                                                        val str = pt.jsonPrimitive.content
-                                                        val parts = str.split(" ")
-                                                        if (parts.size == 2) {
-                                                            val lng = parts[0].toDoubleOrNull()
-                                                            val lat = parts[1].toDoubleOrNull()
-                                                            if (lng != null && lat != null) {
-                                                                Point.fromLngLat(lng, lat)
-                                                            } else null
-                                                        } else null
-                                                    }
-                                                } catch (_: Exception) { emptyList() }
-                                                if (polygon.isNotEmpty()) {
-                                                    val area = getPolygonArea(polygon)
-                                                    if (area > largestArea) {
-                                                        largestArea = area
-                                                        largestCentroid = getPolygonCentroid(polygon)
-                                                    }
-                                                }
-                                            }
-                                            largestCentroid?.let { pt ->
-                                                withContext(Dispatchers.Main) {
-                                                    onNavigateToTerritory(pt)
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
                                         }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
                                     }
                                 }
                             }
-                        ) {
-                            Icon(
-                                imageVector = map_search,
-                                contentDescription = "Voir le territoire",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
                         }
-                    } else {
-                        Spacer(modifier = Modifier.size(48.dp))
+                    ) {
+                        Icon(
+                            imageVector = map_search,
+                            contentDescription = "Voir le territoire",
+                            tint = onBackground,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                if (isMe) {
+                    IconButton(onClick = { showSettingsSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Paramètres",
+                            tint = onBackground,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 1. BANNER CARD — tap to import a banner image (taking the full width of the screen, height 150dp)
-            Card(
+            // 1. BANNER — full screen width (w350 h150), tap to import an image
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
                     .height(150.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(cardColor)
                     .clickable(enabled = isMe) {
                         bannerLauncher.launch("image/*")
                     },
-                shape = RoundedCornerShape(0.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                colors = CardDefaults.cardColors(containerColor = activeColor.copy(alpha = 0.3f))
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (localBannerUrl != null) {
-                        AsyncImage(
-                            model = localBannerUrl,
-                            contentDescription = "Bannière",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                        if (isMe) {
-                            // Subtle edit overlay
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.25f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Modifier la bannière",
-                                    tint = Color.White.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
-                    } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                if (localBannerUrl != null) {
+                    AsyncImage(
+                        model = localBannerUrl,
+                        contentDescription = "Bannière",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (isMe) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(10.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .padding(6.dp)
                         ) {
-                            if (isMe) {
-                                Icon(
-                                    imageVector = Icons.Default.AddCircle,
-                                    contentDescription = "Ajouter une bannière",
-                                    tint = Color.White.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(28.dp)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                            }
-                            Text(
-                                text = if (isMe) "Ajouter une bannière" else "Bannière",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp,
-                                color = Color.White,
-                                letterSpacing = 1.sp
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Modifier la bannière",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(18.dp)
                             )
                         }
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        if (isMe) {
+                            Icon(
+                                imageVector = Icons.Default.AddCircle,
+                                contentDescription = "Ajouter une bannière",
+                                tint = onCardMuted,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                        Text(
+                            text = if (isMe) "Ajouter une bannière" else "Bannière",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = onCardMuted,
+                            letterSpacing = 0.5.sp
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // 2. PROFILE INFO ROW (Avatar, Pseudo, Guild, Level, and Edit) - padded horizontally
+            // 2. PROFILE ROW — avatar (no halo), pseudo, guild, level, pseudo edit
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar Frame (White background circle with colored border)
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(64.dp)
                         .clip(CircleShape)
-                        .background(Color.White)
-                        .border(3.dp, activeColor, CircleShape)
                         .clickable(enabled = isMe) {
                             imageLauncher.launch("image/*")
-                        },
-                    contentAlignment = Alignment.Center
+                        }
                 ) {
                     AvatarImage(
                         avatarUrl = userAvatarUrl,
@@ -630,344 +591,307 @@ fun PlayerProfileContent(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(14.dp))
 
-                // Pseudo & Clan
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = userPseudo,
-                        style = MaterialTheme.typography.titleLarge,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = onBackground,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = userGuildNom ?: "Sans Guilde",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        color = parsedGuildColor ?: onBackground.copy(alpha = 0.65f),
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                // Level badge
                 Column(
                     horizontalAlignment = Alignment.End
                 ) {
                     Text(
                         text = "Niveau $level",
                         fontWeight = FontWeight.Black,
-                        fontSize = 18.sp,
-                        color = Color.White
+                        fontSize = 16.sp,
+                        color = onBackground
                     )
-                }
-
-                if (isMe) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { showSettingsSheet = true },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Modifier",
-                            tint = activeColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 3. DESCRIPTION PILL BUTTON - padded horizontally, glassmorphic container
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-            ) {
-                Button(
-                    onClick = {
-                        if (isMe) {
-                            showEditDescriptionDialog = true
-                        } else {
-                            Toast.makeText(context, localDescription.ifEmpty { "Ce conquérant n'a pas rédigé de description." }, Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = activeColor.copy(alpha = 0.3f)),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                ) {
-                    Text(
-                        text = localDescription.ifEmpty { "Description" },
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 4. SUCCÈS CARD (with Protruding Bottom + Button Extension)
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 18.dp),
-                    shape = RoundedCornerShape(0.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    colors = CardDefaults.cardColors(containerColor = activeColor.copy(alpha = 0.3f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 20.dp)
-                    ) {
-                        Text(
-                            text = "Succès",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Row of achievements (Conquérant, Randonneur, Explorateur)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceAround
+                    if (isMe) {
+                        IconButton(
+                            onClick = { showEditPseudoDialog = true },
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            AchievementBadge(
-                                name = "Conquérant",
-                                icon = Icons.Default.EmojiEvents,
-                                color = activeColor,
-                                isUnlocked = totalDistance > 0.0 || currentArea > 0.0
-                            )
-                            AchievementBadge(
-                                name = "Randonneur",
-                                icon = Icons.Default.DirectionsRun,
-                                color = activeColor,
-                                isUnlocked = totalDistance >= 5.0
-                            )
-                            AchievementBadge(
-                                name = "Explorateur",
-                                icon = Icons.Default.Public,
-                                color = activeColor,
-                                isUnlocked = loopCount > 0
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Modifier le pseudo",
+                                tint = onBackground,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
+            }
 
-                // Protruding add_circle tab button (glassmorphic style)
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 3. DESCRIPTION CARD
+            ProfileSectionCard(
+                title = "Description",
+                cardColor = cardColor,
+                onCardColor = onCardColor,
+                onClick = if (isMe) { { showEditDescriptionDialog = true } } else null
+            ) {
+                Text(
+                    text = localDescription.ifEmpty {
+                        if (isMe) "Appuyez pour ajouter une description."
+                        else "Ce conquérant n'a pas rédigé de description."
+                    },
+                    color = if (localDescription.isEmpty()) onCardMuted else onCardColor,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 4. SUCCÈS CARD — emptied, new achievements will come later
+            ProfileSectionCard(
+                title = "Succès",
+                cardColor = cardColor,
+                onCardColor = onCardColor
+            ) {
                 Box(
                     modifier = Modifier
-                        .offset(y = (-2).dp)
-                        .background(activeColor.copy(alpha = 0.4f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                        .padding(horizontal = 14.dp, vertical = 4.dp)
-                        .clickable { showAchievementsDialog = true },
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AddCircle,
-                        contentDescription = "Voir succès",
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp)
+                    Text(
+                        text = "De nouveaux succès arrivent bientôt…",
+                        color = onCardMuted,
+                        fontSize = 13.sp
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // 5. SOCIAL CARD (ONLY FOR ME)
             if (isMe) {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.BottomCenter
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 18.dp),
-                        shape = RoundedCornerShape(0.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                        colors = CardDefaults.cardColors(containerColor = activeColor.copy(alpha = 0.3f))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 20.dp)
+                ProfileSectionCard(
+                    title = "Social",
+                    cardColor = cardColor,
+                    onCardColor = onCardColor,
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { showAddFriendDialog = true },
+                            modifier = Modifier.size(28.dp)
                         ) {
-                            Text(
-                                text = "Social",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp,
-                                color = Color.White
+                            Icon(
+                                imageVector = Icons.Default.PersonAdd,
+                                contentDescription = "Ajouter un ami",
+                                tint = onCardColor,
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            if (isFriendsLoading) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(80.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(color = activeColor)
-                                }
-                            } else if (friendsList.isEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(60.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Aucun ami pour le moment.",
-                                        color = Color.White.copy(alpha = 0.6f),
-                                        fontSize = 13.sp
-                                    )
-                                }
-                            } else {
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    friendsList.take(3).forEach { friend ->
-                                        val friendThemeColor = remember(friend.empireColor) {
-                                            try { Color(android.graphics.Color.parseColor(friend.empireColor)) } catch(_: Exception) { activeColor }
-                                        }
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(24.dp),
-                                            colors = CardDefaults.cardColors(containerColor = friendThemeColor.copy(alpha = 0.15f)),
-                                            border = BorderStroke(1.dp, friendThemeColor.copy(alpha = 0.3f))
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                AvatarImage(
-                                                    avatarUrl = friend.avatarUrl,
-                                                    modifier = Modifier
-                                                        .size(36.dp)
-                                                        .clip(CircleShape)
-                                                        .border(1.5.dp, friendThemeColor, CircleShape)
-                                                )
-                                                Spacer(modifier = Modifier.width(10.dp))
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = friend.pseudo,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 14.sp,
-                                                        color = Color.White
-                                                    )
-                                                    if (friend.guildNom != null) {
-                                                        Text(
-                                                            text = friend.guildNom,
-                                                            fontSize = 11.sp,
-                                                            color = Color.White.copy(alpha = 0.6f)
-                                                        )
-                                                    }
-                                                }
-                                                Text(
-                                                    text = "Lvl ${friend.level}",
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.sp,
-                                                    color = Color.White.copy(alpha = 0.8f)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Icon(
-                                                    imageVector = Icons.Default.MoreVert,
-                                                    contentDescription = "Options",
-                                                    tint = Color.White.copy(alpha = 0.6f),
-                                                    modifier = Modifier
-                                                        .size(20.dp)
-                                                        .clickable {
-                                                            Toast.makeText(context, "Ami: ${friend.pseudo}", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                )
-                                            }
-                                        }
-                                    }
-                                    if (friendsList.size > 3) {
-                                        Text(
-                                            text = "Et ${friendsList.size - 3} autres amis...",
-                                            color = Color.White.copy(alpha = 0.6f),
-                                            fontSize = 11.sp,
-                                            modifier = Modifier.padding(start = 6.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
-
-                    // Protruding add_circle tab button (glassmorphic style)
-                    Box(
-                        modifier = Modifier
-                            .offset(y = (-2).dp)
-                            .background(activeColor.copy(alpha = 0.4f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                            .padding(horizontal = 14.dp, vertical = 4.dp)
-                            .clickable { showAddFriendDialog = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AddCircle,
-                            contentDescription = "Ajouter un ami",
-                            tint = Color.White,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            // 6. WIDE STATISTIQUES PILL BUTTON (ONLY FOR ME) - padded horizontally
-            if (isMe) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
                 ) {
-                    Button(
-                        onClick = { showStatsSheet = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(25.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = activeColor)
-                    ) {
-                        Text(
-                            text = "Statistiques",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color.White
-                        )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (isFriendsLoading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(70.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = activeColor)
+                        }
+                    } else if (friendsList.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Aucun ami pour le moment.",
+                                color = onCardMuted,
+                                fontSize = 13.sp
+                            )
+                        }
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            friendsList.take(3).forEach { friend ->
+                                val friendThemeColor = remember(friend.empireColor) {
+                                    try { Color(android.graphics.Color.parseColor(friend.empireColor)) } catch (_: Exception) { activeColor }
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(onCardColor.copy(alpha = 0.08f))
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AvatarImage(
+                                        avatarUrl = friend.avatarUrl,
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, friendThemeColor, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = friend.pseudo,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = onCardColor
+                                        )
+                                        if (friend.guildNom != null) {
+                                            Text(
+                                                text = friend.guildNom,
+                                                fontSize = 11.sp,
+                                                color = onCardMuted
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "Niv. ${friend.level}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = onCardMuted
+                                    )
+                                }
+                            }
+                            if (friendsList.size > 3) {
+                                Text(
+                                    text = "Et ${friendsList.size - 3} autres amis…",
+                                    color = onCardMuted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(start = 6.dp)
+                                )
+                            }
+                        }
                     }
                 }
-                Spacer(modifier = Modifier.height(40.dp))
-            } else {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(14.dp))
             }
+
+            // 6. STATISTIQUES CARD — inline stats, always visible
+            ProfileSectionCard(
+                title = "Statistiques",
+                cardColor = cardColor,
+                onCardColor = onCardColor
+            ) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    StatTile(
+                        title = "Distance totale",
+                        value = "${"%.2f".format(totalDistance)} km",
+                        icon = Icons.Default.DirectionsRun,
+                        tint = activeColor,
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatTile(
+                        title = "Max boucle",
+                        value = "${"%.2f".format(maxLoopDistanceKm)} km",
+                        icon = Icons.Default.TrendingUp,
+                        tint = Color(0xFFF59E0B),
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    StatTile(
+                        title = "Territoire actuel",
+                        value = "${"%.3f".format(currentArea)} km²",
+                        icon = Icons.Default.Map,
+                        tint = activeColor,
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatTile(
+                        title = "Conquis all-time",
+                        value = "${"%.3f".format(allTimeArea)} km²",
+                        icon = Icons.Default.Public,
+                        tint = Color(0xFF06B6D4),
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    StatTile(
+                        title = "Territoire volé",
+                        value = "${"%.3f".format(areaLostKm2)} km²",
+                        icon = Icons.Default.TrendingDown,
+                        tint = Color(0xFFEF4444),
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatTile(
+                        title = "Superficie max",
+                        value = "${"%.3f".format(maxAreaKm2)} km²",
+                        icon = Icons.Default.PhotoSizeSelectActual,
+                        tint = Color(0xFF8B5CF6),
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    StatTile(
+                        title = "Boucles fermées",
+                        value = "$loopCount",
+                        icon = Icons.Default.Loop,
+                        tint = activeColor,
+                        onCardColor = onCardColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (isMe) {
+                        StatTile(
+                            title = "Série",
+                            value = "$userStreak j",
+                            icon = Icons.Default.LocalFireDepartment,
+                            tint = Color(0xFFFF6D00),
+                            onCardColor = onCardColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 
@@ -976,8 +900,10 @@ fun PlayerProfileContent(
         ModalBottomSheet(
             onDismissRequest = { showSettingsSheet = false },
             sheetState = rememberModalBottomSheetState(),
-            containerColor = Color.White
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
+            val onSurface = MaterialTheme.colorScheme.onSurface
+            val dividerColor = onSurface.copy(alpha = 0.12f)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -989,18 +915,18 @@ fun PlayerProfileContent(
                     text = "PARAMÈTRES DE L'APPLICATION",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Black,
-                    color = Color.Black,
+                    color = onSurface,
                     letterSpacing = 1.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                HorizontalDivider(color = Color(0xFFE5E7EB))
+                HorizontalDivider(color = dividerColor)
 
                 // Empire Color selector
                 Column {
                     ListItem(
-                        headlineContent = { Text("Couleur de l'Empire", color = Color.Black, fontWeight = FontWeight.SemiBold) },
-                        supportingContent = { Text("Personnalisez votre couleur sur la carte", color = Color.Gray) },
+                        headlineContent = { Text("Couleur de l'Empire", color = onSurface, fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text("Personnalisez votre couleur sur la carte", color = onSurface.copy(alpha = 0.6f)) },
                         leadingContent = {
                             Icon(Icons.Default.Palette, contentDescription = null, tint = activeColor)
                         },
@@ -1011,20 +937,20 @@ fun PlayerProfileContent(
                                         .size(20.dp)
                                         .clip(CircleShape)
                                         .background(localColor)
-                                        .border(1.dp, Color.LightGray, CircleShape)
+                                        .border(1.dp, dividerColor, CircleShape)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Icon(
                                     imageVector = if (showColorPicker) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                     contentDescription = null,
-                                    tint = Color.Gray
+                                    tint = onSurface.copy(alpha = 0.6f)
                                 )
                             }
                         },
                         modifier = Modifier.clickable { showColorPicker = !showColorPicker },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
-                    
+
                     AnimatedVisibility(
                         visible = showColorPicker,
                         enter = fadeIn() + expandVertically(),
@@ -1045,56 +971,11 @@ fun PlayerProfileContent(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFFE5E7EB))
-
-                // Edit Pseudonym
-                var pseudoText by remember { mutableStateOf(userPseudo) }
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text("Nom d'utilisateur", fontWeight = FontWeight.SemiBold, color = Color.Black, modifier = Modifier.padding(horizontal = 16.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = pseudoText,
-                            onValueChange = { pseudoText = it },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = {
-                            if (pseudoText.trim().isEmpty()) {
-                                Toast.makeText(context, "Pseudo vide", Toast.LENGTH_SHORT).show()
-                                return@IconButton
-                            }
-                            scope.launch {
-                                try {
-                                    withContext(Dispatchers.IO) {
-                                        supabase.postgrest["profiles"].update(
-                                            mapOf("pseudonyme" to pseudoText.trim())
-                                        ) {
-                                            filter { eq("id", userId) }
-                                        }
-                                    }
-                                    onStatsUpdated()
-                                    Toast.makeText(context, "Pseudo enregistré !", Toast.LENGTH_SHORT).show()
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Erreur de mise à jour", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }) {
-                            Icon(Icons.Default.Check, contentDescription = "Valider", tint = activeColor)
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = Color(0xFFE5E7EB))
+                HorizontalDivider(color = dividerColor)
 
                 // Theme selection
                 Column(modifier = Modifier.padding(vertical = 12.dp)) {
-                    Text("Thème visuel", fontWeight = FontWeight.SemiBold, color = Color.Black, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
+                    Text("Thème visuel", fontWeight = FontWeight.SemiBold, color = onSurface, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1111,7 +992,7 @@ fun PlayerProfileContent(
                                     try {
                                         val themePrefs = context.getSharedPreferences("theme_prefs", android.content.Context.MODE_PRIVATE)
                                         themePrefs.edit().putString("active_theme", themeId).apply()
-                                    } catch(_: Exception) {}
+                                    } catch (_: Exception) {}
                                 },
                                 label = { Text(label) }
                             )
@@ -1119,21 +1000,21 @@ fun PlayerProfileContent(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFFE5E7EB))
+                HorizontalDivider(color = dividerColor)
 
                 // Share Location
                 ListItem(
-                    headlineContent = { Text("Partager ma position (Temps réel)", color = Color.Black, fontWeight = FontWeight.SemiBold) },
-                    supportingContent = { Text("Permet aux autres joueurs de voir votre position sur la carte", color = Color.Gray) },
+                    headlineContent = { Text("Partager ma position (Temps réel)", color = onSurface, fontWeight = FontWeight.SemiBold) },
+                    supportingContent = { Text("Permet aux autres joueurs de voir votre position sur la carte", color = onSurface.copy(alpha = 0.6f)) },
                     leadingContent = {
-                        Icon(Icons.Default.MyLocation, contentDescription = null, tint = Color.Gray)
+                        Icon(Icons.Default.MyLocation, contentDescription = null, tint = onSurface.copy(alpha = 0.6f))
                     },
                     trailingContent = {
                         Switch(
                             checked = shareLocationEnabled,
                             onCheckedChange = { shareLocationEnabled = it },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                 checkedTrackColor = activeColor
                             )
                         )
@@ -1141,13 +1022,13 @@ fun PlayerProfileContent(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
 
-                HorizontalDivider(color = Color(0xFFE5E7EB))
+                HorizontalDivider(color = dividerColor)
 
                 // Logout button
                 ListItem(
-                    headlineContent = { Text("Se déconnecter", color = Color.Red, fontWeight = FontWeight.Bold) },
+                    headlineContent = { Text("Se déconnecter", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
                     leadingContent = {
-                        Icon(Icons.Default.ExitToApp, contentDescription = "Déconnexion", tint = Color.Red)
+                        Icon(Icons.Default.ExitToApp, contentDescription = "Déconnexion", tint = MaterialTheme.colorScheme.error)
                     },
                     modifier = Modifier.clickable {
                         scope.launch {
@@ -1162,212 +1043,59 @@ fun PlayerProfileContent(
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 
-    // Modal Bottom Sheet: Statistiques Panel
-    if (showStatsSheet && isMe) {
-        ModalBottomSheet(
-            onDismissRequest = { showStatsSheet = false },
-            sheetState = rememberModalBottomSheetState(),
-            containerColor = Color.White
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "MES STATISTIQUES",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Black,
-                        color = Color.Black,
-                        letterSpacing = 1.sp
-                    )
-                    IconButton(onClick = { showStatsSheet = false }) {
-                        Icon(Icons.Default.Close, contentDescription = "Fermer")
+    // Dialogue: Modifier le pseudo
+    if (showEditPseudoDialog && isMe) {
+        var pseudoText by remember { mutableStateOf(userPseudo) }
+        AlertDialog(
+            onDismissRequest = { showEditPseudoDialog = false },
+            title = { Text("Modifier le pseudo") },
+            text = {
+                OutlinedTextField(
+                    value = pseudoText,
+                    onValueChange = { pseudoText = it },
+                    label = { Text("Nom d'utilisateur") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (pseudoText.trim().isEmpty()) {
+                        Toast.makeText(context, "Pseudo vide", Toast.LENGTH_SHORT).show()
+                        return@TextButton
                     }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Performances Sportives
-                Text(
-                    text = "PERFORMANCES SPORTIVES",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Gray,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    StatCard(
-                        title = "Distance totale",
-                        value = "${"%.2f".format(totalDistance)} km",
-                        icon = Icons.Default.DirectionsRun,
-                        tint = activeColor,
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    StatCard(
-                        title = "Max boucle",
-                        value = "${"%.2f".format(maxLoopDistanceKm)} km",
-                        icon = Icons.Default.TrendingUp,
-                        tint = Color(0xFFF59E0B),
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Statistiques de Conquête
-                Text(
-                    text = "STATISTIQUES DE CONQUÊTE",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Gray,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    StatCard(
-                        title = "Empire All-Time",
-                        value = "${"%.3f".format(allTimeArea)} km²",
-                        icon = Icons.Default.Public,
-                        tint = activeColor,
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                    StatCard(
-                        title = "Empire Actuel",
-                        value = "${"%.3f".format(currentArea)} km²",
-                        icon = Icons.Default.Map,
-                        tint = Color(0xFF4B5563),
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                    StatCard(
-                        title = "Boucles fermées",
-                        value = "$loopCount",
-                        icon = Icons.Default.Loop,
-                        tint = Color(0xFF8B5CF6),
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    StatCard(
-                        title = "Superficie max",
-                        value = "${"%.3f".format(maxAreaKm2)} km²",
-                        icon = Icons.Default.PhotoSizeSelectActual,
-                        tint = Color(0xFF06B6D4),
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                    StatCard(
-                        title = "Superficie perdue",
-                        value = "${"%.3f".format(areaLostKm2)} km²",
-                        icon = Icons.Default.TrendingDown,
-                        tint = Color(0xFFEF4444),
-                        modifier = Modifier.weight(1f),
-                        cardStrokeColor = Color(0xFFE5E7EB)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Map Representation
-                Text(
-                    text = "EMPIRE CONQUIS",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Gray,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val userLargestPolygon = remember(completedPolygons) {
-                    completedPolygons.maxByOrNull { getPolygonArea(it) }
-                }
-                val userCentroid = remember(userLargestPolygon) {
-                    userLargestPolygon?.let { getPolygonCentroid(it) } ?: Point.fromLngLat(2.3522, 48.8566)
-                }
-                val mapViewportState = rememberMapViewportState {
-                    setCameraOptions {
-                        center(userCentroid)
-                        zoom(13.5)
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
-                ) {
-                    if (completedPolygons.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFFF3F4F6)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "Aucune zone conquise", color = Color.Gray, fontSize = 13.sp)
-                        }
-                    } else {
-                        MapboxMap(
-                            modifier = Modifier.fillMaxSize(),
-                            mapViewportState = mapViewportState,
-                            logo = {},
-                            attribution = {}
-                        ) {
-                            MapStyle(style = "mapbox://styles/fantasmaglad/cmqe0myj4002c01qr2jd549n8")
-                            MapEffect(Unit) { mapView ->
-                                mapView.gestures.scrollEnabled = false
-                                mapView.gestures.pinchToZoomEnabled = false
-                                mapView.gestures.doubleTapToZoomInEnabled = false
-                                mapView.gestures.doubleTouchToZoomOutEnabled = false
-                            }
-                            completedPolygons.forEach { polygonPoints ->
-                                val polygonState = remember(polygonPoints, activeColor) {
-                                    PolygonAnnotationState().apply {
-                                        fillColor = activeColor.copy(alpha = 0.35f)
-                                        fillOutlineColor = activeColor
-                                    }
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                supabase.postgrest["profiles"].update(
+                                    mapOf("pseudonyme" to pseudoText.trim())
+                                ) {
+                                    filter { eq("id", userId) }
                                 }
-                                PolygonAnnotation(
-                                    points = listOf(polygonPoints),
-                                    polygonAnnotationState = polygonState
-                                )
                             }
+                            onStatsUpdated()
+                            Toast.makeText(context, "Pseudo enregistré !", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Erreur de mise à jour", Toast.LENGTH_SHORT).show()
                         }
                     }
+                    showEditPseudoDialog = false
+                }) {
+                    Text("Enregistrer", color = activeColor)
                 }
-
-                Spacer(modifier = Modifier.height(32.dp))
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditPseudoDialog = false }) {
+                    Text("Annuler")
+                }
             }
-        }
+        )
     }
 
     // Dialogue: Modifier la description
@@ -1397,65 +1125,13 @@ fun PlayerProfileContent(
             },
             dismissButton = {
                 TextButton(onClick = { showEditDescriptionDialog = false }) {
-                    Text("Annuler", color = Color.Gray)
+                    Text("Annuler")
                 }
             }
         )
     }
 
-    // Dialogue: Achievements details list
-    if (showAchievementsDialog) {
-        AlertDialog(
-            onDismissRequest = { showAchievementsDialog = false },
-            title = { Text("Médailles & Accomplissements", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Débloquez des insignes en explorant et courant :", color = Color.Gray, fontSize = 13.sp)
-
-                    ListItem(
-                        headlineContent = { Text("Conquérant", fontWeight = FontWeight.Bold) },
-                        supportingContent = { Text("Capturez votre premier territoire ou commencez une course.") },
-                        leadingContent = {
-                            Icon(
-                                Icons.Default.EmojiEvents,
-                                contentDescription = null,
-                                tint = if (totalDistance > 0.0 || currentArea > 0.0) activeColor else Color.Gray
-                            )
-                        }
-                    )
-                    ListItem(
-                        headlineContent = { Text("Randonneur", fontWeight = FontWeight.Bold) },
-                        supportingContent = { Text("Parcourez au moins 5 km au total (${"%.2f".format(totalDistance)}/5 km)") },
-                        leadingContent = {
-                            Icon(
-                                Icons.Default.DirectionsRun,
-                                contentDescription = null,
-                                tint = if (totalDistance >= 5.0) activeColor else Color.Gray
-                            )
-                        }
-                    )
-                    ListItem(
-                        headlineContent = { Text("Explorateur", fontWeight = FontWeight.Bold) },
-                        supportingContent = { Text("Fermez au moins 1 boucle complète ($loopCount boucle(s) fermée(s))") },
-                        leadingContent = {
-                            Icon(
-                                Icons.Default.Public,
-                                contentDescription = null,
-                                tint = if (loopCount > 0) activeColor else Color.Gray
-                            )
-                        }
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAchievementsDialog = false }) {
-                    Text("Fermer", color = activeColor)
-                }
-            }
-        )
-    }
-
-    // Dialogue: Add friend search (Social sheet)
+    // Dialogue: Add friend search (Social card)
     if (showAddFriendDialog && isMe) {
         var queryText by remember { mutableStateOf("") }
         var searchResults by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
@@ -1517,12 +1193,12 @@ fun PlayerProfileContent(
                                 val pseudo = userObj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
                                 val avatar = userObj["avatar_url"]?.jsonPrimitive?.contentOrNull
                                 val userColorHex = userObj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
-                                val userColor = try { Color(android.graphics.Color.parseColor(userColorHex)) } catch(_: Exception) { activeColor }
-                                
+                                val userColor = try { Color(android.graphics.Color.parseColor(userColorHex)) } catch (_: Exception) { activeColor }
+
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color.Black.copy(alpha = 0.04f), RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                                         .padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -1534,8 +1210,8 @@ fun PlayerProfileContent(
                                             .border(1.dp, userColor, CircleShape)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(pseudo, fontWeight = FontWeight.Bold, color = Color.Black, modifier = Modifier.weight(1f))
-                                    
+                                    Text(pseudo, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+
                                     Button(
                                         onClick = {
                                             scope.launch(Dispatchers.IO) {
@@ -1551,7 +1227,7 @@ fun PlayerProfileContent(
                                                         Toast.makeText(context, "Demande envoyée !", Toast.LENGTH_SHORT).show()
                                                         showAddFriendDialog = false
                                                     }
-                                                } catch(e: Exception) {
+                                                } catch (e: Exception) {
                                                     withContext(Dispatchers.Main) {
                                                         Toast.makeText(context, "Déjà demandé / erreur", Toast.LENGTH_SHORT).show()
                                                     }
@@ -1568,7 +1244,7 @@ fun PlayerProfileContent(
                             }
                         }
                     } else if (queryText.isNotEmpty()) {
-                        Text("Aucun joueur trouvé", color = Color.Gray, fontSize = 13.sp)
+                        Text("Aucun joueur trouvé", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 13.sp)
                     }
                 }
             },
@@ -1581,37 +1257,83 @@ fun PlayerProfileContent(
     }
 }
 
+// Rounded translucent section container (theme or empire color at 70% opacity)
 @Composable
-fun AchievementBadge(
-    name: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    color: Color,
-    isUnlocked: Boolean
+private fun ProfileSectionCard(
+    title: String,
+    cardColor: Color,
+    onCardColor: Color,
+    onClick: (() -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(cardColor)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(60.dp)
-                .clip(CircleShape)
-                .background(if (isUnlocked) color else Color.White.copy(alpha = 0.1f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = name,
-                tint = if (isUnlocked) Color.White else Color.White.copy(alpha = 0.4f),
-                modifier = Modifier.size(28.dp)
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = onCardColor,
+                modifier = Modifier.align(Alignment.Center)
+            )
+            if (trailingIcon != null) {
+                Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    trailingIcon()
+                }
+            }
+        }
+        content()
+    }
+}
+
+@Composable
+private fun StatTile(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    onCardColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(onCardColor.copy(alpha = 0.08f))
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(
+                text = title,
+                fontSize = 10.sp,
+                color = onCardColor.copy(alpha = 0.65f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = onCardColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = name,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
-            color = Color.White
-        )
     }
 }
 
@@ -1624,6 +1346,7 @@ fun PlayerProfileDialog(
     onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
     var playerProfileDetail by remember(playerId) { mutableStateOf<ProfileDetails?>(null) }
+    var playerPolygons by remember(playerId) { mutableStateOf<List<List<Point>>>(emptyList()) }
     var isLoading by remember(playerId) { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
 
@@ -1640,15 +1363,20 @@ fun PlayerProfileDialog(
                     val id = obj["id"]?.jsonPrimitive?.content ?: playerId
                     val pseudo = obj["pseudonyme"]?.jsonPrimitive?.contentOrNull ?: "Joueur"
                     val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
+                    val banner = obj["banner_url"]?.jsonPrimitive?.contentOrNull
                     val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
                     val lvl = obj["level"]?.jsonPrimitive?.intOrNull ?: 1
                     val xp = obj["xp"]?.jsonPrimitive?.intOrNull ?: 0
                     val dist = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     val loop = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
                     val area = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                    
+                    val maxLoopKm = obj["max_loop_distance_km"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    val maxAreaM2 = obj["max_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    val areaLostM2 = obj["area_lost_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+
                     val gId = obj["guilde_id"]?.jsonPrimitive?.contentOrNull
                     var gNom: String? = null
+                    var gCouleur: String? = null
                     if (gId != null) {
                         try {
                             val gRes = supabase.postgrest["guildes"].select {
@@ -1657,21 +1385,34 @@ fun PlayerProfileDialog(
                             val gArray = Json.parseToJsonElement(gRes.data) as? JsonArray
                             val gObj = gArray?.firstOrNull() as? JsonObject
                             gNom = gObj?.get("nom")?.jsonPrimitive?.contentOrNull
-                        } catch(_: Exception) {}
+                            gCouleur = gObj?.get("couleur_hex")?.jsonPrimitive?.contentOrNull
+                        } catch (_: Exception) {}
                     }
-                    
+
                     playerProfileDetail = ProfileDetails(
                         id = id,
                         pseudonyme = pseudo,
                         avatarUrl = avatar,
+                        bannerUrl = banner,
                         empireColor = color,
                         level = lvl,
                         xp = xp,
                         guildeNom = gNom,
+                        guildeCouleur = gCouleur,
                         totalDistance = dist,
                         currentAreaM2 = area,
-                        loopCount = loop
+                        loopCount = loop,
+                        maxLoopDistanceKm = maxLoopKm,
+                        maxAreaKm2 = maxAreaM2 / 1_000_000.0,
+                        areaLostKm2 = areaLostM2 / 1_000_000.0
                     )
+
+                    // Load territories for the map background & territory navigation
+                    try {
+                        playerPolygons = fetchPlayerTerritoryPolygons(playerId)
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to load player territories", e)
+                    }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("Arpent", "Failed to load player profile details", e)
@@ -1685,13 +1426,14 @@ fun PlayerProfileDialog(
         loadPlayerProfile()
     }
 
-    Dialog(onDismissRequest = onDismissRequest) {
+    // Full-screen-width profile view, opened above the current screen
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.85f),
-            shape = RoundedCornerShape(20.dp),
-            color = Color(0xFF0C0C0C)
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
         ) {
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1709,10 +1451,16 @@ fun PlayerProfileDialog(
                     userEmpireColor = detail.empireColor,
                     userShareLocation = true,
                     userAvatarUrl = detail.avatarUrl,
+                    userBannerUrl = detail.bannerUrl,
                     xp = detail.xp,
                     level = detail.level,
                     loopCount = detail.loopCount,
+                    maxLoopDistanceKm = detail.maxLoopDistanceKm,
+                    maxAreaKm2 = detail.maxAreaKm2,
+                    areaLostKm2 = detail.areaLostKm2,
                     userGuildNom = detail.guildeNom,
+                    userGuildCouleur = detail.guildeCouleur,
+                    completedPolygons = playerPolygons,
                     onCloseClick = onDismissRequest,
                     onNavigateToTerritory = if (onNavigateToTerritory != null) { point ->
                         onDismissRequest()
@@ -1721,7 +1469,7 @@ fun PlayerProfileDialog(
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Impossible de charger le profil.", color = Color.White)
+                    Text("Impossible de charger le profil.", color = MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -1732,69 +1480,16 @@ data class ProfileDetails(
     val id: String,
     val pseudonyme: String,
     val avatarUrl: String?,
+    val bannerUrl: String? = null,
     val empireColor: String,
     val level: Int,
     val xp: Int,
     val guildeNom: String?,
+    val guildeCouleur: String? = null,
     val totalDistance: Double,
     val currentAreaM2: Double,
-    val loopCount: Int
+    val loopCount: Int,
+    val maxLoopDistanceKm: Double = 0.0,
+    val maxAreaKm2: Double = 0.0,
+    val areaLostKm2: Double = 0.0
 )
-
-private fun getCumulativeXpForLevel(level: Int): Int {
-    if (level <= 1) return 0
-    var sum = 0.0
-    var currentStep = 100.0
-    for (i in 1 until level) {
-        sum += currentStep
-        currentStep *= 1.15
-    }
-    return sum.toInt()
-}
-
-@Composable
-fun StatCard(
-    title: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    modifier: Modifier = Modifier,
-    cardStrokeColor: Color = Color(0xFFE5E7EB)
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, cardStrokeColor)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = tint,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = title,
-                fontSize = 11.sp,
-                color = Color.Gray,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = value,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-

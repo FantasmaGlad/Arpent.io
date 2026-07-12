@@ -2029,7 +2029,10 @@ BEGIN
                  WHERE h.profile_id = p.id AND h.changed_at <= now() - INTERVAL '24 hours'
                  ORDER BY h.changed_at DESC 
                  LIMIT 1),
-                p.guilde_id
+                CASE WHEN EXISTS (SELECT 1 FROM public.profile_guilde_history h WHERE h.profile_id = p.id) 
+                     THEN NULL 
+                     ELSE p.guilde_id 
+                END
             ) = v_guild_id
         LOOP
             SELECT COALESCE(
@@ -2046,7 +2049,7 @@ BEGIN
                 v_member_area
             ) INTO v_member_area_24h;
             
-            v_clan_area_24h := v_clan_area_24h + v_member_area_24h;
+            v_clan_area_24h := v_clan_area_24h + COALESCE(v_member_area_24h, 0.0);
         END LOOP;
 
         -- Calculer la variation pour le clan
@@ -2094,16 +2097,14 @@ WHERE total_area_m2 > 0
 -- D'abord, supprimer la contrainte existante pour éviter de lever une erreur lors de la mise à jour (UPDATE) des valeurs
 ALTER TABLE public.course_reactions DROP CONSTRAINT IF EXISTS course_reactions_type_reaction_check;
 
--- Ensuite, supprimer les doublons potentiels (si le même utilisateur a déjà réagi avec 'baamix' et un autre type sur la même course)
+-- Supprimer tous les doublons potentiels pour le même utilisateur sur la même course
+-- En ne gardant qu'une seule ligne par (course_id, utilisateur_id)
 DELETE FROM public.course_reactions r1
-WHERE r1.type_reaction <> 'baamix'
-  AND EXISTS (
-      SELECT 1 
-      FROM public.course_reactions r2 
-      WHERE r2.course_id = r1.course_id 
-        AND r2.utilisateur_id = r1.utilisateur_id 
-        AND r2.type_reaction = 'baamix'
-  );
+WHERE r1.id NOT IN (
+    SELECT MIN(r2.id)
+    FROM public.course_reactions r2
+    GROUP BY r2.course_id, r2.utilisateur_id
+);
 
 -- Convertir toutes les autres réactions en 'baamix' pour qu'elles respectent la future contrainte
 UPDATE public.course_reactions

@@ -1,10 +1,14 @@
 package com.fanta.androidsport.ui.screens
 
+import android.annotation.SuppressLint
+import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,15 +17,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -43,25 +46,72 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebViewAssetLoader
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.theme.ActiveOrange
-import com.fanta.androidsport.ui.theme.ElectricBlue
-import com.fanta.androidsport.ui.theme.NeonVolt
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.launch
+
+// Deep green from the Connexion.svg artwork (#253D2C) used for texts over the white buttons
+private val AuthGreen = Color(0xFF253D2C)
+private val AuthButtonWhite = Color.White.copy(alpha = 0.7f)
+
+// Fullscreen looping animated background rendered from assets/Connexion.svg
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun ConnexionAnimatedBackground(modifier: Modifier = Modifier) {
+    AndroidView(
+        factory = { ctx ->
+            WebView(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+
+                val assetLoader = WebViewAssetLoader.Builder()
+                    .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+                    .build()
+
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        return request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+                    }
+                }
+
+                setBackgroundColor(android.graphics.Color.WHITE)
+                isVerticalScrollBarEnabled = false
+                isHorizontalScrollBarEnabled = false
+                overScrollMode = android.view.View.OVER_SCROLL_NEVER
+
+                settings.apply {
+                    javaScriptEnabled = true
+                    allowFileAccess = false
+                    allowContentAccess = false
+                    domStorageEnabled = true
+                    useWideViewPort = true
+                    loadWithOverviewMode = true
+                }
+
+                loadUrl("https://appassets.androidplatform.net/assets/connexion.html")
+            }
+        },
+        modifier = modifier
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,64 +127,21 @@ fun AuthScreen() {
     var passwordVisible by remember { mutableStateOf(false) }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF020617))))
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
+        modifier = Modifier.fillMaxSize()
     ) {
+        // Animated SVG background (loops indefinitely, branding included in the artwork)
+        ConnexionAnimatedBackground(modifier = Modifier.fillMaxSize())
+
+        // Auth controls anchored on the lower half, below the animated logo
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxWidth()
+            verticalArrangement = Arrangement.Bottom,
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 48.dp)
         ) {
-            // Glowing pulsing logo container
-            Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(NeonVolt.copy(alpha = 0.1f))
-                    .border(2.dp, NeonVolt, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Terrain,
-                    contentDescription = null,
-                    tint = NeonVolt,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Brand Title
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "ARPENT",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 32.sp,
-                    letterSpacing = 3.sp,
-                    color = Color.White
-                )
-                Text(
-                    text = ".IO",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 32.sp,
-                    letterSpacing = 3.sp,
-                    color = NeonVolt
-                )
-            }
-
-            Text(
-                text = "Dominez votre ville. Un tracé à la fois.",
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
-            )
 
             // Error Display Card
             AnimatedVisibility(visible = errorMessage != null) {
@@ -160,7 +167,7 @@ fun AuthScreen() {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = errorMessage ?: "",
-                            color = Color.White,
+                            color = AuthGreen,
                             fontSize = 13.sp,
                             lineHeight = 18.sp
                         )
@@ -176,8 +183,8 @@ fun AuthScreen() {
                             authMode = "guest"
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonVolt,
-                            contentColor = Color.Black
+                            containerColor = AuthButtonWhite,
+                            contentColor = AuthGreen
                         ),
                         shape = RoundedCornerShape(50),
                         modifier = Modifier
@@ -200,11 +207,10 @@ fun AuthScreen() {
                             authMode = "signup"
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
-                            contentColor = Color.White
+                            containerColor = AuthButtonWhite,
+                            contentColor = AuthGreen
                         ),
                         shape = RoundedCornerShape(50),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -219,15 +225,22 @@ fun AuthScreen() {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    TextButton(
+                    Button(
                         onClick = {
                             errorMessage = null
                             authMode = "login"
-                        }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AuthButtonWhite,
+                            contentColor = AuthGreen
+                        ),
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
                     ) {
                         Text(
                             text = "Déjà un compte ? Se connecter",
-                            color = ElectricBlue,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
@@ -240,14 +253,18 @@ fun AuthScreen() {
                         onValueChange = { pseudonyme = it },
                         label = { Text("Pseudonyme") },
                         singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonVolt,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                            focusedLabelColor = NeonVolt,
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedContainerColor = AuthButtonWhite,
+                            unfocusedContainerColor = AuthButtonWhite,
+                            focusedBorderColor = AuthGreen,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedLabelColor = AuthGreen,
+                            unfocusedLabelColor = AuthGreen.copy(alpha = 0.6f),
+                            focusedTextColor = AuthGreen,
+                            unfocusedTextColor = AuthGreen,
+                            cursorColor = AuthGreen
                         )
                     )
 
@@ -294,8 +311,8 @@ fun AuthScreen() {
                         },
                         enabled = !isLoading,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = NeonVolt,
-                            contentColor = Color.Black
+                            containerColor = AuthButtonWhite,
+                            contentColor = AuthGreen
                         ),
                         shape = RoundedCornerShape(50),
                         modifier = Modifier
@@ -303,7 +320,7 @@ fun AuthScreen() {
                             .height(56.dp)
                     ) {
                         if (isLoading) {
-                            androidx.compose.material3.CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                            androidx.compose.material3.CircularProgressIndicator(color = AuthGreen, modifier = Modifier.size(24.dp))
                         } else {
                             Text(
                                 text = "COMMENCER L'AVENTURE",
@@ -324,7 +341,7 @@ fun AuthScreen() {
                     ) {
                         Text(
                             text = "Retour",
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = AuthGreen.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -336,14 +353,18 @@ fun AuthScreen() {
                         label = { Text("Adresse e-mail") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ElectricBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                            focusedLabelColor = ElectricBlue,
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedContainerColor = AuthButtonWhite,
+                            unfocusedContainerColor = AuthButtonWhite,
+                            focusedBorderColor = AuthGreen,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedLabelColor = AuthGreen,
+                            unfocusedLabelColor = AuthGreen.copy(alpha = 0.6f),
+                            focusedTextColor = AuthGreen,
+                            unfocusedTextColor = AuthGreen,
+                            cursorColor = AuthGreen
                         )
                     )
 
@@ -361,18 +382,22 @@ fun AuthScreen() {
                                 Icon(
                                     imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                     contentDescription = if (passwordVisible) "Masquer le mot de passe" else "Afficher le mot de passe",
-                                    tint = Color.White.copy(alpha = 0.6f)
+                                    tint = AuthGreen.copy(alpha = 0.6f)
                                 )
                             }
                         },
+                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ElectricBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                            focusedLabelColor = ElectricBlue,
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedContainerColor = AuthButtonWhite,
+                            unfocusedContainerColor = AuthButtonWhite,
+                            focusedBorderColor = AuthGreen,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedLabelColor = AuthGreen,
+                            unfocusedLabelColor = AuthGreen.copy(alpha = 0.6f),
+                            focusedTextColor = AuthGreen,
+                            unfocusedTextColor = AuthGreen,
+                            cursorColor = AuthGreen
                         )
                     )
 
@@ -427,8 +452,8 @@ fun AuthScreen() {
                         },
                         enabled = !isLoading,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = ElectricBlue,
-                            contentColor = Color.Black
+                            containerColor = AuthButtonWhite,
+                            contentColor = AuthGreen
                         ),
                         shape = RoundedCornerShape(50),
                         modifier = Modifier
@@ -436,7 +461,7 @@ fun AuthScreen() {
                             .height(56.dp)
                     ) {
                         if (isLoading) {
-                            androidx.compose.material3.CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                            androidx.compose.material3.CircularProgressIndicator(color = AuthGreen, modifier = Modifier.size(24.dp))
                         } else {
                             Text(
                                 text = if (authMode == "signup") "CRÉER MON COMPTE" else "SE CONNECTER",
@@ -457,7 +482,7 @@ fun AuthScreen() {
                     ) {
                         Text(
                             text = "Retour",
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = AuthGreen.copy(alpha = 0.7f)
                         )
                     }
                 }

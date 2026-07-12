@@ -26,8 +26,8 @@ android {
         applicationId = "com.fanta.androidsport"
         minSdk = 35
         targetSdk = 36
-        versionCode = 30
-        versionName = "6.5"
+        versionCode = 32
+        versionName = "6.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -72,6 +72,44 @@ fun loadTerritoriesLocally(context: Context): List<List<Point>> {
     }
 }
 
+// Fetch any player's territory polygons from Supabase. Each "territoires" row stores a flat
+// list of "lng lat" points that can contain SEVERAL closed rings — they must be split with
+// splitIntoClosedPolygons, otherwise distinct conquests get stitched together on the map.
+suspend fun fetchPlayerTerritoryPolygons(playerId: String): List<List<Point>> {
+    val result = withContext(Dispatchers.IO) {
+        supabase.postgrest["territoires"].select {
+            filter {
+                eq("utilisateur_id", playerId)
+            }
+        }
+    }
+    return withContext(Dispatchers.Default) {
+        val terrArray = Json.parseToJsonElement(result.data) as? JsonArray
+        val polys = mutableListOf<List<Point>>()
+        terrArray?.forEach { element ->
+            val obj = element as? JsonObject
+            val ptsArray = obj?.get("points")?.jsonArray
+            if (ptsArray != null) {
+                val pts = ptsArray.mapNotNull { ptEl ->
+                    val str = ptEl.jsonPrimitive.content
+                    val parts = str.split(" ")
+                    if (parts.size == 2) {
+                        val lng = parts[0].toDoubleOrNull()
+                        val lat = parts[1].toDoubleOrNull()
+                        if (lng != null && lat != null) {
+                            Point.fromLngLat(lng, lat)
+                        } else null
+                    } else null
+                }
+                if (pts.isNotEmpty()) {
+                    polys.addAll(splitIntoClosedPolygons(pts))
+                }
+            }
+        }
+        polys
+    }
+}
+
 suspend fun syncTerritoriesFromDatabase(
     userId: String,
     context: Context,

@@ -97,6 +97,9 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.nativeCanvas
+import android.graphics.Paint
+import android.graphics.Typeface
 import com.fanta.androidsport.data.model.CourseCommentaire
 import com.fanta.androidsport.data.model.CourseReaction
 import com.fanta.androidsport.data.model.FeedCourseItem
@@ -1380,7 +1383,6 @@ fun ElevationProfileChart(
     empireColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val textMeasurer = rememberTextMeasurer()
     val sampledPoints = remember(trackPoints) {
         if (trackPoints.size > 150) {
             val step = trackPoints.size / 150
@@ -1431,27 +1433,48 @@ fun ElevationProfileChart(
             )
             
             val valAtGrid = yMaxBound - (yFactor * ySpanAdjusted)
-            drawText(
-                textMeasurer = textMeasurer,
-                text = "${valAtGrid.toInt()}m",
-                topLeft = Offset(-32.dp.toPx(), y - 7.dp.toPx()),
-                style = TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+            val paintGrid = Paint().apply {
+                color = android.graphics.Color.argb((255 * 0.6f).toInt(), 255, 255, 255)
+                textSize = 9.sp.toPx()
+                textAlign = Paint.Align.RIGHT
+                typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+                isAntiAlias = true
+            }
+            drawContext.canvas.nativeCanvas.drawText(
+                "${valAtGrid.toInt()}m",
+                -4.dp.toPx(),
+                y + 3.dp.toPx(),
+                paintGrid
             )
         }
 
-        drawText(
-            textMeasurer = textMeasurer,
-            text = "0 km",
-            topLeft = Offset(0f, height + 4.dp.toPx()),
-            style = TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+        val paintBottomLeft = Paint().apply {
+            color = android.graphics.Color.argb((255 * 0.6f).toInt(), 255, 255, 255)
+            textSize = 9.sp.toPx()
+            textAlign = Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+            isAntiAlias = true
+        }
+        drawContext.canvas.nativeCanvas.drawText(
+            "0 km",
+            0f,
+            height + 12.dp.toPx(),
+            paintBottomLeft
         )
+
         val totalKmFormatted = "%.1f km".format(totalDistance / 1000.0)
-        val endLabelLayout = textMeasurer.measure(totalKmFormatted, style = TextStyle(fontSize = 9.sp))
-        drawText(
-            textMeasurer = textMeasurer,
-            text = totalKmFormatted,
-            topLeft = Offset(width - endLabelLayout.size.width, height + 4.dp.toPx()),
-            style = TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+        val paintBottomRight = Paint().apply {
+            color = android.graphics.Color.argb((255 * 0.6f).toInt(), 255, 255, 255)
+            textSize = 9.sp.toPx()
+            textAlign = Paint.Align.RIGHT
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+            isAntiAlias = true
+        }
+        drawContext.canvas.nativeCanvas.drawText(
+            totalKmFormatted,
+            width,
+            height + 12.dp.toPx(),
+            paintBottomRight
         )
 
         val path = Path()

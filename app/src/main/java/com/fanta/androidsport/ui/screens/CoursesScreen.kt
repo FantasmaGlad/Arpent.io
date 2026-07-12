@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +53,15 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -1174,65 +1184,39 @@ fun RouteMapPreview(
     )
 }
 
-data class SplitItem(
-    val distanceMeters: Int,
-    val timeFormatted: String
+data class TrackPoint(
+    val point: GPSPoint,
+    val distance: Double,
+    val time: Long?,
+    val elevation: Double,
+    val cumulativeDPlus: Double
 )
 
-fun calculateSplits(points: List<GPSPoint>): List<SplitItem> {
-    if (points.size < 2) return emptyList()
+data class DetailedSplit(
+    val label: String,
+    val splitTimeFormatted: String,
+    val dPlusFormatted: String,
+    val cumulativeTimeFormatted: String
+)
 
-    val splits = mutableListOf<SplitItem>()
-    val targets = listOf(100, 400, 800, 1000, 2000, 5000, 10000)
-    var currentTargetIndex = 0
-
-    var accumulatedDistance = 0.0
-    var startTime: Long? = null
-
-    val parsedTimes = points.map { pt ->
-        if (pt.timestamp_gps == null) return@map null
-        val cleanTimestamp = pt.timestamp_gps.replace(" ", "T")
+fun parseGpsTimestamp(timestampGps: String?): Long? {
+    if (timestampGps.isNullOrBlank()) return null
+    val clean = timestampGps.replace(" ", "T")
+    return try {
+        java.time.Instant.parse(clean).toEpochMilli()
+    } catch (e: Exception) {
         try {
-            java.time.Instant.parse(cleanTimestamp).toEpochMilli()
-        } catch (e: Exception) {
+            val formatter = java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME
+            java.time.ZonedDateTime.parse(clean, formatter).toInstant().toEpochMilli()
+        } catch (e2: Exception) {
             try {
-                val formatter = java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME
-                java.time.ZonedDateTime.parse(cleanTimestamp, formatter).toInstant().toEpochMilli()
-            } catch (e2: Exception) {
+                val formatter = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                java.time.LocalDateTime.parse(clean, formatter).toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+            } catch (e3: Exception) {
                 null
             }
         }
     }
-
-    startTime = parsedTimes.firstOrNull { it != null }
-
-    for (i in 1 until points.size) {
-        val prev = points[i - 1]
-        val curr = points[i]
-
-        val dist = calculateDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
-        accumulatedDistance += dist
-
-        while (currentTargetIndex < targets.size && accumulatedDistance >= targets[currentTargetIndex]) {
-            val target = targets[currentTargetIndex]
-            val currTime = parsedTimes[i]
-            val elapsedMs = if (startTime != null && currTime != null) currTime - startTime else null
-
-            val timeStr = if (elapsedMs != null) {
-                val sec = (elapsedMs / 1000) % 60
-                val min = (elapsedMs / 1000) / 60
-                "%d:%02d".format(min, sec)
-            } else {
-                val estimatedSec = (target / 3.0).toInt()
-                "%d:%02d".format(estimatedSec / 60, estimatedSec % 60)
-            }
-
-            splits.add(SplitItem(target, timeStr))
-            currentTargetIndex++
-        }
-    }
-
-    return splits
 }
 
 fun calculateDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
@@ -1250,94 +1234,561 @@ fun calculateDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Doub
     return r * c
 }
 
+fun getInterpolatedState(trackPoints: List<TrackPoint>, d: Double): InterpolatedState {
+    if (trackPoints.isEmpty()) return InterpolatedState(null, 0.0, 0.0)
+    if (d <= 0.0) return InterpolatedState(trackPoints.first().time, 0.0, trackPoints.first().elevation)
+    val last = trackPoints.last()
+    if (d >= last.distance) return InterpolatedState(last.time, last.cumulativeDPlus, last.elevation)
+
+    var low = 0
+    var high = trackPoints.size - 1
+    while (low < high - 1) {
+        val mid = (low + high) / 2
+        if (trackPoints[mid].distance < d) {
+            low = mid
+        } else {
+            high = mid
+        }
+    }
+    val p1 = trackPoints[low]
+    val p2 = trackPoints[high]
+    val denom = p2.distance - p1.distance
+    val fraction = if (denom > 0) (d - p1.distance) / denom else 0.0
+
+    val interpolatedTime = if (p1.time != null && p2.time != null) {
+        p1.time + ((p2.time - p1.time) * fraction).toLong()
+    } else null
+
+    val interpolatedDPlus = p1.cumulativeDPlus + (p2.cumulativeDPlus - p1.cumulativeDPlus) * fraction
+    val interpolatedElevation = p1.elevation + (p2.elevation - p1.elevation) * fraction
+
+    return InterpolatedState(interpolatedTime, interpolatedDPlus, interpolatedElevation)
+}
+
+data class InterpolatedState(
+    val time: Long?,
+    val cumulativeDPlus: Double,
+    val elevation: Double
+)
+
+fun formatDuration(ms: Long?): String {
+    if (ms == null) return "--:--"
+    val totalSeconds = ms / 1000
+    val hr = totalSeconds / 3600
+    val min = (totalSeconds % 3600) / 60
+    val sec = totalSeconds % 60
+    return if (hr > 0) {
+        "%d:%02d:%02d".format(hr, min, sec)
+    } else {
+        "%d:%02d".format(min, sec)
+    }
+}
+
+fun calculateDetailedSplits(trackPoints: List<TrackPoint>): List<DetailedSplit> {
+    if (trackPoints.isEmpty()) return emptyList()
+    val totalDistance = trackPoints.last().distance
+    val splits = mutableListOf<DetailedSplit>()
+    var k = 1
+    while (true) {
+        val dStart = (k - 1) * 1000.0
+        if (dStart >= totalDistance) break
+        
+        val isLast = (k * 1000.0) >= totalDistance
+        val dEnd = if (isLast) totalDistance else k * 1000.0
+        
+        val stateStart = getInterpolatedState(trackPoints, dStart)
+        val stateEnd = getInterpolatedState(trackPoints, dEnd)
+        
+        val splitDist = dEnd - dStart
+        if (isLast && splitDist < 5.0 && k > 1) {
+            break
+        }
+        
+        val label = if (isLast && splitDist < 995.0) {
+            "%.1f".format(dEnd / 1000.0)
+        } else {
+            k.toString()
+        }
+        
+        val endT = stateEnd.time
+        val startT = stateStart.time
+        val firstT = trackPoints.firstOrNull()?.time
+        
+        val splitTimeMs = if (endT != null && startT != null) {
+            endT - startT
+        } else null
+        
+        val cumulativeTimeMs = if (endT != null && firstT != null) {
+            endT - firstT
+        } else null
+        
+        val dPlusGain = stateEnd.cumulativeDPlus - stateStart.cumulativeDPlus
+        
+        splits.add(
+            DetailedSplit(
+                label = label,
+                splitTimeFormatted = formatDuration(splitTimeMs),
+                dPlusFormatted = "${dPlusGain.toInt()} d+",
+                cumulativeTimeFormatted = formatDuration(cumulativeTimeMs)
+            )
+        )
+        
+        k++
+    }
+    return splits
+}
+
+fun calculateBestEffort(trackPoints: List<TrackPoint>, targetDistance: Double): Long? {
+    if (trackPoints.isEmpty()) return null
+    val totalDistance = trackPoints.last().distance
+    if (totalDistance < targetDistance) return null
+    
+    var minTime: Long? = null
+    var activeIndex = 0
+    
+    for (i in trackPoints.indices) {
+        val dStart = trackPoints[i].distance
+        val dEnd = dStart + targetDistance
+        if (dEnd > totalDistance) break
+        
+        val tStart = trackPoints[i].time ?: continue
+        
+        while (activeIndex < trackPoints.size - 1 && trackPoints[activeIndex].distance < dEnd) {
+            activeIndex++
+        }
+        
+        val p2 = trackPoints[activeIndex]
+        val p1 = if (activeIndex > 0) trackPoints[activeIndex - 1] else p2
+        
+        val denom = p2.distance - p1.distance
+        val fraction = if (denom > 0) (dEnd - p1.distance) / denom else 0.0
+        
+        if (p1.time != null && p2.time != null) {
+            val tEnd = p1.time + ((p2.time - p1.time) * fraction).toLong()
+            val elapsed = tEnd - tStart
+            if (minTime == null || elapsed < minTime) {
+                minTime = elapsed
+            }
+        }
+    }
+    return minTime
+}
+
+@Composable
+fun ElevationProfileChart(
+    trackPoints: List<TrackPoint>,
+    empireColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val sampledPoints = remember(trackPoints) {
+        if (trackPoints.size > 150) {
+            val step = trackPoints.size / 150
+            trackPoints.filterIndexed { index, _ -> index % step == 0 || index == trackPoints.size - 1 }
+        } else {
+            trackPoints
+        }
+    }
+
+    if (sampledPoints.size < 2) {
+        Box(
+            modifier = modifier.background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Profil de dénivelé indisponible", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+        }
+        return
+    }
+
+    val elevations = sampledPoints.map { it.elevation }
+    val minElev = elevations.minOrNull() ?: 0.0
+    val maxElev = elevations.maxOrNull() ?: 0.0
+    val elevationSpan = (maxElev - minElev).coerceAtLeast(10.0)
+    
+    val yMinBound = minElev - (elevationSpan * 0.15)
+    val yMaxBound = maxElev + (elevationSpan * 0.15)
+    val ySpanAdjusted = yMaxBound - yMinBound
+    val totalDistance = trackPoints.last().distance
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.Transparent)
+            .padding(horizontal = 36.dp, vertical = 20.dp)
+    ) {
+        val width = size.width
+        val height = size.height
+
+        val gridLines = 3
+        for (i in 0 until gridLines) {
+            val yFactor = i.toFloat() / (gridLines - 1)
+            val y = yFactor * height
+            drawLine(
+                color = Color.White.copy(alpha = 0.15f),
+                start = Offset(0f, y),
+                end = Offset(width, y),
+                strokeWidth = 1f
+            )
+            
+            val valAtGrid = yMaxBound - (yFactor * ySpanAdjusted)
+            drawText(
+                textMeasurer = textMeasurer,
+                text = "${valAtGrid.toInt()}m",
+                topLeft = Offset(-32.dp.toPx(), y - 7.dp.toPx()),
+                style = TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+            )
+        }
+
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "0 km",
+            topLeft = Offset(0f, height + 4.dp.toPx()),
+            style = TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+        )
+        val totalKmFormatted = "%.1f km".format(totalDistance / 1000.0)
+        val endLabelLayout = textMeasurer.measure(totalKmFormatted, style = TextStyle(fontSize = 9.sp))
+        drawText(
+            textMeasurer = textMeasurer,
+            text = totalKmFormatted,
+            topLeft = Offset(width - endLabelLayout.size.width, height + 4.dp.toPx()),
+            style = TextStyle(color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp)
+        )
+
+        val path = Path()
+        val fillPath = Path()
+
+        sampledPoints.forEachIndexed { index, pt ->
+            val xFactor = pt.distance / totalDistance
+            val yFactor = (pt.elevation - yMinBound) / ySpanAdjusted
+            val px = (xFactor * width).toFloat()
+            val py = (height - (yFactor * height)).toFloat()
+
+            if (index == 0) {
+                path.moveTo(px, py)
+                fillPath.moveTo(px, height)
+                fillPath.lineTo(px, py)
+            } else {
+                path.lineTo(px, py)
+                fillPath.lineTo(px, py)
+            }
+
+            if (index == sampledPoints.size - 1) {
+                fillPath.lineTo(px, height)
+                fillPath.close()
+            }
+        }
+
+        drawPath(
+            path = fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    empireColor.copy(alpha = 0.4f),
+                    empireColor.copy(alpha = 0.0f)
+                ),
+                startY = 0f,
+                endY = height
+            )
+        )
+
+        drawPath(
+            path = path,
+            color = empireColor,
+            style = Stroke(
+                width = 3.dp.toPx(),
+                pathEffect = PathEffect.cornerPathEffect(8.dp.toPx())
+            )
+        )
+    }
+}
+
 @Composable
 fun CourseDetailsDialog(
     course: FeedCourseItem,
     onDismiss: () -> Unit
 ) {
-    val splits = remember(course.pointsGps) { calculateSplits(course.pointsGps) }
+    val themeColor = MaterialTheme.colorScheme.primary
+    val empireColor = try {
+        Color(android.graphics.Color.parseColor(course.empireColor ?: "#00875A"))
+    } catch (_: Exception) {
+        themeColor
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = course.nom ?: "Course Arpent.io",
-                color = Color(0xFF1E1E1E),
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleLarge
+    val trackPoints = remember(course.pointsGps) {
+        val points = course.pointsGps
+        val list = mutableListOf<TrackPoint>()
+        var totalDist = 0.0
+        var totalDPlus = 0.0
+        for (i in points.indices) {
+            val pt = points[i]
+            val dist = if (i == 0) 0.0 else calculateDistanceMeters(points[i - 1].latitude, points[i - 1].longitude, pt.latitude, pt.longitude)
+            totalDist += dist
+            
+            val elevation = pt.altitude ?: 0.0
+            val dPlusGain = if (i == 0) 0.0 else {
+                val prevElev = points[i - 1].altitude ?: 0.0
+                maxOf(0.0, elevation - prevElev)
+            }
+            totalDPlus += dPlusGain
+            val time = parseGpsTimestamp(pt.timestamp_gps)
+            list.add(
+                TrackPoint(
+                    point = pt,
+                    distance = totalDist,
+                    time = time,
+                    elevation = elevation,
+                    cumulativeDPlus = totalDPlus
+                )
             )
-        },
-        text = {
+        }
+        list
+    }
+
+    val splits = remember(trackPoints) { calculateDetailedSplits(trackPoints) }
+    
+    val bestEffortDistances = listOf(
+        50.0 to "50 m",
+        100.0 to "100 m",
+        200.0 to "200 m",
+        400.0 to "400 m",
+        800.0 to "800 m",
+        1000.0 to "1000 m",
+        2000.0 to "2000 m",
+        5000.0 to "5000 m",
+        10000.0 to "10 000 m"
+    )
+
+    val bestEfforts = remember(trackPoints) {
+        bestEffortDistances.map { (dist, label) ->
+            label to calculateBestEffort(trackPoints, dist)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(28.dp),
+            color = Color(0xFF0D0D0D),
+            border = BorderStroke(1.dp, empireColor.copy(alpha = 0.3f))
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                    .fillMaxSize()
+                    .padding(20.dp)
             ) {
-                // Large canvas path
-                RoutePreviewCanvas(
-                    points = course.pointsGps,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                )
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = course.nom ?: "Course sans nom",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "par @${course.pseudonyme}",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.1f), CircleShape)
+                            .size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Fermer",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "Temps de passage (Splits)",
-                    color = BrandGreen,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (splits.isEmpty()) {
-                    Text(
-                        text = "Aucun temps de passage disponible (course trop courte).",
-                        color = Color(0xFF6E6E73),
-                        fontSize = 13.sp
-                    )
-                } else {
-                    LazyColumn(
+                // Scrollable content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Card 1: Vue du tracé (30% transparency background)
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(150.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .background(empireColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                            .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.15f)), RoundedCornerShape(16.dp))
+                            .padding(12.dp)
                     ) {
-                        items(splits) { split ->
+                        Text(
+                            text = "Vue du tracé",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        
+                        RoutePreviewCanvas(
+                            points = course.pointsGps,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            lineColor = empireColor
+                        )
+                    }
+
+                    // Card 2: Vue du D+ par Km (Altitude/Elevation Profile) (30% transparency background)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(empireColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                            .border(BorderStroke(1.dp, empireColor.copy(alpha = 0.15f)), RoundedCornerShape(16.dp))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = "Vue du D+ par Km",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        
+                        ElevationProfileChart(
+                            trackPoints = trackPoints,
+                            empireColor = empireColor,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(130.dp)
+                        )
+                    }
+
+                    // Section 3: Temps de passages par km
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Temps de passages par km",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(vertical = 8.dp)
+                        )
+                        
+                        if (splits.isEmpty()) {
+                            Text(
+                                text = "Données de splits insuffisantes",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            )
+                        } else {
+                            // Column Headers
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFFF4F5F7), RoundedCornerShape(6.dp))
-                                    .padding(8.dp),
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                Text("Km", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(36.dp))
+                                Text("Allure/Split", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text("D+", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
+                                Text("Cumul", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(70.dp))
+                            }
+                            
+                            splits.forEach { split ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = split.label,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.width(36.dp)
+                                    )
+                                    Text(
+                                        text = split.splitTimeFormatted,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = split.dPlusFormatted,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.width(60.dp)
+                                    )
+                                    Text(
+                                        text = split.cumulativeTimeFormatted,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.width(70.dp)
+                                    )
+                                }
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            }
+                        }
+                    }
+
+                    // Section 4: Meilleurs Temps
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Meilleurs Temps",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(top = 12.dp, bottom = 12.dp)
+                        )
+                        
+                        bestEfforts.forEach { (label, timeMs) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = if (split.distanceMeters >= 1000) "${split.distanceMeters / 1000.0} km" else "${split.distanceMeters} m",
-                                    color = Color(0xFF1E1E1E),
-                                    fontWeight = FontWeight.SemiBold
+                                    text = label,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = split.timeFormatted,
-                                    color = BrandGreen,
+                                    text = formatDuration(timeMs),
+                                    color = if (timeMs != null) empireColor else Color.White.copy(alpha = 0.3f),
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("FERMER", color = BrandGreen, fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = Color.White,
-        shape = RoundedCornerShape(20.dp)
-    )
+        }
+    }
 }
 
 @Composable

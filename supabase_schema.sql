@@ -2114,11 +2114,12 @@ ALTER TABLE public.course_reactions DROP CONSTRAINT IF EXISTS course_reactions_t
 
 -- Supprimer tous les doublons potentiels pour le même utilisateur sur la même course
 -- En ne gardant qu'une seule ligne par (course_id, utilisateur_id)
+-- (uuid n'a pas d'agrégat MIN/MAX natif sous Postgres, on utilise DISTINCT ON à la place)
 DELETE FROM public.course_reactions r1
 WHERE r1.id NOT IN (
-    SELECT MIN(r2.id)
-    FROM public.course_reactions r2
-    GROUP BY r2.course_id, r2.utilisateur_id
+    SELECT DISTINCT ON (course_id, utilisateur_id) id
+    FROM public.course_reactions
+    ORDER BY course_id, utilisateur_id, id
 );
 
 -- Convertir toutes les autres réactions en 'baamix' pour qu'elles respectent la future contrainte

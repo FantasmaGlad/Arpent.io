@@ -111,6 +111,9 @@ fun GuildeScreen(
     var clanCouleur by remember { mutableStateOf<String?>(null) }
     var clanAvatar by remember { mutableStateOf<String?>(null) }
     var clanMembers by remember { mutableStateOf<List<ClanMember>>(emptyList()) }
+    var clanTotalAreaM2 by remember { mutableStateOf(0.0) }
+    var clanTotalDistanceKm by remember { mutableStateOf(0.0) }
+    var clanTotalLoops by remember { mutableStateOf(0) }
     
     // Clan creation/joining forms
     var newClanName by remember { mutableStateOf("") }
@@ -287,13 +290,33 @@ fun GuildeScreen(
                         val avatar = obj["avatar_url"]?.jsonPrimitive?.contentOrNull
                         ClanMember(id, pseudo, avatar)
                     } ?: emptyList()
-                    
+
+                    // Fetch collective clan totals (territoire / distance / boucles)
+                    var totalAreaM2 = 0.0
+                    var totalDistanceKm = 0.0
+                    var totalLoops = 0
+                    try {
+                        val clanStatsRes = supabase.postgrest["clan_leaderboard"].select {
+                            filter { eq("id", uClanId) }
+                        }
+                        val clanStatsArray = kotlinx.serialization.json.Json.parseToJsonElement(clanStatsRes.data) as? kotlinx.serialization.json.JsonArray
+                        val clanStatsObj = clanStatsArray?.firstOrNull() as? kotlinx.serialization.json.JsonObject
+                        totalAreaM2 = clanStatsObj?.get("total_area_m2")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                        totalDistanceKm = clanStatsObj?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                        totalLoops = clanStatsObj?.get("loop_count")?.jsonPrimitive?.intOrNull ?: 0
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to fetch clan_leaderboard totals", e)
+                    }
+
                     withContext(Dispatchers.Main) {
                         clanId = uClanId
                         clanNom = nom
                         clanCouleur = col
                         clanAvatar = av
                         clanMembers = members
+                        clanTotalAreaM2 = totalAreaM2
+                        clanTotalDistanceKm = totalDistanceKm
+                        clanTotalLoops = totalLoops
                     }
                 } else {
                     withContext(Dispatchers.Main) {
@@ -860,24 +883,61 @@ fun GuildeScreen(
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
                                 border = BorderStroke(1.5.dp, parsedClanColor)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(20.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    AvatarImage(
-                                        avatarUrl = clanAvatar,
-                                        modifier = Modifier
-                                            .size(64.dp)
-                                            .clip(CircleShape)
-                                            .border(2.dp, parsedClanColor, CircleShape),
-                                        placeholderColor = parsedClanColor,
-                                        placeholderIcon = Icons.Default.Shield
-                                    )
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Column {
-                                        Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.Black)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(text = "${clanMembers.size} membre(s)", color = Color.Black.copy(alpha = 0.6f), fontSize = 14.sp)
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        AvatarImage(
+                                            avatarUrl = clanAvatar,
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(CircleShape)
+                                                .border(2.dp, parsedClanColor, CircleShape),
+                                            placeholderColor = parsedClanColor,
+                                            placeholderIcon = Icons.Default.Shield
+                                        )
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Column {
+                                            Text(text = clanNom ?: "", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.Black)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(text = "${clanMembers.size} membre(s)", color = Color.Black.copy(alpha = 0.6f), fontSize = 14.sp)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    HorizontalDivider(color = Color.Black.copy(alpha = 0.06f))
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Collective clan stats (territoire / distance / boucles)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                text = formatLeaderboardArea(clanTotalAreaM2),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = parsedClanColor
+                                            )
+                                            Text(text = "Territoire", fontSize = 11.sp, color = Color.Black.copy(alpha = 0.5f))
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                text = formatLeaderboardDistance(clanTotalDistanceKm),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = parsedClanColor
+                                            )
+                                            Text(text = "Distance", fontSize = 11.sp, color = Color.Black.copy(alpha = 0.5f))
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                text = "$clanTotalLoops",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = parsedClanColor
+                                            )
+                                            Text(text = "Boucles", fontSize = 11.sp, color = Color.Black.copy(alpha = 0.5f))
+                                        }
                                     }
                                 }
                             }

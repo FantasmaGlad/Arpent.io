@@ -327,46 +327,6 @@ fun ConquestMapScreen(
     var lastQueryCenter by remember { mutableStateOf<Point?>(null) }
     var lastQueryZoom by remember { mutableStateOf<Double?>(null) }
     var selectedPlayerStats by remember { mutableStateOf<OtherPlayerTerritory?>(null) }
-    var selectedPlayerRunsCount by remember { mutableStateOf<Int?>(null) }
-    var selectedPlayerTotalDistance by remember { mutableStateOf<Double?>(null) }
-    var loadingPlayerStats by remember { mutableStateOf(false) }
-
-    LaunchedEffect(selectedPlayerStats) {
-        val player = selectedPlayerStats
-        if (player != null) {
-            loadingPlayerStats = true
-            selectedPlayerRunsCount = null
-            selectedPlayerTotalDistance = null
-            try {
-                val response = withContext(Dispatchers.IO) {
-                    supabase.postgrest["courses"].select {
-                        filter { eq("utilisateur_id", player.playerId) }
-                    }
-                }
-                val jsonArray = kotlinx.serialization.json.Json.parseToJsonElement(response.data) as? kotlinx.serialization.json.JsonArray
-                var totalDist = 0.0
-                var count = 0
-                if (jsonArray != null) {
-                    count = jsonArray.size
-                    for (element in jsonArray) {
-                        val obj = element as? kotlinx.serialization.json.JsonObject ?: continue
-                        val distanceTotale = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                        totalDist += distanceTotale
-                    }
-                }
-                selectedPlayerRunsCount = count
-                selectedPlayerTotalDistance = totalDist / 1000.0
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                loadingPlayerStats = false
-            }
-        } else {
-            selectedPlayerRunsCount = null
-            selectedPlayerTotalDistance = null
-            loadingPlayerStats = false
-        }
-    }
 
     // Fetch other players' territories dynamically based on visible bounding box
     LaunchedEffect(userId) {

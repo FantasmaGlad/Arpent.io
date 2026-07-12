@@ -664,6 +664,13 @@ fun PlayerProfileContent(
                         fontSize = 16.sp,
                         color = onBackground
                     )
+                    val (xpIntoLevel, xpStepForLevel) = remember(xp, level) { xpProgressInLevel(xp, level) }
+                    Text(
+                        text = "$xpIntoLevel / $xpStepForLevel XP",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = onBackground.copy(alpha = 0.6f)
+                    )
                     if (isMe) {
                         IconButton(
                             onClick = { showEditPseudoDialog = true },
@@ -1455,6 +1462,19 @@ fun PlayerProfileContent(
             }
         )
     }
+}
+
+// Mirrors the SQL xp_to_level() curve (100 XP for level 1, x1.15 per level) so the
+// UI can show progress within the current level without a server round-trip.
+private fun xpProgressInLevel(xp: Int, level: Int): Pair<Int, Int> {
+    var cumulative = 0.0
+    var step = 100.0
+    for (i in 1 until level) {
+        cumulative += step
+        step *= 1.15
+    }
+    val intoLevel = (xp - cumulative).toInt().coerceAtLeast(0)
+    return intoLevel to step.toInt()
 }
 
 // Rounded translucent section container (theme or empire color at 70% opacity)

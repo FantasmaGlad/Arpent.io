@@ -2091,6 +2091,23 @@ WHERE total_area_m2 > 0
 -- ====================================================================
 
 -- 1. Corriger la contrainte check de course_reactions pour autoriser 'baamix'
+-- D'abord, supprimer les doublons potentiels (si le même utilisateur a déjà réagi avec 'baamix' et un autre type sur la même course)
+DELETE FROM public.course_reactions r1
+WHERE r1.type_reaction <> 'baamix'
+  AND EXISTS (
+      SELECT 1 
+      FROM public.course_reactions r2 
+      WHERE r2.course_id = r1.course_id 
+        AND r2.utilisateur_id = r1.utilisateur_id 
+        AND r2.type_reaction = 'baamix'
+  );
+
+-- Convertir toutes les autres réactions en 'baamix' pour qu'elles respectent la contrainte
+UPDATE public.course_reactions
+SET type_reaction = 'baamix'
+WHERE type_reaction <> 'baamix';
+
+-- Enfin, mettre à jour la contrainte CHECK de la table
 ALTER TABLE public.course_reactions DROP CONSTRAINT IF EXISTS course_reactions_type_reaction_check;
 ALTER TABLE public.course_reactions ADD CONSTRAINT course_reactions_type_reaction_check CHECK (type_reaction IN ('baamix'));
 

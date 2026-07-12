@@ -21,6 +21,34 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
+// Lists preset image filenames bundled in an assets subfolder (e.g. "bannieres" or
+// "Profils"), so adding/removing a preset banner or avatar is just a matter of
+// dropping/removing a PNG/JPG file there — no code change needed.
+fun listAssetPresetImages(context: Context, folder: String): List<String> {
+    return try {
+        context.assets.list(folder)
+            ?.filter {
+                it.endsWith(".png", ignoreCase = true) ||
+                    it.endsWith(".jpg", ignoreCase = true) ||
+                    it.endsWith(".jpeg", ignoreCase = true) ||
+                    it.endsWith(".webp", ignoreCase = true)
+            }
+            ?.sorted()
+            ?.map { "$folder/$it" }
+            ?: emptyList()
+    } catch (e: Exception) {
+        android.util.Log.e("Arpent", "Failed to list asset presets in $folder", e)
+        emptyList()
+    }
+}
+
+// Turns "bannieres/Baamix_Pomme.png" into a human label "Baamix Pomme"
+fun assetPresetLabel(assetPath: String): String {
+    return assetPath.substringAfterLast('/')
+        .substringBeforeLast('.')
+        .replace('_', ' ')
+}
+
 fun saveTerritoriesLocally(context: Context, polygons: List<List<Point>>) {
     try {
         val file = File(context.filesDir, "local_territories.json")

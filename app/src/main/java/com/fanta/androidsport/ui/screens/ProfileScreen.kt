@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -38,9 +39,11 @@ import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.ColorWheel
 import com.fanta.androidsport.ui.components.TerritoryMapBackground
 import com.fanta.androidsport.ui.theme.ThemeManager
+import com.fanta.androidsport.utils.assetPresetLabel
 import com.fanta.androidsport.utils.fetchPlayerTerritoryPolygons
 import com.fanta.androidsport.utils.getPolygonArea
 import com.fanta.androidsport.utils.getPolygonCentroid
+import com.fanta.androidsport.utils.listAssetPresetImages
 import com.fanta.androidsport.utils.map_search
 import com.mapbox.geojson.Point
 import io.github.jan.supabase.auth.auth
@@ -63,6 +66,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import java.io.File
+
+// Shared defaults used until a player uploads or picks their own — see assets/Profils and assets/bannieres
+private const val DEFAULT_BANNER_ASSET = "file:///android_asset/bannieres/Baamix_Simpsons.png"
 
 data class FullFriendItem(
     val id: String,
@@ -342,42 +348,66 @@ fun PlayerProfileContent(
     // Local state to track the banner URL with cache-busting
     var localBannerUrl by remember(userId, userBannerUrl) { mutableStateOf(userBannerUrl) }
     var showBannerSelectionDialog by remember { mutableStateOf(false) }
+    var showAvatarSelectionDialog by remember { mutableStateOf(false) }
 
-    // Supabase avatar photo upload picker
+    val uploadAvatarBytes: (ByteArray) -> Unit = { bytes ->
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val bucket = supabase.storage.from("Images")
+                    val filename = "${userId}.jpg"
+                    bucket.upload(filename, bytes) {
+                        upsert = true
+                    }
+                    val publicUrl = bucket.publicUrl(filename)
+                    val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+
+                    supabase.postgrest["profiles"].update(
+                        mapOf("avatar_url" to finalUrl)
+                    ) {
+                        filter { eq("id", userId) }
+                    }
+                }
+                onStatsUpdated()
+                Toast.makeText(context, "Avatar mis à jour !", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to update avatar", e)
+            }
+        }
+    }
+
+    val uploadAvatarFromAsset: (String) -> Unit = { assetPath ->
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.assets.open(assetPath).use { it.readBytes() }
+                }
+                uploadAvatarBytes(bytes)
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to read avatar from asset: $assetPath", e)
+            }
+        }
+    }
+
+    // Supabase avatar photo upload picker (gallery)
     val imageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
             scope.launch {
                 try {
-                    withContext(Dispatchers.IO) {
-                        val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
-                        if (bytes != null) {
-                            val bucket = supabase.storage.from("Images")
-                            val filename = "${userId}.jpg"
-                            bucket.upload(filename, bytes) {
-                                upsert = true
-                            }
-                            val publicUrl = bucket.publicUrl(filename)
-                            val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
-
-                            supabase.postgrest["profiles"].update(
-                                mapOf("avatar_url" to finalUrl)
-                            ) {
-                                filter { eq("id", userId) }
-                            }
-                        }
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
                     }
-                    onStatsUpdated()
-                    Toast.makeText(context, "Avatar mis à jour !", Toast.LENGTH_SHORT).show()
+                    if (bytes != null) {
+                        uploadAvatarBytes(bytes)
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("Arpent", "Failed to update avatar", e)
+                    android.util.Log.e("Arpent", "Failed to read URI for avatar", e)
                 }
             }
         }
     }
-
-
 
     val uploadBannerBytes: (ByteArray) -> Unit = { bytes ->
         scope.launch {
@@ -557,50 +587,28 @@ fun PlayerProfileContent(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                if (localBannerUrl != null) {
-                    AsyncImage(
-                        model = localBannerUrl,
-                        contentDescription = "Bannière",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                    if (isMe) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(10.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.35f))
-                                .padding(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Modifier la bannière",
-                                tint = Color.White.copy(alpha = 0.9f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                } else {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                // Fall back to the shared default banner until a custom one is set
+                AsyncImage(
+                    model = localBannerUrl ?: DEFAULT_BANNER_ASSET,
+                    contentDescription = "Bannière",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 1f
+                )
+                if (isMe) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(10.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.35f))
+                            .padding(6.dp)
                     ) {
-                        if (isMe) {
-                            Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = "Ajouter une bannière",
-                                tint = onCardMuted,
-                                modifier = Modifier.size(26.dp)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-                        Text(
-                            text = if (isMe) "Ajouter une bannière" else "Bannière",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = onCardMuted,
-                            letterSpacing = 0.5.sp
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Modifier la bannière",
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -619,8 +627,9 @@ fun PlayerProfileContent(
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
+                        .border(2.dp, Color.White.copy(alpha = 0.85f), CircleShape)
                         .clickable(enabled = isMe) {
-                            imageLauncher.launch("image/*")
+                            showAvatarSelectionDialog = true
                         }
                 ) {
                     AvatarImage(
@@ -689,12 +698,13 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 3. DESCRIPTION CARD
+            // 3. DESCRIPTION CARD — full width, edge-to-edge like the course cards
             ProfileSectionCard(
                 title = "Description",
                 cardColor = cardColor,
                 onCardColor = onCardColor,
-                onClick = if (isMe) { { showEditDescriptionDialog = true } } else null
+                onClick = if (isMe) { { showEditDescriptionDialog = true } } else null,
+                horizontalPadding = 0.dp
             ) {
                 Text(
                     text = localDescription.ifEmpty {
@@ -734,106 +744,23 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 5. SOCIAL CARD (ONLY FOR ME)
+            // 5. SOCIAL SECTION — temporarily hidden ahead of a future redesign
             if (isMe) {
-                ProfileSectionCard(
-                    title = "Social",
-                    cardColor = cardColor,
-                    onCardColor = onCardColor,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { showAddFriendDialog = true },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PersonAdd,
-                                contentDescription = "Ajouter un ami",
-                                tint = onCardColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .height(160.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(cardColor),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (isFriendsLoading) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(70.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = activeColor)
-                        }
-                    } else if (friendsList.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Aucun ami pour le moment.",
-                                color = onCardMuted,
-                                fontSize = 13.sp
-                            )
-                        }
-                    } else {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            friendsList.take(3).forEach { friend ->
-                                val friendThemeColor = remember(friend.empireColor) {
-                                    try { Color(android.graphics.Color.parseColor(friend.empireColor)) } catch (_: Exception) { activeColor }
-                                }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(20.dp))
-                                        .background(onCardColor.copy(alpha = 0.08f))
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    AvatarImage(
-                                        avatarUrl = friend.avatarUrl,
-                                        modifier = Modifier
-                                            .size(34.dp)
-                                            .clip(CircleShape)
-                                            .border(1.5.dp, friendThemeColor, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = friend.pseudo,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = onCardColor
-                                        )
-                                        if (friend.guildNom != null) {
-                                            Text(
-                                                text = friend.guildNom,
-                                                fontSize = 11.sp,
-                                                color = onCardMuted
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = "Niv. ${friend.level}",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = onCardMuted
-                                    )
-                                }
-                            }
-                            if (friendsList.size > 3) {
-                                Text(
-                                    text = "Et ${friendsList.size - 3} autres amis…",
-                                    color = onCardMuted,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(start = 6.dp)
-                                )
-                            }
-                        }
-                    }
+                    AsyncImage(
+                        model = "file:///android_asset/EnConstruction.png",
+                        contentDescription = "Section en construction",
+                        modifier = Modifier.fillMaxSize(0.6f),
+                        contentScale = ContentScale.Fit
+                    )
                 }
                 Spacer(modifier = Modifier.height(14.dp))
             }
@@ -1178,202 +1105,42 @@ fun PlayerProfileContent(
         )
     }
 
-    // Dialogue: Choisir une bannière prédéfinie ou galerie
+    // Dialogue: Choisir une bannière prédéfinie (dynamique depuis assets/bannieres) ou galerie
     if (showBannerSelectionDialog && isMe) {
-        Dialog(
-            onDismissRequest = { showBannerSelectionDialog = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
-                            )
-                        )
-                    )
-                    .border(
-                        BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                        shape = RoundedCornerShape(28.dp)
-                    )
-                    .padding(20.dp)
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Personnaliser la bannière",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
+        val presetBanners = remember { listAssetPresetImages(context, "bannieres") }
+        MediaPresetSelectionDialog(
+            title = "Personnaliser la bannière",
+            presets = presetBanners,
+            tileShape = MediaTileShape.BANNER,
+            onPresetSelected = { assetPath ->
+                showBannerSelectionDialog = false
+                uploadBannerFromAsset(assetPath)
+            },
+            onGalleryClick = {
+                showBannerSelectionDialog = false
+                bannerLauncher.launch("image/*")
+            },
+            onDismiss = { showBannerSelectionDialog = false }
+        )
+    }
 
-                    // Option 1: Baamix Pomme
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
-                            .clickable {
-                                showBannerSelectionDialog = false
-                                uploadBannerFromAsset("Baamix_Pomme.png")
-                            }
-                    ) {
-                        AsyncImage(
-                            model = "file:///android_asset/Baamix_Pomme.png",
-                            contentDescription = "Baamix Pomme",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
-                                    )
-                                )
-                        )
-                        Text(
-                            text = "Baamix Pomme",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color.White,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(12.dp)
-                        )
-                    }
-
-                    // Option 2: Baamix Simpsons
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
-                            .clickable {
-                                showBannerSelectionDialog = false
-                                uploadBannerFromAsset("Baamix_Simpsons.png")
-                            }
-                    ) {
-                        AsyncImage(
-                            model = "file:///android_asset/Baamix_Simpsons.png",
-                            contentDescription = "Baamix Simpsons",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
-                                    )
-                                )
-                        )
-                        Text(
-                            text = "Baamix Simpsons",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color.White,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(12.dp)
-                        )
-                    }
-
-                    // Option 3: Baamix Goku
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
-                            .clickable {
-                                showBannerSelectionDialog = false
-                                uploadBannerFromAsset("Baamix_Goku.png")
-                            }
-                    ) {
-                        AsyncImage(
-                            model = "file:///android_asset/Baamix_Goku.png",
-                            contentDescription = "Baamix Goku",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
-                                    )
-                                )
-                        )
-                        Text(
-                            text = "Baamix Goku",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color.White,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(12.dp)
-                        )
-                    }
-
-                    // Option 4: Galerie
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
-                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), RoundedCornerShape(16.dp))
-                            .clickable {
-                                showBannerSelectionDialog = false
-                                bannerLauncher.launch("image/*")
-                            }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Importer",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Importer depuis la galerie",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    // Option 5: Close
-                    TextButton(
-                        onClick = { showBannerSelectionDialog = false },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Annuler",
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-            }
-        }
+    // Dialogue: Choisir un avatar prédéfini (dynamique depuis assets/Profils) ou galerie
+    if (showAvatarSelectionDialog && isMe) {
+        val presetAvatars = remember { listAssetPresetImages(context, "Profils") }
+        MediaPresetSelectionDialog(
+            title = "Personnaliser la photo de profil",
+            presets = presetAvatars,
+            tileShape = MediaTileShape.AVATAR,
+            onPresetSelected = { assetPath ->
+                showAvatarSelectionDialog = false
+                uploadAvatarFromAsset(assetPath)
+            },
+            onGalleryClick = {
+                showAvatarSelectionDialog = false
+                imageLauncher.launch("image/*")
+            },
+            onDismiss = { showAvatarSelectionDialog = false }
+        )
     }
 
     // Dialogue: Add friend search (Social card)
@@ -1523,12 +1290,13 @@ private fun ProfileSectionCard(
     onCardColor: Color,
     onClick: (() -> Unit)? = null,
     trailingIcon: (@Composable () -> Unit)? = null,
+    horizontalPadding: Dp = 8.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
+            .padding(horizontal = horizontalPadding)
             .clip(RoundedCornerShape(20.dp))
             .background(cardColor)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
@@ -1592,6 +1360,199 @@ private fun StatTile(
                 overflow = TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+private enum class MediaTileShape { BANNER, AVATAR }
+
+// Dialog listing preset images discovered at runtime in an assets subfolder (see
+// utils/listAssetPresetImages), plus a "pick from gallery" option. Dropping a new
+// PNG/JPG into that folder is enough to add a new preset — no code change needed.
+@Composable
+private fun MediaPresetSelectionDialog(
+    title: String,
+    presets: List<String>,
+    tileShape: MediaTileShape,
+    onPresetSelected: (String) -> Unit,
+    onGalleryClick: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .heightIn(max = 560.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+                        )
+                    )
+                )
+                .border(
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(28.dp)
+                )
+                .padding(20.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    presets.forEach { assetPath ->
+                        when (tileShape) {
+                            MediaTileShape.BANNER -> BannerPresetTile(
+                                assetPath = assetPath,
+                                label = assetPresetLabel(assetPath),
+                                onClick = { onPresetSelected(assetPath) }
+                            )
+                            MediaTileShape.AVATAR -> AvatarPresetRow(
+                                assetPath = assetPath,
+                                label = assetPresetLabel(assetPath),
+                                onClick = { onPresetSelected(assetPath) }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), RoundedCornerShape(16.dp))
+                        .clickable { onGalleryClick() }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Importer",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Importer depuis la galerie",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Annuler",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Full-width rectangular preview tile used for banner presets
+@Composable
+private fun BannerPresetTile(
+    assetPath: String,
+    label: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(80.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = "file:///android_asset/$assetPath",
+            contentDescription = label,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                    )
+                )
+        )
+        Text(
+            text = label,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            color = Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(12.dp)
+        )
+    }
+}
+
+// Compact circular preview row used for avatar presets (matches how they'll actually render)
+@Composable
+private fun AvatarPresetRow(
+    assetPath: String,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = "file:///android_asset/$assetPath",
+            contentDescription = label,
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = label,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

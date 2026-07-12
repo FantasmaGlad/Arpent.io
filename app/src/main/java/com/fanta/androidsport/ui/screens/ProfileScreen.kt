@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -98,7 +97,8 @@ fun ProfileScreen(
     completedPolygons: List<List<Point>>,
     onStatsUpdated: () -> Unit,
     onNavigateToTerritory: ((Point) -> Unit)? = null,
-    isActive: Boolean = true
+    isActive: Boolean = true,
+    settingsOpenSignal: Int = 0
 ) {
     PlayerProfileContent(
         isMe = true,
@@ -123,7 +123,8 @@ fun ProfileScreen(
         completedPolygons = completedPolygons,
         onStatsUpdated = onStatsUpdated,
         onNavigateToTerritory = onNavigateToTerritory,
-        isActive = isActive
+        isActive = isActive,
+        settingsOpenSignal = settingsOpenSignal
     )
 }
 
@@ -153,7 +154,8 @@ fun PlayerProfileContent(
     onStatsUpdated: () -> Unit = {},
     onCloseClick: (() -> Unit)? = null,
     onNavigateToTerritory: ((Point) -> Unit)? = null,
-    isActive: Boolean = true
+    isActive: Boolean = true,
+    settingsOpenSignal: Int = 0
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -196,13 +198,18 @@ fun PlayerProfileContent(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showAddFriendDialog by remember { mutableStateOf(false) }
 
+    // Settings sheet can be opened remotely (e.g. from the app's main header on the Profile tab)
+    LaunchedEffect(settingsOpenSignal) {
+        if (settingsOpenSignal > 0) showSettingsSheet = true
+    }
+
     // Accent color: theme primary for own profile, empire color for other players
     val activeColor = if (isMe) MaterialTheme.colorScheme.primary else parsedUserColor
 
-    // Card style: theme color at 70% opacity for own profile, empire color for others
-    val cardBaseColor = if (isMe) MaterialTheme.colorScheme.surface else parsedUserColor
-    val cardColor = cardBaseColor.copy(alpha = 0.70f)
-    val onCardColor = if (cardBaseColor.luminance() > 0.5f) Color(0xFF15181B) else Color.White
+    // Card style: flat black at 30% opacity for every profile, own or other player's —
+    // no longer tinted by theme or empire color.
+    val cardColor = Color.Black.copy(alpha = 0.30f)
+    val onCardColor = Color.White
     val onCardMuted = onCardColor.copy(alpha = 0.65f)
     val onBackground = MaterialTheme.colorScheme.onBackground
 
@@ -468,14 +475,16 @@ fun PlayerProfileContent(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            // Slim action header (back / map-search / settings) over the map
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (onCloseClick != null) {
+            // Slim action header (back / map-search / settings) over the map.
+            // On the main Profile tab (onCloseClick == null) these actions live in the
+            // app's top header bar instead — see ArpentMainScreen.
+            if (onCloseClick != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     IconButton(onClick = onCloseClick) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
@@ -530,56 +539,9 @@ fun PlayerProfileContent(
                             )
                         }
                     }
-                } else {
-                    // On this tab (onCloseClick == null), place icons on the left
-                    if (onNavigateToTerritory != null) {
-                        IconButton(
-                            onClick = {
-                                if (completedPolygons.isNotEmpty()) {
-                                    val largest = completedPolygons.maxByOrNull { polygon ->
-                                        getPolygonArea(polygon)
-                                    }
-                                    val centroid = largest?.let { getPolygonCentroid(it) }
-                                    if (centroid != null) onNavigateToTerritory(centroid)
-                                } else if (!isMe) {
-                                    // Fetch territories from Supabase for other players
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            val polygons = fetchPlayerTerritoryPolygons(userId)
-                                            val largest = polygons.maxByOrNull { getPolygonArea(it) }
-                                            val centroid = largest?.let { getPolygonCentroid(it) }
-                                            if (centroid != null) {
-                                                withContext(Dispatchers.Main) {
-                                                    onNavigateToTerritory(centroid)
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
-                                        }
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = map_search,
-                                contentDescription = "Voir le territoire",
-                                tint = onBackground,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    if (isMe) {
-                        IconButton(onClick = { showSettingsSheet = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Paramètres",
-                                tint = onBackground,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
                 }
+            } else {
+                Spacer(modifier = Modifier.height(4.dp))
             }
 
             // 1. BANNER — full screen width (w350 h150), tap to import an image
@@ -1605,12 +1567,28 @@ fun PlayerProfileDialog(
                     val color = obj["empire_color"]?.jsonPrimitive?.contentOrNull ?: "#00875A"
                     val lvl = obj["level"]?.jsonPrimitive?.intOrNull ?: 1
                     val xp = obj["xp"]?.jsonPrimitive?.intOrNull ?: 0
-                    val dist = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     val loop = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
                     val area = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    val allTimeAreaM2 = obj["all_time_area_m2"]?.jsonPrimitive?.doubleOrNull ?: area
                     val maxLoopKm = obj["max_loop_distance_km"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     val maxAreaM2 = obj["max_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     val areaLostM2 = obj["area_lost_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+
+                    // "distance_totale" lives on the courses table, not on profiles — sum it
+                    // here the same way ArpentMainScreen does for the logged-in user, otherwise
+                    // this always reads as 0 for every other player's profile.
+                    val dist = try {
+                        val coursesRes = supabase.postgrest["courses"].select {
+                            filter { eq("utilisateur_id", playerId) }
+                        }
+                        val coursesArray = Json.parseToJsonElement(coursesRes.data) as? JsonArray
+                        coursesArray?.sumOf {
+                            (it as? JsonObject)?.get("distance_totale")?.jsonPrimitive?.doubleOrNull ?: 0.0
+                        } ?: 0.0
+                    } catch (e: Exception) {
+                        android.util.Log.e("Arpent", "Failed to sum player courses distance", e)
+                        0.0
+                    }
 
                     val gId = obj["guilde_id"]?.jsonPrimitive?.contentOrNull
                     var gNom: String? = null
@@ -1639,6 +1617,7 @@ fun PlayerProfileDialog(
                         guildeCouleur = gCouleur,
                         totalDistance = dist,
                         currentAreaM2 = area,
+                        allTimeAreaM2 = allTimeAreaM2,
                         loopCount = loop,
                         maxLoopDistanceKm = maxLoopKm,
                         maxAreaKm2 = maxAreaM2 / 1_000_000.0,
@@ -1684,7 +1663,7 @@ fun PlayerProfileDialog(
                     userId = detail.id,
                     userPseudo = detail.pseudonyme,
                     totalDistance = detail.totalDistance,
-                    allTimeArea = detail.currentAreaM2 / 1_000_000.0,
+                    allTimeArea = detail.allTimeAreaM2 / 1_000_000.0,
                     currentArea = detail.currentAreaM2 / 1_000_000.0,
                     userEmpireColor = detail.empireColor,
                     userShareLocation = true,
@@ -1726,6 +1705,7 @@ data class ProfileDetails(
     val guildeCouleur: String? = null,
     val totalDistance: Double,
     val currentAreaM2: Double,
+    val allTimeAreaM2: Double = 0.0,
     val loopCount: Int,
     val maxLoopDistanceKm: Double = 0.0,
     val maxAreaKm2: Double = 0.0,

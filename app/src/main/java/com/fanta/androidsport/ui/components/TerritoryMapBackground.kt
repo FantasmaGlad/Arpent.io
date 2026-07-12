@@ -56,7 +56,9 @@ fun TerritoryMapBackground(
         modifier = modifier,
         mapViewportState = mapViewportState,
         logo = {},
-        attribution = {}
+        attribution = {},
+        scaleBar = {},
+        compass = {}
     ) {
         MapStyle(style = "mapbox://styles/fantasmaglad/cmqe0myj4002c01qr2jd549n8")
         MapEffect(Unit) { mapView ->

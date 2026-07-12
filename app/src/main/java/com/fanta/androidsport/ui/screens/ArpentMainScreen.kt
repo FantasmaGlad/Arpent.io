@@ -40,6 +40,9 @@ import com.fanta.androidsport.ui.icons.*
 import com.fanta.androidsport.utils.loadTerritoriesLocally
 import com.fanta.androidsport.utils.syncTerritoriesFromDatabase
 import com.fanta.androidsport.utils.isNetworkAvailable
+import com.fanta.androidsport.utils.getPolygonArea
+import com.fanta.androidsport.utils.getPolygonCentroid
+import com.fanta.androidsport.utils.map_search
 import com.mapbox.geojson.Point
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -84,6 +87,7 @@ fun ArpentMainScreen(userId: String) {
 
     var notificationsList by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
     var showNotificationsModal by remember { mutableStateOf(false) }
+    var profileSettingsOpenSignal by remember { mutableStateOf(0) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
 
@@ -383,6 +387,34 @@ fun ArpentMainScreen(userId: String) {
                         }
                     },
                     actions = {
+                        // Profile-tab-only actions: locate my empire on the map, open settings
+                        if (navigationIndex == 2) {
+                            IconButton(onClick = {
+                                val largest = completedPolygons.maxByOrNull { polygon ->
+                                    getPolygonArea(polygon)
+                                }
+                                val centroid = largest?.let { getPolygonCentroid(it) }
+                                if (centroid != null) {
+                                    mapTargetPosition = centroid
+                                    navigationIndex = 0
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = map_search,
+                                    contentDescription = "Voir mon territoire",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            IconButton(onClick = { profileSettingsOpenSignal++ }) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Paramètres",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                         IconButton(onClick = {
                             showNotificationsModal = true
                             refreshNotifications()
@@ -507,7 +539,8 @@ fun ArpentMainScreen(userId: String) {
                             mapTargetPosition = point
                             navigationIndex = 0
                         },
-                        isActive = isProfileVisible
+                        isActive = isProfileVisible,
+                        settingsOpenSignal = profileSettingsOpenSignal
                     )
                 }
 

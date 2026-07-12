@@ -490,7 +490,7 @@ fun CoursesScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(vertical = 8.dp)
+                    .padding(horizontal = 5.dp, vertical = 8.dp)
             ) {
 
 

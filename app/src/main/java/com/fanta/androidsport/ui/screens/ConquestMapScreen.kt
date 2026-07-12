@@ -155,7 +155,8 @@ fun ConquestMapScreen(
     bottomPadding: Dp = 0.dp,
     userChange24hPct: Double = 0.0,
     clanAreaKm2: Double = 0.0,
-    clanChange24hPct: Double = 0.0
+    clanChange24hPct: Double = 0.0,
+    hideControls: Boolean = false
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -753,9 +754,9 @@ fun ConquestMapScreen(
         }
 
         // --- OVERLAYS ---
-
-        // Collapsible "Votre Empire" Stats Banner
-        Box(
+        if (!hideControls) {
+            // Collapsible "Votre Empire" Stats Banner
+            Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 130.dp, end = 0.dp)
@@ -1154,6 +1155,7 @@ fun ConquestMapScreen(
                     modifier = Modifier.size(32.dp)
                 )
             }
+        }
         }
         
         if (selectedPlayerStats != null) {

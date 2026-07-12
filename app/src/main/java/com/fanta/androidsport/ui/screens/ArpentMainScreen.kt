@@ -84,6 +84,7 @@ fun ArpentMainScreen(userId: String) {
 
     var notificationsList by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
     var showNotificationsModal by remember { mutableStateOf(false) }
+    var forceOpenProfileSettings by remember { mutableStateOf(false) }
 
     val completedPolygons = remember { mutableStateListOf<List<Point>>() }
 
@@ -383,29 +384,42 @@ fun ArpentMainScreen(userId: String) {
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            showNotificationsModal = true
-                            refreshNotifications()
-                        }) {
-                            val unreadCount = notificationsList.count { !it.lu }
-                            BadgedBox(
-                                badge = {
-                                    if (unreadCount > 0) {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.error,
-                                            contentColor = MaterialTheme.colorScheme.onError
-                                        ) {
-                                            Text(unreadCount.toString(), fontSize = 10.sp)
-                                        }
-                                    }
-                                }
-                            ) {
+                        if (navigationIndex == 2) {
+                            IconButton(onClick = {
+                                forceOpenProfileSettings = true
+                            }) {
                                 Icon(
-                                    painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_notification),
-                                    contentDescription = "Notifications",
+                                    painter = painterResource(id = com.fanta.androidsport.R.drawable.settings_24),
+                                    contentDescription = "Paramètres",
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onBackground
                                 )
+                            }
+                        } else {
+                            IconButton(onClick = {
+                                showNotificationsModal = true
+                                refreshNotifications()
+                            }) {
+                                val unreadCount = notificationsList.count { !it.lu }
+                                BadgedBox(
+                                    badge = {
+                                        if (unreadCount > 0) {
+                                            Badge(
+                                                containerColor = MaterialTheme.colorScheme.error,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            ) {
+                                                Text(unreadCount.toString(), fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = com.fanta.androidsport.R.drawable.ic_notification),
+                                        contentDescription = "Notifications",
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
                             }
                         }
                     },
@@ -422,7 +436,7 @@ fun ArpentMainScreen(userId: String) {
                     .padding(paddingValues)
             ) {
                 // 1. Render map in background for conquest, leaderboard, guild and courses tabs (never destroyed)
-                val isMapVisible = navigationIndex != 2
+                val isMapVisible = true
                 val mapBottomPadding = when (navigationIndex) {
                     0 -> if (isFooterExpanded) 80.dp else 0.dp
                     else -> 80.dp
@@ -448,7 +462,8 @@ fun ArpentMainScreen(userId: String) {
                         bottomPadding = mapBottomPadding,
                         userChange24hPct = userChange24hPct,
                         clanAreaKm2 = clanAreaKm2,
-                        clanChange24hPct = clanChange24hPct
+                        clanChange24hPct = clanChange24hPct,
+                        hideControls = (navigationIndex == 2)
                     )
                 }
 
@@ -478,7 +493,7 @@ fun ArpentMainScreen(userId: String) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(bottom = 80.dp)
-                        .background(if (isProfileVisible) MaterialTheme.colorScheme.background else Color.Transparent)
+                        .background(if (isProfileVisible) Color.Black.copy(alpha = 0.15f) else Color.Transparent)
                         .offset(x = if (isProfileVisible) 0.dp else 10000.dp)
                         .alpha(if (isProfileVisible) 1f else 0f)
                 ) {
@@ -503,6 +518,8 @@ fun ArpentMainScreen(userId: String) {
                         userGuildCouleur = userGuildCouleur,
                         completedPolygons = completedPolygons,
                         onStatsUpdated = { refreshStats() },
+                        forceOpenSettings = forceOpenProfileSettings,
+                        onSettingsOpenedHandled = { forceOpenProfileSettings = false },
                         onNavigateToTerritory = { point ->
                             mapTargetPosition = point
                             navigationIndex = 0

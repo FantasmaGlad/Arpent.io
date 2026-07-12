@@ -464,8 +464,8 @@ fun PlayerProfileContent(
                                     // Fetch territories from Supabase for other players
                                     scope.launch(Dispatchers.IO) {
                                         try {
-                                            val res = supabase.postgrest["territories"].select {
-                                                filter { eq("user_id", userId) }
+                                            val res = supabase.postgrest["territoires"].select {
+                                                filter { eq("utilisateur_id", userId) }
                                             }
                                             val jsonArray = kotlinx.serialization.json.Json
                                                 .parseToJsonElement(res.data) as? kotlinx.serialization.json.JsonArray
@@ -473,17 +473,18 @@ fun PlayerProfileContent(
                                             var largestCentroid: Point? = null
                                             jsonArray?.forEach { elem ->
                                                 val obj = elem as? kotlinx.serialization.json.JsonObject ?: return@forEach
-                                                val coordsElem = obj["coordinates"] ?: return@forEach
+                                                val ptsArray = obj["points"] as? kotlinx.serialization.json.JsonArray ?: return@forEach
                                                 val polygon: List<Point> = try {
-                                                    val arr = coordsElem as? kotlinx.serialization.json.JsonArray
-                                                        ?: return@forEach
-                                                    arr.mapNotNull { pt ->
-                                                        val ptObj = pt as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
-                                                        val lon = ptObj["longitude"]?.jsonPrimitive?.doubleOrNull
-                                                            ?: return@mapNotNull null
-                                                        val lat = ptObj["latitude"]?.jsonPrimitive?.doubleOrNull
-                                                            ?: return@mapNotNull null
-                                                        Point.fromLngLat(lon, lat)
+                                                    ptsArray.mapNotNull { pt ->
+                                                        val str = pt.jsonPrimitive.content
+                                                        val parts = str.split(" ")
+                                                        if (parts.size == 2) {
+                                                            val lng = parts[0].toDoubleOrNull()
+                                                            val lat = parts[1].toDoubleOrNull()
+                                                            if (lng != null && lat != null) {
+                                                                Point.fromLngLat(lng, lat)
+                                                            } else null
+                                                        } else null
                                                     }
                                                 } catch (_: Exception) { emptyList() }
                                                 if (polygon.isNotEmpty()) {

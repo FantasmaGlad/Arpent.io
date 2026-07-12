@@ -854,7 +854,7 @@ fun ConquestMapScreen(
                                         text = "Mon clan ($userGuildNom)",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = clanHeaderColor,
+                                        color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.fillMaxWidth(),
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                         maxLines = 1,
@@ -891,7 +891,7 @@ fun ConquestMapScreen(
                                         text = "Mon clan",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.Gray,
+                                        color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.fillMaxWidth(),
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )

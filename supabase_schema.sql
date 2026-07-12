@@ -872,6 +872,13 @@ BEGIN
         WHERE profile_id = NEW.id;
         
         IF (v_last_recorded IS NULL OR v_last_recorded < now() - INTERVAL '1 hour') THEN
+            -- Si c'est la première entrée (ex: après purge des 8 jours), 
+            -- et qu'il s'agit d'une mise à jour, on enregistre l'ancienne valeur comme ligne de base il y a 24h.
+            IF (v_last_recorded IS NULL AND TG_OP = 'UPDATE' AND OLD.total_area_m2 IS NOT NULL) THEN
+                INSERT INTO public.profile_area_history (profile_id, total_area_m2, recorded_at)
+                VALUES (NEW.id, OLD.total_area_m2, now() - INTERVAL '24 hours');
+            END IF;
+
             INSERT INTO public.profile_area_history (profile_id, total_area_m2, recorded_at)
             VALUES (NEW.id, NEW.total_area_m2, now());
             
@@ -1672,12 +1679,12 @@ USING (bucket_id = 'Images');
 
 CREATE POLICY "Users can upload their own avatar" ON storage.objects FOR INSERT
 TO authenticated
-WITH CHECK (bucket_id = 'Images' AND name = auth.uid()::text || '.jpg');
+WITH CHECK (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'));
 
 CREATE POLICY "Users can update their own avatar" ON storage.objects FOR UPDATE
 TO authenticated
-USING (bucket_id = 'Images' AND name = auth.uid()::text || '.jpg')
-WITH CHECK (bucket_id = 'Images' AND name = auth.uid()::text || '.jpg');
+USING (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'))
+WITH CHECK (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'));
 
 CREATE POLICY "Chefs can upload guild avatar" ON storage.objects FOR INSERT
 TO authenticated
@@ -2068,4 +2075,24 @@ WHERE total_area_m2 > 0
   AND NOT EXISTS (
       SELECT 1 FROM public.profile_area_history h WHERE h.profile_id = profiles.id
   );
+
+-- ====================================================================
+-- MIGRATIONS DIRECTES DE CORRECTION (POUR APPLIQUER SUR BASE EXISTANTE)
+-- ====================================================================
+
+-- 1. Corriger la contrainte check de course_reactions pour autoriser 'baamix'
+ALTER TABLE public.course_reactions DROP CONSTRAINT IF EXISTS course_reactions_type_reaction_check;
+ALTER TABLE public.course_reactions ADD CONSTRAINT course_reactions_type_reaction_check CHECK (type_reaction IN ('baamix'));
+
+-- 2. Recréer les politiques de stockage pour le bucket Images (bannières)
+DROP POLICY IF EXISTS "Users can upload their own avatar" ON storage.objects;
+CREATE POLICY "Users can upload their own avatar" ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'));
+
+DROP POLICY IF EXISTS "Users can update their own avatar" ON storage.objects;
+CREATE POLICY "Users can update their own avatar" ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'))
+WITH CHECK (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'));
 

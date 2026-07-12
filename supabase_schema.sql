@@ -2013,14 +2013,24 @@ BEGIN
 
     -- 2. Si l'utilisateur appartient à un clan, calculer les stats du clan
     IF v_guild_id IS NOT NULL THEN
-        -- Somme des superficies actuelles des membres du clan
+        -- Somme des superficies actuelles des membres du clan actuel
         SELECT COALESCE(SUM(total_area_m2), 0.0) INTO v_clan_current_area
         FROM public.profiles
         WHERE guilde_id = v_guild_id;
 
         -- Somme des superficies des membres il y a 24h
+        -- Les membres il y a 24h sont ceux dont la guilde il y a 24h était v_guild_id
         FOR v_member_id, v_member_area IN
-            SELECT id, total_area_m2 FROM public.profiles WHERE guilde_id = v_guild_id
+            SELECT p.id, p.total_area_m2 
+            FROM public.profiles p
+            WHERE COALESCE(
+                (SELECT h.guilde_id 
+                 FROM public.profile_guilde_history h 
+                 WHERE h.profile_id = p.id AND h.changed_at <= now() - INTERVAL '24 hours'
+                 ORDER BY h.changed_at DESC 
+                 LIMIT 1),
+                p.guilde_id
+            ) = v_guild_id
         LOOP
             SELECT COALESCE(
                 (SELECT total_area_m2 
@@ -2095,4 +2105,48 @@ CREATE POLICY "Users can update their own avatar" ON storage.objects FOR UPDATE
 TO authenticated
 USING (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'))
 WITH CHECK (bucket_id = 'Images' AND (name = auth.uid()::text || '.jpg' OR name = auth.uid()::text || '_banner.jpg'));
+
+-- 3. Créer la table d'historique de clan
+CREATE TABLE IF NOT EXISTS public.profile_guilde_history (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    profile_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    guilde_id uuid REFERENCES public.guildes(id) ON DELETE SET NULL,
+    changed_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.profile_guilde_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tout le monde peut lire l'historique des clans des profils" ON public.profile_guilde_history;
+CREATE POLICY "Tout le monde peut lire l'historique des clans des profils" 
+ON public.profile_guilde_history FOR SELECT USING (true);
+
+CREATE INDEX IF NOT EXISTS profile_guilde_history_profile_id_changed_at_idx 
+ON public.profile_guilde_history(profile_id, changed_at DESC);
+
+-- Trigger pour enregistrer l'historique des changements de clans
+CREATE OR REPLACE FUNCTION public.log_profile_guilde_history()
+RETURNS trigger AS $$
+BEGIN
+    IF (TG_OP = 'INSERT' OR OLD.guilde_id IS DISTINCT FROM NEW.guilde_id) THEN
+        INSERT INTO public.profile_guilde_history (profile_id, guilde_id, changed_at)
+        VALUES (NEW.id, NEW.guilde_id, now());
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_profile_guilde_changed ON public.profiles;
+CREATE TRIGGER on_profile_guilde_changed
+    AFTER INSERT OR UPDATE OF guilde_id ON public.profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION public.log_profile_guilde_history();
+
+-- Backfill de l'historique pour les profils existants
+INSERT INTO public.profile_guilde_history (profile_id, guilde_id, changed_at)
+SELECT id, guilde_id, now() - INTERVAL '25 hours'
+FROM public.profiles p
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.profile_guilde_history h WHERE h.profile_id = p.id
+);
+
 

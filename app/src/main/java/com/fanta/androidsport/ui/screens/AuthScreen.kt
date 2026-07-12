@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -132,15 +133,17 @@ fun AuthScreen() {
         // Animated SVG background (loops indefinitely, branding included in the artwork)
         ConnexionAnimatedBackground(modifier = Modifier.fillMaxSize())
 
-        // Auth controls anchored on the lower half, below the animated logo
+        // Auth controls pinned to an absolute y so they land exactly below the
+        // animated logo and clear of the diagonal ribbon (y=380/450/520 in the
+        // Connexion.svg's 360x800 coordinate space, which maps 1:1 to dp here).
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Bottom,
+            verticalArrangement = Arrangement.Top,
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 48.dp)
+                .offset(y = 380.dp)
         ) {
 
             // Error Display Card
@@ -199,7 +202,7 @@ fun AuthScreen() {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Button(
                         onClick = {
@@ -223,7 +226,7 @@ fun AuthScreen() {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Button(
                         onClick = {

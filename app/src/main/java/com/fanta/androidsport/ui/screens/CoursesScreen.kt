@@ -125,6 +125,10 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
+// Temporary switch: likes and comments are hidden from the courses feed for now.
+// Flip back to true to restore the like button, comment field and comment list.
+private const val SHOW_LIKES_AND_COMMENTS = false
+
 @Composable
 fun CoursesScreen(
     userId: String,
@@ -853,125 +857,127 @@ fun FeedCourseCard(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Action Buttons Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Like Heart Button (optimistic)
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (optimisticLiked) themeColor.copy(alpha = 0.18f)
-                                        else Color.White.copy(alpha = 0.10f)
-                                    )
-                                    .border(
-                                        BorderStroke(1.dp,
-                                            if (optimisticLiked) themeColor.copy(alpha = 0.6f)
-                                            else Color.White.copy(alpha = 0.15f)
-                                        ),
-                                        CircleShape
-                                    )
-                                    .clickable {
-                                        optimisticLiked = !optimisticLiked
-                                        onReact("baamix", userReactionBaamix)
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_baamix_like),
-                                    contentDescription = "Like",
-                                    tint = if (optimisticLiked) themeColor else Color.White.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(20.dp).scale(likeScale)
-                                )
-                            }
-                            if (likeCount > 0) {
-                                Text(
-                                    text = likeCount.toString(),
-                                    color = if (optimisticLiked) themeColor else Color.White.copy(alpha = 0.7f),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(4.dp))
-
-                            // Add Comment Button (ouvre le champ rapide inline)
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (showAddComment) empireColor.copy(alpha = 0.22f)
-                                        else Color.White.copy(alpha = 0.10f)
-                                    )
-                                    .border(
-                                        BorderStroke(1.dp,
-                                            if (showAddComment) empireColor.copy(alpha = 0.5f)
-                                            else Color.White.copy(alpha = 0.15f)
-                                        ),
-                                        CircleShape
-                                    )
-                                    .clickable { onToggleAddComment() },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddComment,
-                                    contentDescription = "Ajouter un commentaire",
-                                    tint = if (showAddComment) empireColor else Color.White.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        // Quick Add Comment Field (visible si showAddComment) - sans fond
-                        if (showAddComment) {
+                        if (SHOW_LIKES_AND_COMMENTS) {
                             Spacer(modifier = Modifier.height(8.dp))
+
+                            // Action Buttons Row
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.White.copy(alpha = 0.07f))
-                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                androidx.compose.foundation.text.BasicTextField(
-                                    value = newCommentText,
-                                    onValueChange = onCommentTextChange,
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    textStyle = androidx.compose.ui.text.TextStyle(
-                                        color = Color.White,
-                                        fontSize = 13.sp
-                                    ),
-                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(empireColor),
-                                    decorationBox = { innerTextField ->
-                                        if (newCommentText.isEmpty()) {
-                                            Text(
-                                                text = "Écrire un commentaire...",
-                                                color = Color.White.copy(alpha = 0.35f),
-                                                fontSize = 13.sp
-                                            )
-                                        }
-                                        innerTextField()
-                                    }
-                                )
-                                IconButton(
-                                    onClick = onSendComment,
-                                    enabled = newCommentText.isNotBlank(),
-                                    modifier = Modifier.size(32.dp)
+                                // Like Heart Button (optimistic)
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (optimisticLiked) themeColor.copy(alpha = 0.18f)
+                                            else Color.White.copy(alpha = 0.10f)
+                                        )
+                                        .border(
+                                            BorderStroke(1.dp,
+                                                if (optimisticLiked) themeColor.copy(alpha = 0.6f)
+                                                else Color.White.copy(alpha = 0.15f)
+                                            ),
+                                            CircleShape
+                                        )
+                                        .clickable {
+                                            optimisticLiked = !optimisticLiked
+                                            onReact("baamix", userReactionBaamix)
+                                        },
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Send,
-                                        contentDescription = "Envoyer",
-                                        tint = if (newCommentText.isNotBlank()) empireColor else Color.White.copy(alpha = 0.2f),
-                                        modifier = Modifier.size(18.dp)
+                                        painter = painterResource(id = R.drawable.ic_baamix_like),
+                                        contentDescription = "Like",
+                                        tint = if (optimisticLiked) themeColor else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(20.dp).scale(likeScale)
                                     )
+                                }
+                                if (likeCount > 0) {
+                                    Text(
+                                        text = likeCount.toString(),
+                                        color = if (optimisticLiked) themeColor else Color.White.copy(alpha = 0.7f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                // Add Comment Button (ouvre le champ rapide inline)
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (showAddComment) empireColor.copy(alpha = 0.22f)
+                                            else Color.White.copy(alpha = 0.10f)
+                                        )
+                                        .border(
+                                            BorderStroke(1.dp,
+                                                if (showAddComment) empireColor.copy(alpha = 0.5f)
+                                                else Color.White.copy(alpha = 0.15f)
+                                            ),
+                                            CircleShape
+                                        )
+                                        .clickable { onToggleAddComment() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddComment,
+                                        contentDescription = "Ajouter un commentaire",
+                                        tint = if (showAddComment) empireColor else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Quick Add Comment Field (visible si showAddComment) - sans fond
+                            if (showAddComment) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color.White.copy(alpha = 0.07f))
+                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.foundation.text.BasicTextField(
+                                        value = newCommentText,
+                                        onValueChange = onCommentTextChange,
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            color = Color.White,
+                                            fontSize = 13.sp
+                                        ),
+                                        cursorBrush = androidx.compose.ui.graphics.SolidColor(empireColor),
+                                        decorationBox = { innerTextField ->
+                                            if (newCommentText.isEmpty()) {
+                                                Text(
+                                                    text = "Écrire un commentaire...",
+                                                    color = Color.White.copy(alpha = 0.35f),
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
+                                    )
+                                    IconButton(
+                                        onClick = onSendComment,
+                                        enabled = newCommentText.isNotBlank(),
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Send,
+                                            contentDescription = "Envoyer",
+                                            tint = if (newCommentText.isNotBlank()) empireColor else Color.White.copy(alpha = 0.2f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1064,7 +1070,7 @@ fun FeedCourseCard(
                 }
 
                 // Expandable Comments section (déroulée via le bouton comment)
-                if (showComments) {
+                if (SHOW_LIKES_AND_COMMENTS && showComments) {
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1115,22 +1121,24 @@ fun FeedCourseCard(
         } // close card
 
         // Protruding Comment Toggle Button (dérouler/replier les commentaires)
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = 16.dp)
-                .size(width = 60.dp, height = 32.dp)
-                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                .background(empireColor) // couleur uniforme
-                .clickable { onToggleComments() },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (showComments) Icons.Default.ExpandLess else Icons.Default.Comment,
-                contentDescription = "Voir les commentaires",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
+        if (SHOW_LIKES_AND_COMMENTS) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 16.dp)
+                    .size(width = 60.dp, height = 32.dp)
+                    .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                    .background(empireColor) // couleur uniforme
+                    .clickable { onToggleComments() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (showComments) Icons.Default.ExpandLess else Icons.Default.Comment,
+                    contentDescription = "Voir les commentaires",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }

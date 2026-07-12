@@ -136,11 +136,15 @@ fun LeaderboardPlayerCard(
             .clickable(onClick = onClick)
     ) {
         if (hasBanner) {
+            // Stretched to cover the whole card, centered, and scaled up if the
+            // source image is smaller than the card — exactly what Crop does.
             AsyncImage(
                 model = player.bannerUrl,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                alpha = 0.9f
             )
             Box(
                 modifier = Modifier

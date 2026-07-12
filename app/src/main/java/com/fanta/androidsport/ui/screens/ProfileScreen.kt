@@ -1291,7 +1291,45 @@ fun PlayerProfileContent(
                         )
                     }
 
-                    // Option 3: Galerie
+                    // Option 3: Baamix Goku
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
+                            .clickable {
+                                showBannerSelectionDialog = false
+                                uploadBannerFromAsset("Baamix_Goku.png")
+                            }
+                    ) {
+                        AsyncImage(
+                            model = "file:///android_asset/Baamix_Goku.png",
+                            contentDescription = "Baamix Goku",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                    )
+                                )
+                        )
+                        Text(
+                            text = "Baamix Goku",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(12.dp)
+                        )
+                    }
+
+                    // Option 4: Galerie
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1321,7 +1359,7 @@ fun PlayerProfileContent(
                         )
                     }
 
-                    // Option 4: Close
+                    // Option 5: Close
                     TextButton(
                         onClick = { showBannerSelectionDialog = false },
                         modifier = Modifier.fillMaxWidth()

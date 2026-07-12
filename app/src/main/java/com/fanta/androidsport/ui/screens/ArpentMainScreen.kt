@@ -30,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.fanta.androidsport.PendingRunsQueue
 import com.fanta.androidsport.supabase
@@ -728,90 +730,122 @@ fun ArpentMainScreen(userId: String) {
 
         if (showNotificationsModal) {
             val unreadCount = notificationsList.count { !it.lu }
-            AlertDialog(
+            Dialog(
                 onDismissRequest = { showNotificationsModal = false },
-                title = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Notifications",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        if (unreadCount > 0) {
-                            TextButton(
-                                onClick = {
-                                    scope.launch(Dispatchers.IO) {
-                                        try {
-                                            supabase.postgrest["notifications"].update(
-                                                mapOf("lu" to true)
-                                            ) {
-                                                filter { eq("utilisateur_id", userId) }
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { showNotificationsModal = false }) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowBack,
+                                        contentDescription = "Fermer",
+                                        tint = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Notifications",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                            if (unreadCount > 0) {
+                                TextButton(
+                                    onClick = {
+                                        scope.launch(Dispatchers.IO) {
+                                            try {
+                                                supabase.postgrest["notifications"].update(
+                                                    mapOf("lu" to true)
+                                                ) {
+                                                    filter { eq("utilisateur_id", userId) }
+                                                }
+                                                refreshNotifications()
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
                                             }
-                                            refreshNotifications()
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
                                         }
                                     }
+                                ) {
+                                    Text("Tout lire", fontSize = 13.sp)
                                 }
-                            ) {
-                                Text("Tout lire", fontSize = 12.sp)
                             }
                         }
-                    }
-                },
-                text = {
-                    if (notificationsList.isEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.NotificationsOff,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Aucune notification",
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 400.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(notificationsList) { item ->
-                                NotificationRow(
-                                    item = item,
-                                    onClick = {
-                                        if (!item.lu) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
+
+                        if (notificationsList.isEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(72.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Aucune notification",
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 16.sp,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .navigationBarsPadding()
+                                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(notificationsList) { item ->
+                                    NotificationRow(
+                                        item = item,
+                                        onClick = {
+                                            if (!item.lu) {
+                                                scope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        supabase.postgrest["notifications"].update(
+                                                            mapOf("lu" to true)
+                                                        ) {
+                                                            filter { eq("id", item.id) }
+                                                        }
+                                                        refreshNotifications()
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                    }
+                                                }
+                                            }
+                                            when (item.type) {
+                                                1 -> navigationIndex = 0
+                                                2 -> navigationIndex = 4
+                                                3 -> navigationIndex = 4
+                                                4 -> navigationIndex = 3
+                                            }
+                                            showNotificationsModal = false
+                                        },
+                                        onDelete = {
                                             scope.launch(Dispatchers.IO) {
                                                 try {
-                                                    supabase.postgrest["notifications"].update(
-                                                        mapOf("lu" to true)
-                                                    ) {
+                                                    supabase.postgrest["notifications"].delete {
                                                         filter { eq("id", item.id) }
                                                     }
                                                     refreshNotifications()
@@ -820,40 +854,13 @@ fun ArpentMainScreen(userId: String) {
                                                 }
                                             }
                                         }
-                                        when (item.type) {
-                                            1 -> navigationIndex = 0
-                                            2 -> navigationIndex = 4
-                                            3 -> navigationIndex = 4
-                                            4 -> navigationIndex = 3
-                                        }
-                                        showNotificationsModal = false
-                                    },
-                                    onDelete = {
-                                        scope.launch(Dispatchers.IO) {
-                                            try {
-                                                supabase.postgrest["notifications"].delete {
-                                                    filter { eq("id", item.id) }
-                                                }
-                                                refreshNotifications()
-                                            } catch (e: Exception) {
-                                                e.printStackTrace()
-                                            }
-                                        }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showNotificationsModal = false }) {
-                        Text("Fermer")
-                    }
-                },
-                shape = RoundedCornerShape(24.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
-            )
+                }
+            }
         }
     } else {
         PermissionRequestScreen(

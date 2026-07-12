@@ -601,68 +601,81 @@ CREATE TRIGGER on_territoire_changed
     FOR EACH ROW EXECUTE PROCEDURE public.update_profile_cached_area();
 
 -- Retrait de la portion de territoire lors de la suppression d'une course
+--
+-- IMPORTANT: this used to subtract the deleted course's own polygon from the
+-- merged territoire via ST_Difference(existing_contour, course_geom). That is
+-- wrong whenever the deleted course's loop was fully (or partly) contained
+-- within another STILL-EXISTING course's loop: the difference carves a hole
+-- out of the merged shape even though the remaining course(s) independently
+-- justify that area being territory, which wrongly deflates total_area_m2,
+-- all_time_area_m2 ("conquis all-time") and max_area_m2 ("superficie max").
+-- Fixed by recomputing the territoire from scratch as the union of every
+-- OTHER remaining looped course's own polygon, so only area that is not
+-- covered by any remaining course is actually removed.
 CREATE OR REPLACE FUNCTION public.delete_course_territory_portion()
 RETURNS trigger AS $$
 DECLARE
-    v_points text[];
-    v_wkt text;
-    v_course_geom geometry;
     v_existing_id uuid;
-    v_existing_geom geometry;
-    v_diff_geom geometry;
+    v_new_geom geometry;
     v_new_points text[];
     v_new_area float;
 BEGIN
     IF OLD.est_bouclee AND OLD.superficie_conquise > 0.0 THEN
-        SELECT array_agg(longitude || ' ' || latitude ORDER BY timestamp_gps ASC, date_creation ASC)
-        INTO v_points
-        FROM public.points_gps
-        WHERE course_id = OLD.id;
+        BEGIN
+            SELECT ST_Union(course_geom) INTO v_new_geom
+            FROM (
+                SELECT ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(
+                    'POLYGON((' || array_to_string(
+                        CASE
+                            WHEN pts[1] = pts[array_length(pts, 1)] THEN pts
+                            ELSE pts || pts[1]
+                        END, ', '
+                    ) || '))', 4326
+                )), 3) AS course_geom
+                FROM (
+                    SELECT c.id,
+                        array_agg(pg.longitude || ' ' || pg.latitude ORDER BY pg.timestamp_gps ASC, pg.date_creation ASC) AS pts
+                    FROM public.courses c
+                    JOIN public.points_gps pg ON pg.course_id = c.id
+                    WHERE c.utilisateur_id = OLD.utilisateur_id
+                      AND c.est_bouclee = true
+                      AND c.id <> OLD.id
+                    GROUP BY c.id
+                    HAVING count(*) >= 3
+                ) AS course_pts
+            ) AS remaining_courses
+            WHERE course_geom IS NOT NULL;
 
-        IF v_points IS NOT NULL AND array_length(v_points, 1) >= 3 THEN
-            IF v_points[1] <> v_points[array_length(v_points, 1)] THEN
-                v_points := array_append(v_points, v_points[1]);
-            END IF;
+            SELECT id INTO v_existing_id
+            FROM public.territoires
+            WHERE utilisateur_id = OLD.utilisateur_id;
 
-            v_wkt := 'POLYGON((' || array_to_string(v_points, ', ') || '))';
-            
-            BEGIN
-                v_course_geom := ST_GeomFromText(v_wkt, 4326);
-                IF NOT ST_IsValid(v_course_geom) THEN
-                    v_course_geom := ST_MakeValid(v_course_geom);
-                END IF;
-                v_course_geom := ST_CollectionExtract(v_course_geom, 3);
+            IF v_existing_id IS NOT NULL THEN
+                PERFORM set_config('app.rollback_course_deletion', 'true', true);
 
-                SELECT id, contour INTO v_existing_id, v_existing_geom
-                FROM public.territoires
-                WHERE utilisateur_id = OLD.utilisateur_id;
-
-                IF v_existing_id IS NOT NULL AND v_existing_geom IS NOT NULL THEN
-                    PERFORM set_config('app.rollback_course_deletion', 'true', true);
-
-                    v_diff_geom := ST_Difference(v_existing_geom, v_course_geom);
-                    v_diff_geom := ST_CollectionExtract(v_diff_geom, 3);
-
-                    IF ST_IsEmpty(v_diff_geom) OR v_diff_geom IS NULL THEN
-                        DELETE FROM public.territoires WHERE id = v_existing_id;
-                    ELSE
-                        SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
-                        FROM ST_DumpPoints(v_diff_geom);
-
-                        v_new_area := ST_Area(v_diff_geom::geography);
-
-                        UPDATE public.territoires
-                        SET contour = v_diff_geom,
-                            superficie_m2 = v_new_area,
-                            points = v_new_points,
-                            derniere_mise_a_jour = now()
-                        WHERE id = v_existing_id;
+                IF v_new_geom IS NULL OR ST_IsEmpty(v_new_geom) THEN
+                    DELETE FROM public.territoires WHERE id = v_existing_id;
+                ELSE
+                    IF NOT ST_IsValid(v_new_geom) THEN
+                        v_new_geom := ST_MakeValid(v_new_geom);
                     END IF;
+                    v_new_geom := ST_CollectionExtract(v_new_geom, 3);
+
+                    v_new_area := ST_Area(v_new_geom::geography);
+                    SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
+                    FROM ST_DumpPoints(v_new_geom);
+
+                    UPDATE public.territoires
+                    SET contour = v_new_geom,
+                        superficie_m2 = v_new_area,
+                        points = v_new_points,
+                        derniere_mise_a_jour = now()
+                    WHERE id = v_existing_id;
                 END IF;
-            EXCEPTION WHEN OTHERS THEN
-                RAISE WARNING 'Erreur de mise à jour du territoire lors de la suppression de course : %', SQLERRM;
-            END;
-        END IF;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Erreur de mise à jour du territoire lors de la suppression de course : %', SQLERRM;
+        END;
     END IF;
     RETURN OLD;
 END;
@@ -1472,11 +1485,13 @@ $$ LANGUAGE plpgsql SECURITY INVOKER;
 DROP VIEW IF EXISTS public.leaderboard CASCADE;
 CREATE OR REPLACE VIEW public.leaderboard 
 WITH (security_invoker = on) AS
-SELECT 
+SELECT
   p.id,
   p.pseudonyme,
   p.tag,
   p.empire_color,
+  p.level,
+  p.banner_url,
   p.avatar_url,
   p.grade,
   CASE WHEN p.share_location THEN p.latitude ELSE null END as latitude,

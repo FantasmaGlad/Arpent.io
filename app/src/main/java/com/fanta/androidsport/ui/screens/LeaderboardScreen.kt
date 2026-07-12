@@ -1,8 +1,6 @@
 package com.fanta.androidsport.ui.screens
 
-import com.fanta.androidsport.ui.theme.BrandGreen
-import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
+import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,61 +21,43 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fanta.androidsport.data.model.LeaderboardClan
+import coil.compose.AsyncImage
 import com.fanta.androidsport.data.model.LeaderboardPlayer
-import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
-import com.fanta.androidsport.ui.components.CapsuleTabSelector
+import com.fanta.androidsport.ui.components.TerritoryMapBackground
 import com.fanta.androidsport.ui.theme.BrandGreen
 import com.fanta.androidsport.ui.viewmodel.LeaderboardViewModel
-import androidx.compose.runtime.collectAsState
+import com.google.android.gms.location.LocationServices
 import com.mapbox.geojson.Point
-import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import androidx.compose.material3.HorizontalDivider
 
-enum class SocialFilter { GLOBAL, AMIS, LOCAL }
 enum class MetricFilter { TERRITOIRE, DISTANCE, BOUCLES }
 
 fun formatLeaderboardArea(areaM2: Double): String {
@@ -106,172 +86,185 @@ fun formatLeaderboardLoops(loops: Int): String {
     }
 }
 
+private fun metricLabel(metric: MetricFilter): String = when (metric) {
+    MetricFilter.TERRITOIRE -> "Territoire"
+    MetricFilter.DISTANCE -> "Distance"
+    MetricFilter.BOUCLES -> "Boucles"
+}
+
+private fun metricValue(player: LeaderboardPlayer, metric: MetricFilter): String = when (metric) {
+    MetricFilter.TERRITOIRE -> formatLeaderboardArea(player.totalAreaM2)
+    MetricFilter.DISTANCE -> formatLeaderboardDistance(player.distanceTotale)
+    MetricFilter.BOUCLES -> formatLeaderboardLoops(player.loopCount)
+}
+
+// A single ranking row/card. Bigger for the podium (top 3), compact for the rest.
+// Background is the player's banner at full opacity when set, otherwise their
+// empire color at 70% opacity.
 @Composable
-fun PlayerRow(
+fun LeaderboardPlayerCard(
     rank: Int,
     player: LeaderboardPlayer,
-    isMe: Boolean,
     metric: MetricFilter,
-    friendsStatusMap: Map<String, String>,
+    isMe: Boolean,
+    isTop: Boolean,
     onClick: () -> Unit
 ) {
     val fallbackColor = BrandGreen
     val parsedColor = remember(player.empireColor, fallbackColor) {
         try { Color(android.graphics.Color.parseColor(player.empireColor)) } catch (e: Exception) { fallbackColor }
     }
-    Row(
+    val hasBanner = !player.bannerUrl.isNullOrEmpty()
+
+    val cardHeight = if (isTop) 92.dp else 68.dp
+    val avatarSize = if (isTop) 56.dp else 42.dp
+    val rankFontSize = if (isTop) 24.sp else 17.sp
+    val nameFontSize = if (isTop) 16.sp else 14.sp
+    val guildFontSize = if (isTop) 12.sp else 11.sp
+    val levelFontSize = if (isTop) 13.sp else 11.sp
+    val valueFontSize = if (isTop) 16.sp else 13.sp
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .height(cardHeight)
+            .clip(RoundedCornerShape(20.dp))
+            .then(
+                if (isMe) Modifier.border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
+                else Modifier
+            )
             .clickable(onClick = onClick)
-            .background(if (isMe) BrandGreen.copy(alpha = 0.08f) else Color.Transparent)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
     ) {
+        if (hasBanner) {
+            AsyncImage(
+                model = player.bannerUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color.Black.copy(alpha = 0.60f), Color.Black.copy(alpha = 0.20f))
+                        )
+                    )
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(parsedColor.copy(alpha = 0.70f))
+            )
+        }
+
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.width(28.dp),
+                modifier = Modifier.width(if (isTop) 32.dp else 26.dp),
                 contentAlignment = Alignment.Center
             ) {
-                when (rank) {
-                    1 -> Text("🥇", fontSize = 18.sp)
-                    2 -> Text("🥈", fontSize = 18.sp)
-                    3 -> Text("🥉", fontSize = 18.sp)
-                    else -> Text(
-                        text = "$rank",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = Color(0xFF8E8E93),
-                        textAlign = TextAlign.Center
-                    )
-                }
+                Text(
+                    text = "$rank",
+                    fontWeight = FontWeight.Black,
+                    fontSize = rankFontSize,
+                    color = Color.White
+                )
             }
             Spacer(modifier = Modifier.width(12.dp))
             AvatarImage(
                 avatarUrl = player.avatarUrl,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(avatarSize)
                     .clip(CircleShape)
-                    .border(1.5.dp, parsedColor, CircleShape)
+                    .background(Color.White)
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = player.pseudonyme + if (isMe) " (Moi)" else "",
-                        fontWeight = if (isMe) FontWeight.Bold else FontWeight.Medium,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF1E1E1E)
-                    )
-                }
-                if (player.guildeNom != null) {
-                    val gColor = try { Color(android.graphics.Color.parseColor(player.guildeCouleur)) } catch (_: Exception) { Color.Gray }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = player.pseudonyme + if (isMe) " (Moi)" else "",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = nameFontSize,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!player.guildeNom.isNullOrEmpty()) {
                     Text(
                         text = player.guildeNom,
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = gColor
-                    )
-                }
-            }
-        }
-        val valStr = when (metric) {
-            MetricFilter.TERRITOIRE -> formatLeaderboardArea(player.totalAreaM2)
-            MetricFilter.DISTANCE -> formatLeaderboardDistance(player.distanceTotale)
-            MetricFilter.BOUCLES -> formatLeaderboardLoops(player.loopCount)
-        }
-        Text(
-            text = valStr,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF1E1E1E)
-        )
-    }
-}
-
-@Composable
-fun ClanRow(
-    rank: Int,
-    clan: LeaderboardClan,
-    isMyClan: Boolean,
-    metric: MetricFilter,
-    onClick: () -> Unit
-) {
-    val fallbackColor = BrandGreen
-    val parsedClanColor = remember(clan.couleurHex, fallbackColor) {
-        try { Color(android.graphics.Color.parseColor(clan.couleurHex)) } catch (_: Exception) { fallbackColor }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(if (isMyClan) BrandGreen.copy(alpha = 0.08f) else Color.Transparent)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
-        ) {
-            Box(
-                modifier = Modifier.width(28.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                when (rank) {
-                    1 -> Text("🥇", fontSize = 18.sp)
-                    2 -> Text("🥈", fontSize = 18.sp)
-                    3 -> Text("🥉", fontSize = 18.sp)
-                    else -> Text(
-                        text = "$rank",
                         fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        color = Color(0xFF8E8E93),
-                        textAlign = TextAlign.Center
+                        fontSize = guildFontSize,
+                        color = Color.White.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            AvatarImage(
-                avatarUrl = clan.avatarUrl,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .border(1.5.dp, parsedClanColor, CircleShape),
-                placeholderColor = parsedClanColor,
-                placeholderIcon = Icons.Default.Shield
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = clan.nom + if (isMyClan) " (Votre Clan)" else "",
-                        fontWeight = if (isMyClan) FontWeight.Bold else FontWeight.Medium,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF1E1E1E)
-                    )
-                }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "${clan.membreCount} membre(s)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF6E6E73)
+                    text = "Niveau ${player.level}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = levelFontSize,
+                    color = Color.White
+                )
+                Text(
+                    text = metricValue(player, metric),
+                    fontWeight = FontWeight.Black,
+                    fontSize = valueFontSize,
+                    color = Color.White
                 )
             }
         }
-        val valStr = when (metric) {
-            MetricFilter.TERRITOIRE -> formatLeaderboardArea(clan.totalAreaM2)
-            MetricFilter.DISTANCE -> formatLeaderboardDistance(clan.distanceTotale)
-            MetricFilter.BOUCLES -> formatLeaderboardLoops(clan.loopCount)
+    }
+}
+
+// Small capsule button on the divider between the podium and the rest of the
+// ranking — opens a menu to switch which metric the leaderboard is sorted by.
+@Composable
+private fun MetricSwitcher(
+    current: MetricFilter,
+    onSelect: (MetricFilter) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        HorizontalDivider(color = Color.White.copy(alpha = 0.35f))
+        Box {
+            Box(
+                modifier = Modifier
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                    .clickable { expanded = true }
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+            ) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = "Changer le classement (${metricLabel(current)})",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                MetricFilter.values().forEach { metric ->
+                    DropdownMenuItem(
+                        text = { Text(metricLabel(metric), fontWeight = if (metric == current) FontWeight.Bold else FontWeight.Normal) },
+                        onClick = {
+                            onSelect(metric)
+                            expanded = false
+                        }
+                    )
+                }
+            }
         }
-        Text(
-            text = valStr,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF1E1E1E)
-        )
     }
 }
 
@@ -284,379 +277,162 @@ fun LeaderboardScreen(
     onPlayerClick: (Point) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     val players by viewModel.playersList.collectAsState()
-    val clans by viewModel.clansList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val selectedTab by viewModel.selectedTab.collectAsState()
-
-    val selectedSocialFilter by viewModel.selectedSocialFilter.collectAsState()
     val selectedMetric by viewModel.selectedMetric.collectAsState()
-    val userLatState by viewModel.userLat.collectAsState()
-
-    val friendsStatusMap by viewModel.friendsStatusMap.collectAsState()
-    val sentGuildInvitationsSet by viewModel.sentGuildInvitationsSet.collectAsState()
     var selectedPlayerForProfile by remember { mutableStateOf<LeaderboardPlayer?>(null) }
 
-    LaunchedEffect(userId, userGuildId) {
-        viewModel.init(userId, userGuildId)
+    LaunchedEffect(userId) {
+        viewModel.init(userId)
     }
 
     // When the screen becomes active or visible, refresh the data.
-    // It will show the cached/warmed data immediately and load updates silently in the background.
     LaunchedEffect(isActive) {
         if (isActive) {
             viewModel.loadLeaderboardData(forceRefresh = true)
         }
     }
 
-    fun sendFriendRequest(otherUserId: String) {
-        viewModel.sendFriendRequest(otherUserId) { success ->
-            if (success) {
-                Toast.makeText(context, "Demande d'ami envoyée.", Toast.LENGTH_SHORT).show()
+    // Best-effort last known location for the decorative map background.
+    var userLocation by remember { mutableStateOf<Location?>(null) }
+    LaunchedEffect(Unit) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) userLocation = loc
             }
         }
     }
-
-    fun inviteToGuild(otherUserId: String) {
-        if (userGuildId == null) return
-        viewModel.inviteToGuild(otherUserId) { success ->
-            if (success) {
-                Toast.makeText(context, "Invitation au clan envoyée.", Toast.LENGTH_SHORT).show()
-            }
+    val mapFallbackCenter = remember(userLocation) {
+        if (userLocation != null) {
+            Point.fromLngLat(userLocation!!.longitude, userLocation!!.latitude)
+        } else {
+            Point.fromLngLat(2.3522, 48.8566) // Paris default
         }
     }
 
-    val activePrimary = BrandGreen
-    val leaderboardColorScheme = lightColorScheme(
-        primary = activePrimary,
-        background = Color(0xFFF4F5F7),
-        surface = Color.White,
-        onSurface = Color(0xFF1E1E1E),
-        surfaceVariant = Color(0xFFE9EBEF),
-        onSurfaceVariant = Color(0xFF6E6E73)
-    )
-
-    val meIndex = players.indexOfFirst { it.id == userId }
-    val showStickyPlayer = selectedTab == 0 && meIndex != -1 && meIndex >= 8
-
-    val myClanIndex = if (userGuildId != null) clans.indexOfFirst { it.id == userGuildId } else -1
-    val showStickyClan = selectedTab == 1 && myClanIndex != -1 && myClanIndex >= 8
-
-    val showSticky = showStickyPlayer || showStickyClan
-
-    MaterialTheme(colorScheme = leaderboardColorScheme) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Same button-free map background as the profile screen
+        if (isActive) {
+            TerritoryMapBackground(
+                polygons = emptyList(),
+                empireColor = MaterialTheme.colorScheme.primary,
+                fallbackCenter = mapFallbackCenter,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFFF4F5F7))
-        ) {
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.35f))
+        )
+
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = BrandGreen)
+            }
+        } else if (players.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(90.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EmojiEvents,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "Aucun joueur enregistré",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+        } else {
+            val top3 = players.take(3)
+            val rest = players.drop(3)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
-                    .padding(bottom = if (showSticky) 76.dp else 0.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                CapsuleTabSelector(
-                    tabs = listOf("JOUEURS", "CLANS"),
-                    selectedTabIndex = selectedTab,
-                    onTabSelected = { viewModel.selectTab(it) },
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                // Level 2 filters (Social)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SocialFilter.values().forEach { filter ->
-                        val isSelected = selectedSocialFilter == filter
-                        val text = when (filter) {
-                            SocialFilter.GLOBAL -> "Global"
-                            SocialFilter.AMIS -> "Amis"
-                            SocialFilter.LOCAL -> "Local"
-                        }
-                        val bgColor = if (isSelected) BrandGreen else Color(0xFFE9EBEF)
-                        val contentColor = if (isSelected) Color.White else Color(0xFF6E6E73)
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(bgColor)
-                                .clickable { viewModel.selectSocialFilter(filter) }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = text,
-                                color = contentColor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
+                top3.forEachIndexed { index, player ->
+                    LeaderboardPlayerCard(
+                        rank = index + 1,
+                        player = player,
+                        metric = selectedMetric,
+                        isMe = player.id == userId,
+                        isTop = true,
+                        onClick = { selectedPlayerForProfile = player }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // Level 3 filters (Metric)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MetricFilter.values().forEach { metric ->
-                        val isSelected = selectedMetric == metric
-                        val text = when (metric) {
-                            MetricFilter.TERRITOIRE -> "Territoire"
-                            MetricFilter.DISTANCE -> "Distance"
-                            MetricFilter.BOUCLES -> "Boucles"
-                        }
-                        val bgColor = if (isSelected) BrandGreen.copy(alpha = 0.1f) else Color.Transparent
-                        val borderStroke = if (isSelected) BorderStroke(1.5.dp, BrandGreen) else BorderStroke(1.dp, Color(0xFFE5E5EA))
-                        val contentColor = if (isSelected) BrandGreen else Color(0xFF6E6E73)
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(bgColor)
-                                .border(borderStroke, RoundedCornerShape(8.dp))
-                                .clickable { viewModel.selectMetric(metric) }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = text,
-                                color = contentColor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
+                if (rest.isNotEmpty()) {
+                    MetricSwitcher(
+                        current = selectedMetric,
+                        onSelect = { viewModel.selectMetric(it) }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                if (isLoading) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = BrandGreen)
-                    }
-                } else if (selectedSocialFilter == SocialFilter.LOCAL && userLatState == null) {
-                    Box(
+                    LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(90.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.05f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.EmojiEvents,
-                                    contentDescription = null,
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Text(
-                                text = "Localisation non partagée",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E1E1E)
+                        itemsIndexed(rest) { index, player ->
+                            LeaderboardPlayerCard(
+                                rank = index + 4,
+                                player = player,
+                                metric = selectedMetric,
+                                isMe = player.id == userId,
+                                isTop = false,
+                                onClick = { selectedPlayerForProfile = player }
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Activez le partage de position dans votre profil pour voir les conquérants et clans à proximité.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF6E6E73),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                } else if (selectedTab == 0) {
-                    if (players.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(90.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Black.copy(alpha = 0.05f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.EmojiEvents,
-                                        contentDescription = null,
-                                        tint = Color.Gray,
-                                        modifier = Modifier.size(48.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(24.dp))
-                                Text(
-                                    text = "Aucun joueur enregistré",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E1E1E)
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White)
-                                .border(1.dp, Color(0xFFE5E5EA), RoundedCornerShape(16.dp))
-                        ) {
-                            itemsIndexed(players) { index, player ->
-                                if (index > 0) {
-                                    HorizontalDivider(color = Color(0xFFF4F5F7))
-                                }
-                                PlayerRow(
-                                    rank = index + 1,
-                                    player = player,
-                                    isMe = player.id == userId,
-                                    metric = selectedMetric,
-                                    friendsStatusMap = friendsStatusMap,
-                                    onClick = { selectedPlayerForProfile = player }
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    if (clans.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(90.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Black.copy(alpha = 0.05f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Shield,
-                                        contentDescription = null,
-                                        tint = Color.Gray,
-                                        modifier = Modifier.size(48.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(24.dp))
-                                Text(
-                                    text = "Aucun clan enregistré",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E1E1E)
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White)
-                                .border(1.dp, Color(0xFFE5E5EA), RoundedCornerShape(16.dp))
-                        ) {
-                            itemsIndexed(clans) { index, clan ->
-                                if (index > 0) {
-                                    HorizontalDivider(color = Color(0xFFF4F5F7))
-                                }
-                                ClanRow(
-                                    rank = index + 1,
-                                    clan = clan,
-                                    isMyClan = clan.id == userGuildId,
-                                    metric = selectedMetric,
-                                    onClick = {}
-                                )
-                            }
                         }
                     }
                 }
             }
+        }
+    }
 
-            // Sticky Bottom Row
-            if (showStickyPlayer) {
-                val me = players[meIndex]
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.3f))
-                ) {
-                    PlayerRow(
-                        rank = meIndex + 1,
-                        player = me,
-                        isMe = true,
-                        metric = selectedMetric,
-                        friendsStatusMap = friendsStatusMap,
-                        onClick = { selectedPlayerForProfile = me }
-                    )
-                }
-            } else if (showStickyClan) {
-                val myClan = clans[myClanIndex]
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.3f))
-                ) {
-                    ClanRow(
-                        rank = myClanIndex + 1,
-                        clan = myClan,
-                        isMyClan = true,
-                        metric = selectedMetric,
-                        onClick = {}
-                    )
-                }
+    // Detailed profile view Dialog — all other statistics live there.
+    if (selectedPlayerForProfile != null) {
+        PlayerProfileDialog(
+            playerId = selectedPlayerForProfile!!.id,
+            currentUserId = userId,
+            onDismissRequest = { selectedPlayerForProfile = null },
+            onNavigateToTerritory = { point ->
+                selectedPlayerForProfile = null
+                onPlayerClick(point)
             }
-        }
-
-        // Detailed profile view Dialog
-        if (selectedPlayerForProfile != null) {
-            PlayerProfileDialog(
-                playerId = selectedPlayerForProfile!!.id,
-                currentUserId = userId,
-                onDismissRequest = { selectedPlayerForProfile = null },
-                onNavigateToTerritory = { point ->
-                    selectedPlayerForProfile = null
-                    onPlayerClick(point)
-                }
-            )
-        }
+        )
     }
 }

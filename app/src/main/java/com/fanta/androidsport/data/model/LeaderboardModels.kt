@@ -15,6 +15,8 @@ data class LeaderboardPlayer(
     val pseudonyme: String,
     val tag: String?,
     val empireColor: String,
+    val level: Int,
+    val bannerUrl: String?,
     val latitude: Double?,
     val longitude: Double?,
     val totalAreaM2: Double,
@@ -23,16 +25,4 @@ data class LeaderboardPlayer(
     val avatarUrl: String?,
     val guildeNom: String?,
     val guildeCouleur: String?
-)
-
-data class LeaderboardClan(
-    val id: String,
-    val nom: String,
-    val tag: String?,
-    val couleurHex: String,
-    val avatarUrl: String?,
-    val totalAreaM2: Double,
-    val membreCount: Int,
-    val loopCount: Int,
-    val distanceTotale: Double
 )

@@ -2091,7 +2091,10 @@ WHERE total_area_m2 > 0
 -- ====================================================================
 
 -- 1. Corriger la contrainte check de course_reactions pour autoriser 'baamix'
--- D'abord, supprimer les doublons potentiels (si le même utilisateur a déjà réagi avec 'baamix' et un autre type sur la même course)
+-- D'abord, supprimer la contrainte existante pour éviter de lever une erreur lors de la mise à jour (UPDATE) des valeurs
+ALTER TABLE public.course_reactions DROP CONSTRAINT IF EXISTS course_reactions_type_reaction_check;
+
+-- Ensuite, supprimer les doublons potentiels (si le même utilisateur a déjà réagi avec 'baamix' et un autre type sur la même course)
 DELETE FROM public.course_reactions r1
 WHERE r1.type_reaction <> 'baamix'
   AND EXISTS (
@@ -2102,13 +2105,12 @@ WHERE r1.type_reaction <> 'baamix'
         AND r2.type_reaction = 'baamix'
   );
 
--- Convertir toutes les autres réactions en 'baamix' pour qu'elles respectent la contrainte
+-- Convertir toutes les autres réactions en 'baamix' pour qu'elles respectent la future contrainte
 UPDATE public.course_reactions
 SET type_reaction = 'baamix'
 WHERE type_reaction <> 'baamix';
 
--- Enfin, mettre à jour la contrainte CHECK de la table
-ALTER TABLE public.course_reactions DROP CONSTRAINT IF EXISTS course_reactions_type_reaction_check;
+-- Enfin, recréer la nouvelle contrainte CHECK restrictive sur la table
 ALTER TABLE public.course_reactions ADD CONSTRAINT course_reactions_type_reaction_check CHECK (type_reaction IN ('baamix'));
 
 -- 2. Recréer les politiques de stockage pour le bucket Images (bannières)

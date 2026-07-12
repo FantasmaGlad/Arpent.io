@@ -684,3 +684,94 @@ public val add_circle: ImageVector
 
 private var _add_circle: ImageVector? = null
 
+@Suppress("CheckReturnValue")
+public val steps: ImageVector
+  get() {
+    if (_steps != null) {
+      return _steps!!
+    }
+    _steps =
+      ImageVector.Builder(
+          name = "steps",
+          defaultWidth = 24.dp,
+          defaultHeight = 24.dp,
+          viewportWidth = 24f,
+          viewportHeight = 24f,
+        )
+        .apply {
+          path(
+            fill = SolidColor(Color.Black),
+            fillAlpha = 1f,
+            stroke = null,
+            strokeAlpha = 1f,
+            strokeLineWidth = 1f,
+            strokeLineCap = StrokeCap.Butt,
+            strokeLineJoin = StrokeJoin.Bevel,
+            strokeLineMiter = 1f,
+            pathFillType = PathFillType.Companion.NonZero,
+          ) {
+            moveTo(5.4f, 9.5f)
+            quadToRelative(0.97f, 0f, 1.85f, 0.35f)
+            reflectiveQuadToRelative(1.6f, 1.03f)
+            lineTo(18.4f, 20f)
+            horizontalLineTo(19f)
+            quadToRelative(0.43f, 0f, 0.71f, -0.29f)
+            quadTo(20f, 19.43f, 20f, 19f)
+            quadToRelative(0f, -0.2f, -0.04f, -0.43f)
+            reflectiveQuadTo(19.7f, 18.13f)
+            lineTo(15.13f, 13.55f)
+            lineTo(13.35f, 8.2f)
+            lineTo(11.5f, 8.65f)
+            quadTo(10.55f, 8.9f, 9.78f, 8.3f)
+            reflectiveQuadTo(9f, 6.72f)
+            verticalLineTo(4.63f)
+            lineTo(8.3f, 4.27f)
+            lineTo(4.45f, 9.42f)
+            quadTo(4.43f, 9.45f, 4.43f, 9.46f)
+            quadTo(4.43f, 9.48f, 4.4f, 9.5f)
+            horizontalLineToRelative(1f)
+            close()
+            moveToRelative(0f, 2f)
+            horizontalLineTo(4.25f)
+            quadToRelative(0.08f, 0.17f, 0.19f, 0.32f)
+            reflectiveQuadTo(4.7f, 12.1f)
+            lineToRelative(8.1f, 7.38f)
+            quadToRelative(0.28f, 0.27f, 0.63f, 0.4f)
+            reflectiveQuadTo(14.15f, 20f)
+            horizontalLineTo(15.5f)
+            lineTo(7.48f, 12.33f)
+            quadTo(7.05f, 11.9f, 6.51f, 11.7f)
+            reflectiveQuadTo(5.4f, 11.5f)
+            close()
+            moveTo(14.15f, 22f)
+            quadTo(13.4f, 22f, 12.73f, 21.73f)
+            reflectiveQuadTo(11.48f, 20.95f)
+            lineTo(3.35f, 13.58f)
+            quadTo(2.2f, 12.52f, 2.06f, 11f)
+            quadTo(1.93f, 9.48f, 2.85f, 8.23f)
+            lineTo(6.7f, 3.07f)
+            quadTo(7.13f, 2.5f, 7.84f, 2.31f)
+            reflectiveQuadTo(9.2f, 2.47f)
+            lineTo(9.9f, 2.82f)
+            quadToRelative(0.53f, 0.27f, 0.81f, 0.75f)
+            reflectiveQuadTo(11f, 4.63f)
+            verticalLineToRelative(2.1f)
+            lineTo(12.85f, 6.25f)
+            quadTo(13.6f, 6.05f, 14.3f, 6.44f)
+            reflectiveQuadToRelative(0.95f, 1.11f)
+            lineToRelative(1.63f, 4.9f)
+            lineToRelative(4.25f, 4.25f)
+            quadToRelative(0.5f, 0.5f, 0.69f, 1.07f)
+            reflectiveQuadTo(22f, 19f)
+            quadToRelative(0f, 1.25f, -0.88f, 2.13f)
+            reflectiveQuadTo(19f, 22f)
+            horizontalLineTo(14.15f)
+            close()
+          }
+        }
+        .build()
+    return _steps!!
+  }
+
+private var _steps: ImageVector? = null
+

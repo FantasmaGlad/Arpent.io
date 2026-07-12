@@ -134,8 +134,9 @@ fun AuthScreen() {
         ConnexionAnimatedBackground(modifier = Modifier.fillMaxSize())
 
         // Auth controls pinned to an absolute y so they land exactly below the
-        // animated logo and clear of the diagonal ribbon (y=380/450/520 in the
-        // Connexion.svg's 360x800 coordinate space, which maps 1:1 to dp here).
+        // animated logo and clear of the diagonal ribbon (y=410/480/550 in the
+        // Connexion.svg's 360x800 coordinate space, which maps 1:1 to dp here —
+        // originally y=380, shifted down 30dp per request).
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top,
@@ -143,7 +144,7 @@ fun AuthScreen() {
                 .fillMaxSize()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
-                .offset(y = 380.dp)
+                .offset(y = 410.dp)
         ) {
 
             // Error Display Card

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -15,18 +16,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import com.fanta.androidsport.ui.icons.steps
 import com.fanta.androidsport.ui.theme.ElectricBlue
 import com.fanta.androidsport.utils.base64ToImageBitmap
-
-// Default avatar shared by every player until they upload or pick their own
-private const val DEFAULT_AVATAR_ASSET = "file:///android_asset/Profils/ProfilBaamix.png"
 
 @Composable
 fun AvatarImage(
     avatarUrl: String?,
     modifier: Modifier = Modifier,
     placeholderColor: Color = ElectricBlue,
-    placeholderIcon: ImageVector = Icons.Default.Person
+    placeholderIcon: ImageVector = steps
 ) {
     val context = LocalContext.current
 
@@ -36,6 +35,13 @@ fun AvatarImage(
             .background(Color.Gray.copy(alpha = 0.2f)),
         contentAlignment = Alignment.Center
     ) {
+        Icon(
+            imageVector = placeholderIcon,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(0.5f),
+            tint = placeholderColor
+        )
+
         if (avatarUrl != null && avatarUrl.isNotEmpty()) {
             if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://") || avatarUrl.startsWith("content://") || avatarUrl.startsWith("file://")) {
                 coil.compose.AsyncImage(
@@ -59,23 +65,8 @@ fun AvatarImage(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
-                } else {
-                    coil.compose.AsyncImage(
-                        model = DEFAULT_AVATAR_ASSET,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
                 }
             }
-        } else {
-            // No custom avatar set — fall back to the shared default photo for all players
-            coil.compose.AsyncImage(
-                model = DEFAULT_AVATAR_ASSET,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
         }
     }
 }

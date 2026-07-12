@@ -67,9 +67,6 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import java.io.File
 
-// Shared defaults used until a player uploads or picks their own — see assets/Profils and assets/bannieres
-private const val DEFAULT_BANNER_ASSET = "file:///android_asset/bannieres/Baamix_Simpsons.png"
-
 data class FullFriendItem(
     val id: String,
     val pseudo: String,
@@ -574,41 +571,64 @@ fun PlayerProfileContent(
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
-            // 1. BANNER — full screen width (w350 h150), tap to import an image
+            // 1. BANNER — full screen width (w350 h150), tap to import an image.
+            // No automatic banner image: falls back to the player's empire color.
+            val bannerEmpireColor = if (isMe) localColor else parsedUserColor
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
                     .height(150.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(cardColor)
+                    .background(if (localBannerUrl != null) cardColor else bannerEmpireColor.copy(alpha = 0.70f))
                     .clickable(enabled = isMe) {
                         showBannerSelectionDialog = true
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // Fall back to the shared default banner until a custom one is set
-                AsyncImage(
-                    model = localBannerUrl ?: DEFAULT_BANNER_ASSET,
-                    contentDescription = "Bannière",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    alpha = 1f
-                )
-                if (isMe) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(10.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.35f))
-                            .padding(6.dp)
+                if (localBannerUrl != null) {
+                    AsyncImage(
+                        model = localBannerUrl,
+                        contentDescription = "Bannière",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alpha = 1f
+                    )
+                    if (isMe) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(10.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .padding(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Modifier la bannière",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                } else if (isMe) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Modifier la bannière",
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(18.dp)
+                            imageVector = Icons.Default.AddCircle,
+                            contentDescription = "Ajouter une bannière",
+                            tint = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Ajouter une bannière",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
@@ -635,8 +655,7 @@ fun PlayerProfileContent(
                     AvatarImage(
                         avatarUrl = userAvatarUrl,
                         modifier = Modifier.fillMaxSize(),
-                        placeholderColor = activeColor,
-                        placeholderIcon = Icons.Default.Person
+                        placeholderColor = activeColor
                     )
                 }
 
@@ -698,13 +717,13 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 3. DESCRIPTION CARD — full width, edge-to-edge like the course cards
+            // 3. DESCRIPTION CARD — same width as the course cards in the Courses tab
             ProfileSectionCard(
                 title = "Description",
                 cardColor = cardColor,
                 onCardColor = onCardColor,
                 onClick = if (isMe) { { showEditDescriptionDialog = true } } else null,
-                horizontalPadding = 0.dp
+                horizontalPadding = 5.dp
             ) {
                 Text(
                     text = localDescription.ifEmpty {
@@ -744,26 +763,7 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 5. SOCIAL SECTION — temporarily hidden ahead of a future redesign
-            if (isMe) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
-                        .height(160.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(cardColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = "file:///android_asset/EnConstruction.png",
-                        contentDescription = "Section en construction",
-                        modifier = Modifier.fillMaxSize(0.6f),
-                        contentScale = ContentScale.Fit
-                    )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
+            // 5. Social section — hidden for now (the friend list lives in this spot when re-enabled)
 
             // 6. STATISTIQUES CARD — inline stats, always visible
             ProfileSectionCard(

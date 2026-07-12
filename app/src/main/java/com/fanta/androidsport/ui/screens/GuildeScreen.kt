@@ -19,10 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.fanta.androidsport.supabase
 import com.fanta.androidsport.ui.components.AvatarImage
 import com.fanta.androidsport.ui.components.CapsuleTabSelector
@@ -37,12 +39,34 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.*
 
+// Temporary switch: the whole Social section (Amis / Mon Clan / Clans) is replaced
+// by a "coming soon" placeholder ahead of a future redesign. Flip back to true to
+// restore it — none of the logic below was removed.
+private const val SHOW_SOCIAL_SECTION = false
+
 @Composable
 fun GuildeScreen(
     isActive: Boolean = false,
     userId: String,
     onBackToLogin: () -> Unit
 ) {
+    if (!SHOW_SOCIAL_SECTION) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF4F5F7)),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = "file:///android_asset/EnConstruction.png",
+                contentDescription = "Section en construction",
+                modifier = Modifier.fillMaxWidth(0.8f),
+                contentScale = ContentScale.Fit
+            )
+        }
+        return
+    }
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     

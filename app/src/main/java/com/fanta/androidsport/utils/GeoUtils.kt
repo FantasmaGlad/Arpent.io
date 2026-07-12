@@ -56,8 +56,8 @@ fun splitIntoClosedPolygons(flatPoints: List<Point>): List<List<Point>> {
     for (pt in flatPoints) {
         currentRing.add(pt)
         if (currentRing.size >= 3 && 
-            Math.abs(pt.longitude() - currentRing[0].longitude()) < 1e-7 && 
-            Math.abs(pt.latitude() - currentRing[0].latitude()) < 1e-7) {
+            Math.abs(pt.longitude() - currentRing[0].longitude()) < 1e-11 && 
+            Math.abs(pt.latitude() - currentRing[0].latitude()) < 1e-11) {
             polygons.add(currentRing)
             currentRing = mutableListOf()
         }
@@ -65,8 +65,8 @@ fun splitIntoClosedPolygons(flatPoints: List<Point>): List<List<Point>> {
     if (currentRing.size >= 3) {
         val first = currentRing.first()
         val last = currentRing.last()
-        if (Math.abs(first.longitude() - last.longitude()) >= 1e-7 || 
-            Math.abs(first.latitude() - last.latitude()) >= 1e-7) {
+        if (Math.abs(first.longitude() - last.longitude()) >= 1e-11 || 
+            Math.abs(first.latitude() - last.latitude()) >= 1e-11) {
             currentRing.add(first)
         }
         polygons.add(currentRing)

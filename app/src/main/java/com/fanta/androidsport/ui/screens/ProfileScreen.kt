@@ -334,6 +334,7 @@ fun PlayerProfileContent(
 
     // Local state to track the banner URL with cache-busting
     var localBannerUrl by remember(userId, userBannerUrl) { mutableStateOf(userBannerUrl) }
+    var showBannerSelectionDialog by remember { mutableStateOf(false) }
 
     // Supabase avatar photo upload picker
     val imageLauncher = rememberLauncherForActivityResult(
@@ -369,40 +370,68 @@ fun PlayerProfileContent(
         }
     }
 
-    // Separate banner upload picker
+
+
+    val uploadBannerBytes: (ByteArray) -> Unit = { bytes ->
+        scope.launch {
+            try {
+                val publicUrl = withContext(Dispatchers.IO) {
+                    val bucket = supabase.storage.from("Images")
+                    val filename = "${userId}_banner.jpg"
+                    bucket.upload(filename, bytes) {
+                        upsert = true
+                    }
+                    bucket.publicUrl(filename)
+                }
+                val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
+
+                withContext(Dispatchers.IO) {
+                    supabase.postgrest["profiles"].update(
+                        mapOf("banner_url" to finalUrl)
+                    ) {
+                        filter { eq("id", userId) }
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    localBannerUrl = finalUrl
+                }
+                onStatsUpdated()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Bannière mise à jour !", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to update banner", e)
+            }
+        }
+    }
+
+    val uploadBannerFromAsset: (String) -> Unit = { assetName ->
+        scope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.assets.open(assetName).use { it.readBytes() }
+                }
+                uploadBannerBytes(bytes)
+            } catch (e: Exception) {
+                android.util.Log.e("Arpent", "Failed to read banner from asset: $assetName", e)
+            }
+        }
+    }
+
     val bannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
             scope.launch {
                 try {
-                    withContext(Dispatchers.IO) {
-                        val bytes = context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
-                        if (bytes != null) {
-                            val bucket = supabase.storage.from("Images")
-                            val filename = "${userId}_banner.jpg"
-                            bucket.upload(filename, bytes) {
-                                upsert = true
-                            }
-                            val publicUrl = bucket.publicUrl(filename)
-                            val finalUrl = "$publicUrl?t=${System.currentTimeMillis()}"
-                            withContext(Dispatchers.Main) {
-                                localBannerUrl = finalUrl
-                            }
-                            supabase.postgrest["profiles"].update(
-                                mapOf("banner_url" to finalUrl)
-                            ) {
-                                filter { eq("id", userId) }
-                            }
-                        }
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(selectedUri)?.use { it.readBytes() }
                     }
-                    onStatsUpdated()
-                    Toast.makeText(context, "Bannière mise à jour !", Toast.LENGTH_SHORT).show()
+                    if (bytes != null) {
+                        uploadBannerBytes(bytes)
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("Arpent", "Failed to update banner", e)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Erreur lors de l'upload de la bannière", Toast.LENGTH_SHORT).show()
-                    }
+                    android.util.Log.e("Arpent", "Failed to read URI for banner", e)
                 }
             }
         }
@@ -454,53 +483,102 @@ fun PlayerProfileContent(
                             tint = onBackground
                         )
                     }
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                if (onNavigateToTerritory != null) {
-                    IconButton(
-                        onClick = {
-                            if (completedPolygons.isNotEmpty()) {
-                                val largest = completedPolygons.maxByOrNull { polygon ->
-                                    getPolygonArea(polygon)
-                                }
-                                val centroid = largest?.let { getPolygonCentroid(it) }
-                                if (centroid != null) onNavigateToTerritory(centroid)
-                            } else if (!isMe) {
-                                // Fetch territories from Supabase for other players
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        val polygons = fetchPlayerTerritoryPolygons(userId)
-                                        val largest = polygons.maxByOrNull { getPolygonArea(it) }
-                                        val centroid = largest?.let { getPolygonCentroid(it) }
-                                        if (centroid != null) {
-                                            withContext(Dispatchers.Main) {
-                                                onNavigateToTerritory(centroid)
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (onNavigateToTerritory != null) {
+                        IconButton(
+                            onClick = {
+                                if (completedPolygons.isNotEmpty()) {
+                                    val largest = completedPolygons.maxByOrNull { polygon ->
+                                        getPolygonArea(polygon)
+                                    }
+                                    val centroid = largest?.let { getPolygonCentroid(it) }
+                                    if (centroid != null) onNavigateToTerritory(centroid)
+                                } else if (!isMe) {
+                                    // Fetch territories from Supabase for other players
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val polygons = fetchPlayerTerritoryPolygons(userId)
+                                            val largest = polygons.maxByOrNull { getPolygonArea(it) }
+                                            val centroid = largest?.let { getPolygonCentroid(it) }
+                                            if (centroid != null) {
+                                                withContext(Dispatchers.Main) {
+                                                    onNavigateToTerritory(centroid)
+                                                }
                                             }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
                                         }
-                                    } catch (e: Exception) {
-                                        android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
                                     }
                                 }
                             }
+                        ) {
+                            Icon(
+                                imageVector = map_search,
+                                contentDescription = "Voir le territoire",
+                                tint = onBackground,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
-                    ) {
-                        Icon(
-                            imageVector = map_search,
-                            contentDescription = "Voir le territoire",
-                            tint = onBackground,
-                            modifier = Modifier.size(24.dp)
-                        )
                     }
-                }
-                if (isMe) {
-                    IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Paramètres",
-                            tint = onBackground,
-                            modifier = Modifier.size(24.dp)
-                        )
+                    if (isMe) {
+                        IconButton(onClick = { showSettingsSheet = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Paramètres",
+                                tint = onBackground,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
+                } else {
+                    // On this tab (onCloseClick == null), place icons on the left
+                    if (onNavigateToTerritory != null) {
+                        IconButton(
+                            onClick = {
+                                if (completedPolygons.isNotEmpty()) {
+                                    val largest = completedPolygons.maxByOrNull { polygon ->
+                                        getPolygonArea(polygon)
+                                    }
+                                    val centroid = largest?.let { getPolygonCentroid(it) }
+                                    if (centroid != null) onNavigateToTerritory(centroid)
+                                } else if (!isMe) {
+                                    // Fetch territories from Supabase for other players
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val polygons = fetchPlayerTerritoryPolygons(userId)
+                                            val largest = polygons.maxByOrNull { getPolygonArea(it) }
+                                            val centroid = largest?.let { getPolygonCentroid(it) }
+                                            if (centroid != null) {
+                                                withContext(Dispatchers.Main) {
+                                                    onNavigateToTerritory(centroid)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("Arpent", "Failed to fetch territories for map nav", e)
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = map_search,
+                                contentDescription = "Voir le territoire",
+                                tint = onBackground,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    if (isMe) {
+                        IconButton(onClick = { showSettingsSheet = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Paramètres",
+                                tint = onBackground,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
 
@@ -513,7 +591,7 @@ fun PlayerProfileContent(
                     .clip(RoundedCornerShape(24.dp))
                     .background(cardColor)
                     .clickable(enabled = isMe) {
-                        bannerLauncher.launch("image/*")
+                        showBannerSelectionDialog = true
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -1129,6 +1207,166 @@ fun PlayerProfileContent(
                 }
             }
         )
+    }
+
+    // Dialogue: Choisir une bannière prédéfinie ou galerie
+    if (showBannerSelectionDialog && isMe) {
+        Dialog(
+            onDismissRequest = { showBannerSelectionDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+                            )
+                        )
+                    )
+                    .border(
+                        BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(28.dp)
+                    )
+                    .padding(20.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Personnaliser la bannière",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+
+                    // Option 1: Baamix Pomme
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
+                            .clickable {
+                                showBannerSelectionDialog = false
+                                uploadBannerFromAsset("Baamix_Pomme.png")
+                            }
+                    ) {
+                        AsyncImage(
+                            model = "file:///android_asset/Baamix_Pomme.png",
+                            contentDescription = "Baamix Pomme",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                    )
+                                )
+                        )
+                        Text(
+                            text = "Baamix Pomme",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(12.dp)
+                        )
+                    }
+
+                    // Option 2: Baamix Simpsons
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(16.dp))
+                            .clickable {
+                                showBannerSelectionDialog = false
+                                uploadBannerFromAsset("Baamix_Simpsons.png")
+                            }
+                    ) {
+                        AsyncImage(
+                            model = "file:///android_asset/Baamix_Simpsons.png",
+                            contentDescription = "Baamix Simpsons",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                                    )
+                                )
+                        )
+                        Text(
+                            text = "Baamix Simpsons",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(12.dp)
+                        )
+                    }
+
+                    // Option 3: Galerie
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), RoundedCornerShape(16.dp))
+                            .clickable {
+                                showBannerSelectionDialog = false
+                                bannerLauncher.launch("image/*")
+                            }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Importer",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Importer depuis la galerie",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+
+                    // Option 4: Close
+                    TextButton(
+                        onClick = { showBannerSelectionDialog = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Annuler",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+        }
     }
 
     // Dialogue: Add friend search (Social card)

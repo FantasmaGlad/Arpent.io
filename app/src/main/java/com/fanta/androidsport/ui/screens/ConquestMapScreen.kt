@@ -155,8 +155,7 @@ fun ConquestMapScreen(
     bottomPadding: Dp = 0.dp,
     userChange24hPct: Double = 0.0,
     clanAreaKm2: Double = 0.0,
-    clanChange24hPct: Double = 0.0,
-    hideControls: Boolean = false
+    clanChange24hPct: Double = 0.0
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -754,9 +753,9 @@ fun ConquestMapScreen(
         }
 
         // --- OVERLAYS ---
-        if (!hideControls) {
-            // Collapsible "Votre Empire" Stats Banner
-            Box(
+
+        // Collapsible "Votre Empire" Stats Banner
+        Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 130.dp, end = 0.dp)
@@ -813,7 +812,7 @@ fun ConquestMapScreen(
                                     text = "Mon Empire",
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = parsedUserColor,
                                     modifier = Modifier.fillMaxWidth(),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
@@ -855,7 +854,7 @@ fun ConquestMapScreen(
                                         text = "Mon clan ($userGuildNom)",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = parsedUserColor,
                                         modifier = Modifier.fillMaxWidth(),
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                         maxLines = 1,
@@ -892,7 +891,7 @@ fun ConquestMapScreen(
                                         text = "Mon clan",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = parsedUserColor,
                                         modifier = Modifier.fillMaxWidth(),
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
@@ -1155,7 +1154,6 @@ fun ConquestMapScreen(
                     modifier = Modifier.size(32.dp)
                 )
             }
-        }
         }
         
         if (selectedPlayerStats != null) {

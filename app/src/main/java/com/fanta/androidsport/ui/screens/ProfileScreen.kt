@@ -106,8 +106,6 @@ fun ProfileScreen(
     userGuildCouleur: String?,
     completedPolygons: List<List<Point>>,
     onStatsUpdated: () -> Unit,
-    forceOpenSettings: Boolean = false,
-    onSettingsOpenedHandled: () -> Unit = {},
     onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
     PlayerProfileContent(
@@ -132,12 +130,9 @@ fun ProfileScreen(
         userGuildCouleur = userGuildCouleur,
         completedPolygons = completedPolygons,
         onStatsUpdated = onStatsUpdated,
-        forceOpenSettings = forceOpenSettings,
-        onSettingsOpenedHandled = onSettingsOpenedHandled,
         onNavigateToTerritory = onNavigateToTerritory
     )
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,8 +158,6 @@ fun PlayerProfileContent(
     userGuildCouleur: String? = null,
     completedPolygons: List<List<Point>> = emptyList(),
     onStatsUpdated: () -> Unit = {},
-    forceOpenSettings: Boolean = false,
-    onSettingsOpenedHandled: () -> Unit = {},
     onCloseClick: (() -> Unit)? = null,
     onNavigateToTerritory: ((Point) -> Unit)? = null
 ) {
@@ -209,13 +202,6 @@ fun PlayerProfileContent(
     var showStatsSheet by remember { mutableStateOf(false) }
     var showAddFriendDialog by remember { mutableStateOf(false) }
     var showAchievementsDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(forceOpenSettings) {
-        if (forceOpenSettings) {
-            showSettingsSheet = true
-            onSettingsOpenedHandled()
-        }
-    }
 
     // Active color system
     val activeColor = if (isMe) MaterialTheme.colorScheme.primary else parsedUserColor
@@ -345,6 +331,9 @@ fun PlayerProfileContent(
 
     // Local state to track the banner URL with cache-busting
     var localBannerUrl by remember(userId) { mutableStateOf(userBannerUrl) }
+    LaunchedEffect(userBannerUrl) {
+        localBannerUrl = userBannerUrl
+    }
 
     // Supabase avatar photo upload picker
     val imageLauncher = rememberLauncherForActivityResult(
@@ -419,24 +408,24 @@ fun PlayerProfileContent(
         }
     }
 
-    // MAIN CONTAINER (Transparent Background for Mapbox behind)
+    // MAIN CONTAINER (Black Background)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(Color(0xFF0C0C0C)) // Pure modern deep black
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Custom header with navigation/title (with horizontal padding)
+            // Custom header with navigation/title
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
                     .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -459,7 +448,7 @@ fun PlayerProfileContent(
                     color = Color.White,
                     letterSpacing = 1.5.sp
                 )
-                // Action buttons row (map-search)
+                // Action buttons row (map-search + settings)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Map-search icon: navigates to the player's largest territory centroid
                     if (onNavigateToTerritory != null) {
@@ -528,6 +517,16 @@ fun PlayerProfileContent(
                                 modifier = Modifier.size(24.dp)
                             )
                         }
+                    }
+                    if (isMe) {
+                        IconButton(onClick = { showSettingsSheet = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Paramètres",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     } else {
                         Spacer(modifier = Modifier.size(48.dp))
                     }
@@ -536,17 +535,17 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. BANNER CARD — tap to import a banner image (taking the full width of the screen, height 150dp)
+            // 1. BANNER CARD — tap to import a banner image
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(150.dp)
+                    .height(110.dp)
                     .clickable(enabled = isMe) {
                         bannerLauncher.launch("image/*")
                     },
-                shape = RoundedCornerShape(0.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                colors = CardDefaults.cardColors(containerColor = activeColor.copy(alpha = 0.3f))
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(4.dp, activeColor),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -584,7 +583,7 @@ fun PlayerProfileContent(
                                 Icon(
                                     imageVector = Icons.Default.AddCircle,
                                     contentDescription = "Ajouter une bannière",
-                                    tint = Color.White.copy(alpha = 0.8f),
+                                    tint = activeColor.copy(alpha = 0.6f),
                                     modifier = Modifier.size(28.dp)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
@@ -593,7 +592,7 @@ fun PlayerProfileContent(
                                 text = if (isMe) "Ajouter une bannière" else "Bannière",
                                 fontWeight = FontWeight.Black,
                                 fontSize = 18.sp,
-                                color = Color.White,
+                                color = if (isMe) activeColor.copy(alpha = 0.7f) else Color.Black,
                                 letterSpacing = 1.sp
                             )
                         }
@@ -603,11 +602,11 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. PROFILE INFO ROW (Avatar, Pseudo, Guild, Level, and Edit) - padded horizontally
+            // 2. PROFILE INFO ROW (Avatar, Pseudo, Guild, Level, and Edit)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Avatar Frame (White background circle with colored border)
@@ -685,36 +684,30 @@ fun PlayerProfileContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 3. DESCRIPTION PILL BUTTON - padded horizontally, glassmorphic container
-            Box(
+            // 3. DESCRIPTION PILL BUTTON
+            Button(
+                onClick = {
+                    if (isMe) {
+                        showEditDescriptionDialog = true
+                    } else {
+                        Toast.makeText(context, localDescription.ifEmpty { "Ce conquérant n'a pas rédigé de description." }, Toast.LENGTH_LONG).show()
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
+                    .height(48.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1C1C1E)),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
             ) {
-                Button(
-                    onClick = {
-                        if (isMe) {
-                            showEditDescriptionDialog = true
-                        } else {
-                            Toast.makeText(context, localDescription.ifEmpty { "Ce conquérant n'a pas rédigé de description." }, Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = activeColor.copy(alpha = 0.3f)),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                ) {
-                    Text(
-                        text = localDescription.ifEmpty { "Description" },
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    text = localDescription.ifEmpty { "Description" },
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -728,20 +721,19 @@ fun PlayerProfileContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 18.dp),
-                    shape = RoundedCornerShape(0.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    colors = CardDefaults.cardColors(containerColor = activeColor.copy(alpha = 0.3f))
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 20.dp)
+                            .padding(horizontal = 16.dp, vertical = 20.dp)
                     ) {
                         Text(
                             text = "Succès",
                             fontWeight = FontWeight.Black,
                             fontSize = 18.sp,
-                            color = Color.White
+                            color = Color.Black
                         )
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -773,12 +765,11 @@ fun PlayerProfileContent(
                     }
                 }
 
-                // Protruding add_circle tab button (glassmorphic style)
+                // Protruding add_circle tab button
                 Box(
                     modifier = Modifier
                         .offset(y = (-2).dp)
-                        .background(activeColor.copy(alpha = 0.4f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                        .background(Color.White, RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
                         .padding(horizontal = 14.dp, vertical = 4.dp)
                         .clickable { showAchievementsDialog = true },
                     contentAlignment = Alignment.Center
@@ -786,7 +777,7 @@ fun PlayerProfileContent(
                     Icon(
                         imageVector = Icons.Default.AddCircle,
                         contentDescription = "Voir succès",
-                        tint = Color.White,
+                        tint = activeColor,
                         modifier = Modifier.size(26.dp)
                     )
                 }
@@ -804,20 +795,19 @@ fun PlayerProfileContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 18.dp),
-                        shape = RoundedCornerShape(0.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                        colors = CardDefaults.cardColors(containerColor = activeColor.copy(alpha = 0.3f))
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 20.dp)
+                                .padding(horizontal = 16.dp, vertical = 20.dp)
                         ) {
                             Text(
                                 text = "Social",
                                 fontWeight = FontWeight.Black,
                                 fontSize = 18.sp,
-                                color = Color.White
+                                color = Color.Black
                             )
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -839,7 +829,7 @@ fun PlayerProfileContent(
                                 ) {
                                     Text(
                                         text = "Aucun ami pour le moment.",
-                                        color = Color.White.copy(alpha = 0.6f),
+                                        color = Color.Gray,
                                         fontSize = 13.sp
                                     )
                                 }
@@ -854,8 +844,8 @@ fun PlayerProfileContent(
                                         Card(
                                             modifier = Modifier.fillMaxWidth(),
                                             shape = RoundedCornerShape(24.dp),
-                                            colors = CardDefaults.cardColors(containerColor = friendThemeColor.copy(alpha = 0.15f)),
-                                            border = BorderStroke(1.dp, friendThemeColor.copy(alpha = 0.3f))
+                                            colors = CardDefaults.cardColors(containerColor = friendThemeColor.copy(alpha = 0.08f)),
+                                            border = BorderStroke(1.dp, friendThemeColor.copy(alpha = 0.15f))
                                         ) {
                                             Row(
                                                 modifier = Modifier
@@ -876,13 +866,13 @@ fun PlayerProfileContent(
                                                         text = friend.pseudo,
                                                         fontWeight = FontWeight.Bold,
                                                         fontSize = 14.sp,
-                                                        color = Color.White
+                                                        color = Color.Black
                                                     )
                                                     if (friend.guildNom != null) {
                                                         Text(
                                                             text = friend.guildNom,
                                                             fontSize = 11.sp,
-                                                            color = Color.White.copy(alpha = 0.6f)
+                                                            color = Color.Gray
                                                         )
                                                     }
                                                 }
@@ -890,13 +880,13 @@ fun PlayerProfileContent(
                                                     text = "Lvl ${friend.level}",
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 12.sp,
-                                                    color = Color.White.copy(alpha = 0.8f)
+                                                    color = Color.Black.copy(alpha = 0.6f)
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Icon(
                                                     imageVector = Icons.Default.MoreVert,
                                                     contentDescription = "Options",
-                                                    tint = Color.White.copy(alpha = 0.6f),
+                                                    tint = Color.Gray,
                                                     modifier = Modifier
                                                         .size(20.dp)
                                                         .clickable {
@@ -909,7 +899,7 @@ fun PlayerProfileContent(
                                     if (friendsList.size > 3) {
                                         Text(
                                             text = "Et ${friendsList.size - 3} autres amis...",
-                                            color = Color.White.copy(alpha = 0.6f),
+                                            color = Color.Gray,
                                             fontSize = 11.sp,
                                             modifier = Modifier.padding(start = 6.dp)
                                         )
@@ -920,12 +910,11 @@ fun PlayerProfileContent(
                         }
                     }
 
-                    // Protruding add_circle tab button (glassmorphic style)
+                    // Protruding add_circle tab button
                     Box(
                         modifier = Modifier
                             .offset(y = (-2).dp)
-                            .background(activeColor.copy(alpha = 0.4f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                            .background(Color.White, RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
                             .padding(horizontal = 14.dp, vertical = 4.dp)
                             .clickable { showAddFriendDialog = true },
                         contentAlignment = Alignment.Center
@@ -933,7 +922,7 @@ fun PlayerProfileContent(
                         Icon(
                             imageVector = Icons.Default.AddCircle,
                             contentDescription = "Ajouter un ami",
-                            tint = Color.White,
+                            tint = activeColor,
                             modifier = Modifier.size(26.dp)
                         )
                     }
@@ -941,28 +930,22 @@ fun PlayerProfileContent(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 6. WIDE STATISTIQUES PILL BUTTON (ONLY FOR ME) - padded horizontally
+            // 6. WIDE STATISTIQUES PILL BUTTON (ONLY FOR ME)
             if (isMe) {
-                Box(
+                Button(
+                    onClick = { showStatsSheet = true },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
+                        .height(50.dp),
+                    shape = RoundedCornerShape(25.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = activeColor)
                 ) {
-                    Button(
-                        onClick = { showStatsSheet = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(25.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = activeColor)
-                    ) {
-                        Text(
-                            text = "Statistiques",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color.White
-                        )
-                    }
+                    Text(
+                        text = "Statistiques",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White
+                    )
                 }
                 Spacer(modifier = Modifier.height(40.dp))
             } else {
@@ -1595,13 +1578,13 @@ fun AchievementBadge(
             modifier = Modifier
                 .size(60.dp)
                 .clip(CircleShape)
-                .background(if (isUnlocked) color else Color.White.copy(alpha = 0.1f)),
+                .background(if (isUnlocked) color else Color(0xFFF3F4F6)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = name,
-                tint = if (isUnlocked) Color.White else Color.White.copy(alpha = 0.4f),
+                tint = if (isUnlocked) Color.White else Color.LightGray,
                 modifier = Modifier.size(28.dp)
             )
         }
@@ -1610,7 +1593,7 @@ fun AchievementBadge(
             text = name,
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
-            color = Color.White
+            color = Color.Black
         )
     }
 }
@@ -1646,6 +1629,7 @@ fun PlayerProfileDialog(
                     val dist = obj["distance_totale"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                     val loop = obj["loop_count"]?.jsonPrimitive?.intOrNull ?: 0
                     val area = obj["total_area_m2"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+                    val banner = obj["banner_url"]?.jsonPrimitive?.contentOrNull
                     
                     val gId = obj["guilde_id"]?.jsonPrimitive?.contentOrNull
                     var gNom: String? = null
@@ -1664,6 +1648,7 @@ fun PlayerProfileDialog(
                         id = id,
                         pseudonyme = pseudo,
                         avatarUrl = avatar,
+                        bannerUrl = banner,
                         empireColor = color,
                         level = lvl,
                         xp = xp,
@@ -1709,6 +1694,7 @@ fun PlayerProfileDialog(
                     userEmpireColor = detail.empireColor,
                     userShareLocation = true,
                     userAvatarUrl = detail.avatarUrl,
+                    userBannerUrl = detail.bannerUrl,
                     xp = detail.xp,
                     level = detail.level,
                     loopCount = detail.loopCount,
@@ -1732,6 +1718,7 @@ data class ProfileDetails(
     val id: String,
     val pseudonyme: String,
     val avatarUrl: String?,
+    val bannerUrl: String? = null,
     val empireColor: String,
     val level: Int,
     val xp: Int,

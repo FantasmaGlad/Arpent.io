@@ -36,7 +36,7 @@ android {
         buildConfigField("String", "MAPBOX_PUBLIC_TOKEN", "\"$mapboxToken\"")
     }
 
-    val envKeystorePath = envProperties.getProperty("KEYSTORE_PATH") ?: System.getenv("KEYSTORE_PATH") ?: "${System.getProperty("user.home")}/androidsport-release.jks"
+    val envKeystorePath = envProperties.getProperty("KEYSTORE_PATH") ?: System.getenv("KEYSTORE_PATH") ?: "${System.getProperty("user.home")}/Dev/android/keystores/androidsport-release.jks"
     val envKeystorePassword = envProperties.getProperty("KEYSTORE_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
     val envKeyAlias = envProperties.getProperty("KEY_ALIAS") ?: System.getenv("KEY_ALIAS") ?: "sport-key"
     val envKeyPassword = envProperties.getProperty("KEY_PASSWORD") ?: System.getenv("KEY_PASSWORD") ?: ""

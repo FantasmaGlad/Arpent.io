@@ -4,8 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.fanta.androidsport.utils.closeRing
 import com.fanta.androidsport.utils.getPolygonArea
 import com.fanta.androidsport.utils.getPolygonCentroid
+import com.fanta.androidsport.utils.groupRingsIntoPolygons
 import com.mapbox.geojson.Point
 import com.mapbox.maps.extension.compose.MapEffect
 import com.mapbox.maps.extension.compose.MapboxMap
@@ -25,18 +27,25 @@ fun TerritoryMapBackground(
     fallbackCenter: Point? = null,
     modifier: Modifier = Modifier
 ) {
-    val largestPolygon = remember(polygons) {
-        polygons.maxByOrNull { getPolygonArea(it) }
+    // Rings can include holes carved out by an opponent's loop (see
+    // groupRingsIntoPolygons doc in GeoUtils.kt) — group them into
+    // [exterior, hole...] sets so a hole renders as a gap, not a solid patch,
+    // and so it never gets mistaken for the "largest" territory below.
+    val polygonGroups = remember(polygons) {
+        groupRingsIntoPolygons(polygons.map { closeRing(it) })
     }
-    val centroid = remember(largestPolygon, fallbackCenter) {
-        largestPolygon?.let { getPolygonCentroid(it) }
+    val largestGroup = remember(polygonGroups) {
+        polygonGroups.maxByOrNull { getPolygonArea(it[0]) }
+    }
+    val centroid = remember(largestGroup, fallbackCenter) {
+        largestGroup?.let { getPolygonCentroid(it[0]) }
             ?: fallbackCenter
             ?: Point.fromLngLat(2.3522, 48.8566)
     }
     val mapViewportState = rememberMapViewportState {
         setCameraOptions {
             center(centroid)
-            zoom(if (largestPolygon != null) 13.0 else 11.5)
+            zoom(if (largestGroup != null) 13.0 else 11.5)
             pitch(35.0)
             bearing(15.0)
         }
@@ -46,7 +55,7 @@ fun TerritoryMapBackground(
     androidx.compose.runtime.LaunchedEffect(centroid) {
         mapViewportState.setCameraOptions {
             center(centroid)
-            zoom(if (largestPolygon != null) 13.0 else 11.5)
+            zoom(if (largestGroup != null) 13.0 else 11.5)
             pitch(35.0)
             bearing(15.0)
         }
@@ -69,15 +78,15 @@ fun TerritoryMapBackground(
             mapView.gestures.rotateEnabled = false
             mapView.gestures.pitchEnabled = false
         }
-        polygons.forEach { polygonPoints ->
-            val polygonState = remember(polygonPoints, empireColor) {
+        polygonGroups.forEach { group ->
+            val polygonState = remember(group, empireColor) {
                 PolygonAnnotationState().apply {
                     fillColor = empireColor.copy(alpha = 0.35f)
                     fillOutlineColor = empireColor
                 }
             }
             PolygonAnnotation(
-                points = listOf(polygonPoints),
+                points = group,
                 polygonAnnotationState = polygonState
             )
         }

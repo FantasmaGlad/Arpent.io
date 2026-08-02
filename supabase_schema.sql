@@ -44,11 +44,16 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     loop_count integer DEFAULT 0 NOT NULL,
     max_loop_distance_km float DEFAULT 0.0 NOT NULL,
     total_steps integer DEFAULT 0,
-    average_cadence float DEFAULT 0.0
+    average_cadence float DEFAULT 0.0,
+    distance_totale float DEFAULT 0.0 NOT NULL
 );
 
 -- S'assurer que la colonne banner_url existe (migration safe)
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS banner_url text;
+
+-- S'assurer que la colonne distance_totale existe (cache de SUM(courses.distance_totale),
+-- voir update_profile_stats_on_course) sur les bases déjà provisionnées avant son ajout.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS distance_totale float DEFAULT 0.0 NOT NULL;
 
 -- S'assurer que la colonne chef_id existe dans guildes avant d'ajouter la contrainte
 ALTER TABLE public.guildes ADD COLUMN IF NOT EXISTS chef_id uuid;
@@ -738,29 +743,34 @@ BEGIN
         SET level = public.xp_to_level(xp + v_xp_gain),
             xp = xp + v_xp_gain,
             loop_count = loop_count + (CASE WHEN new.est_bouclee THEN 1 ELSE 0 END),
-            max_loop_distance_km = CASE 
+            max_loop_distance_km = CASE
                 WHEN new.est_bouclee THEN GREATEST(max_loop_distance_km, new.distance_totale)
-                ELSE max_loop_distance_km 
+                ELSE max_loop_distance_km
             END,
             total_steps = total_steps + COALESCE(new.total_steps, 0),
+            -- Cached running sum kept in sync here instead of the leaderboard/
+            -- clan_leaderboard views recomputing SUM(courses.distance_totale) with a
+            -- correlated subquery per row on every read (see those views' comments).
+            distance_totale = distance_totale + COALESCE(new.distance_totale, 0.0),
             average_cadence = COALESCE((
-                SELECT AVG(average_cadence) 
-                FROM public.courses 
+                SELECT AVG(average_cadence)
+                FROM public.courses
                 WHERE utilisateur_id = new.utilisateur_id AND average_cadence > 0
             ), 0.0)
         WHERE id = new.utilisateur_id;
 
     ELSIF (TG_OP = 'DELETE') THEN
         v_xp_loss := FLOOR(80.0 * old.distance_totale + COALESCE(old.superficie_conquise, 0.0) / 50000.0);
-        
+
         UPDATE public.profiles
         SET level = public.xp_to_level(GREATEST(0, xp - v_xp_loss)),
             xp = GREATEST(0, xp - v_xp_loss),
             loop_count = GREATEST(0, loop_count - (CASE WHEN old.est_bouclee THEN 1 ELSE 0 END)),
             total_steps = GREATEST(0, total_steps - COALESCE(old.total_steps, 0)),
+            distance_totale = GREATEST(0.0, distance_totale - COALESCE(old.distance_totale, 0.0)),
             average_cadence = COALESCE((
-                SELECT AVG(average_cadence) 
-                FROM public.courses 
+                SELECT AVG(average_cadence)
+                FROM public.courses
                 WHERE utilisateur_id = old.utilisateur_id AND id <> old.id AND average_cadence > 0
             ), 0.0)
         WHERE id = old.utilisateur_id;
@@ -944,6 +954,7 @@ DECLARE
     v_wkt text;
     v_geom geometry;
     v_superficie float := 0.0;
+    v_superficie_conquise float := 0.0;
     v_pt_text text;
     v_parts text[];
     v_guilde_id uuid;
@@ -1034,6 +1045,31 @@ BEGIN
         END;
     END IF;
 
+    -- Superficie effectivement "conquise" par CETTE course : l'aire nette ajoutée au
+    -- territoire du joueur, pas l'aire brute de la boucle. Repasser sur du terrain déjà
+    -- possédé par le MÊME joueur n'est pas un gain — sans cette correction,
+    -- courses.superficie_conquise (affichée dans le feed, utilisée pour l'XP) pouvait
+    -- annoncer plus que ce que profiles.total_area_m2 (source du classement) gagne
+    -- réellement après le ST_Union plus bas. Voler du terrain à un adversaire reste, lui,
+    -- un gain plein (transfert réel de territoire) : seul le chevauchement avec le
+    -- territoire PROPRE du joueur est retranché ici. Best-effort (lecture non verrouillée,
+    -- avant les FOR UPDATE ci-dessous) : c'est une valeur d'affichage/XP, la mutation
+    -- réelle du territoire plus bas relit toujours l'état verrouillé et à jour.
+    v_superficie_conquise := v_superficie;
+    IF p_est_bouclee AND v_superficie > 0.0 THEN
+        SELECT id, contour INTO v_existing_id, v_existing_contour
+        FROM public.territoires
+        WHERE utilisateur_id = p_user_id;
+
+        IF v_existing_id IS NOT NULL THEN
+            BEGIN
+                v_superficie_conquise := ST_Area(ST_Difference(v_geom, v_existing_contour)::geography);
+            EXCEPTION WHEN OTHERS THEN
+                v_superficie_conquise := v_superficie;
+            END;
+        END IF;
+    END IF;
+
     -- 1. Insérer la session de course
     INSERT INTO public.courses (
         utilisateur_id, date_debut, date_fin, distance_totale, duree_secondes, est_bouclee,
@@ -1052,7 +1088,7 @@ BEGIN
             END, 
             0
         ),
-        p_nom_course, p_legende, v_superficie, p_total_steps, p_average_cadence, p_image_url
+        p_nom_course, p_legende, v_superficie_conquise, p_total_steps, p_average_cadence, p_image_url
     )
     ON CONFLICT (utilisateur_id, date_debut) DO NOTHING
     RETURNING id INTO v_course_id;
@@ -1191,10 +1227,15 @@ BEGIN
                 SELECT array_agg(ST_X(geom) || ' ' || ST_Y(geom)) INTO v_new_points
                 FROM ST_DumpPoints(v_geom);
 
-                UPDATE public.territoires 
+                UPDATE public.territoires
                 SET contour = v_geom,
                     superficie_m2 = v_superficie,
                     points = v_new_points,
+                    -- Refresh guilde_id from the player's CURRENT guild on every
+                    -- conquest so it self-heals if it had gone stale (see
+                    -- get_territoires_geojson comment) instead of staying frozen at
+                    -- whatever guild the player belonged to when the row was created.
+                    guilde_id = v_guilde_id,
                     derniere_mise_a_jour = now()
                 WHERE id = v_existing_id;
             ELSE
@@ -1218,9 +1259,25 @@ REVOKE EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time z
 GRANT EXECUTE ON FUNCTION public.enregistrer_course(uuid, timestamp with time zone, timestamp with time zone, float, float, boolean, text[], float, float, float, float, float, float, integer, integer, text, text, jsonb, text) TO authenticated, service_role;
 
 -- B. Récupération du Feed de Courses (Strava-like, returning reactions and comments)
+--
+-- p_limit/p_offset bornent un appel qui, sans ça, renvoyait l'intégralité de
+-- l'historique (amis + guilde + proximité), tracé GPS complet et réactions/commentaires
+-- inclus, en une seule réponse à chaque ouverture du feed — un coût qui grossit avec
+-- toute la base plutôt qu'avec ce que l'utilisateur voit réellement à l'écran. Défauts
+-- choisis pour rester rétrocompatibles : le client Android actuel n'appelle cette RPC
+-- qu'avec p_utilisateur_id (PostgREST accepte un sous-ensemble des paramètres nommés),
+-- donc il applique déjà ce plafond sans modification. Note : ce LIMIT borne la taille de
+-- la réponse, pas encore le travail interne (course_points/course_reactions_agg/
+-- course_comments_agg agrègent toujours sur l'ensemble des tables sous-jacentes avant le
+-- filtrage final) — une réécriture "filtrer d'abord, enrichir ensuite" serait l'étape
+-- suivante si ça devient un goulot d'étranglement mesuré.
 DROP FUNCTION IF EXISTS public.get_feed_courses(uuid);
 
-CREATE OR REPLACE FUNCTION public.get_feed_courses(p_utilisateur_id uuid)
+CREATE OR REPLACE FUNCTION public.get_feed_courses(
+    p_utilisateur_id uuid,
+    p_limit integer DEFAULT 50,
+    p_offset integer DEFAULT 0
+)
 RETURNS TABLE (
     id                  uuid,
     utilisateur_id      uuid,
@@ -1353,12 +1410,13 @@ BEGIN
                 50000
             )
         )
-    ORDER BY c.date_debut DESC;
+    ORDER BY c.date_debut DESC
+    LIMIT p_limit OFFSET p_offset;
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.get_feed_courses(uuid) FROM public;
-GRANT  EXECUTE ON FUNCTION public.get_feed_courses(uuid) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.get_feed_courses(uuid, integer, integer) FROM public;
+GRANT  EXECUTE ON FUNCTION public.get_feed_courses(uuid, integer, integer) TO authenticated, service_role;
 
 -- C. Récupération des territoires par Viewport (Bounding Box)
 DROP FUNCTION IF EXISTS public.get_territoires_in_bbox(double precision, double precision, double precision, double precision);
@@ -1498,7 +1556,11 @@ SELECT
   CASE WHEN p.share_location THEN p.longitude ELSE null END as longitude,
   p.total_area_m2,
   p.loop_count,
-  COALESCE((SELECT SUM(c.distance_totale) FROM public.courses c WHERE c.utilisateur_id = p.id), 0.0) as distance_totale,
+  -- Cached on profiles by update_profile_stats_on_course instead of a correlated
+  -- SUM(courses...) subquery evaluated per row: the leaderboard is fetched in full,
+  -- unfiltered, on every app open (see LeaderboardViewModel.loadLeaderboardData), so an
+  -- N+1-style per-row subquery here got strictly worse as the course history grew.
+  p.distance_totale,
   g.nom as guilde_nom,
   g.couleur_hex as guilde_couleur,
   g.tag as guilde_tag
@@ -1507,9 +1569,9 @@ LEFT JOIN public.guildes g ON p.guilde_id = g.id;
 
 -- B. Classement général des clans (avec tag, boucles et distance)
 DROP VIEW IF EXISTS public.clan_leaderboard CASCADE;
-CREATE OR REPLACE VIEW public.clan_leaderboard 
+CREATE OR REPLACE VIEW public.clan_leaderboard
 WITH (security_invoker = on) AS
-SELECT 
+SELECT
     g.id,
     g.nom,
     g.tag,
@@ -1518,7 +1580,9 @@ SELECT
     COALESCE(SUM(p.total_area_m2), 0.0) as total_area_m2,
     COUNT(p.id) as membre_count,
     COALESCE(SUM(p.loop_count), 0) as loop_count,
-    COALESCE(SUM((SELECT COALESCE(SUM(c.distance_totale), 0.0) FROM public.courses c WHERE c.utilisateur_id = p.id)), 0.0) as distance_totale
+    -- Same cached-column fix as public.leaderboard above, instead of a subquery nested
+    -- inside SUM() re-scanning courses for every member of every clan on every read.
+    COALESCE(SUM(p.distance_totale), 0.0) as distance_totale
 FROM public.guildes g
 LEFT JOIN public.profiles p ON p.guilde_id = g.id
 GROUP BY g.id, g.nom, g.tag, g.couleur_hex, g.avatar_url;
@@ -1672,6 +1736,25 @@ SET total_area_m2 = COALESCE(
     (SELECT SUM(superficie_m2) FROM public.territoires t WHERE t.utilisateur_id = p.id),
     0.0
 );
+
+-- Recalculer la distance totale mise en cache (nouvelle colonne profiles.distance_totale
+-- consommée par les vues leaderboard/clan_leaderboard, voir plus haut)
+UPDATE public.profiles p
+SET distance_totale = COALESCE(
+    (SELECT SUM(c.distance_totale) FROM public.courses c WHERE c.utilisateur_id = p.id),
+    0.0
+);
+
+-- Garde-fou : un seul territoire par joueur.
+-- enregistrer_course et delete_course_territory_portion supposent tous les deux qu'au
+-- plus une ligne "territoires" existe par utilisateur_id (SELECT ... WHERE
+-- utilisateur_id = ... sans LIMIT/ORDER BY) ; le script de nettoyage ci-dessus a déjà
+-- fusionné les doublons hérités une fois. Cette contrainte empêche qu'un futur doublon
+-- (ligne fantôme jamais mise à jour) ne réapparaisse et ne s'affiche comme une "base"
+-- fantôme supplémentaire sur la carte. Placée après le nettoyage pour ne jamais échouer
+-- au replay du schéma.
+ALTER TABLE public.territoires DROP CONSTRAINT IF EXISTS territoires_utilisateur_id_unique;
+ALTER TABLE public.territoires ADD CONSTRAINT territoires_utilisateur_id_unique UNIQUE (utilisateur_id);
 
 -- ====================================================================
 -- SÉCURISATION ET ACCÈS STOCKAGE (AVATARS & PHOTOS DE COURSES)
@@ -1888,7 +1971,7 @@ RETURNS TABLE (
 #variable_conflict use_column
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         t.id,
         t.utilisateur_id,
         p.pseudonyme,
@@ -1901,7 +1984,11 @@ BEGIN
         ST_AsGeoJSON(t.contour)::text as geojson
     FROM public.territoires t
     JOIN public.profiles p ON t.utilisateur_id = p.id
-    LEFT JOIN public.guildes g ON t.guilde_id = g.id;
+    -- Join on the player's CURRENT guild (p.guilde_id), not t.guilde_id: the latter is
+    -- only stamped once when the territoire row is first created and is never updated
+    -- when the player later switches/leaves guilds, so it goes stale (see
+    -- get_territoires_in_bbox and clan_leaderboard, which correctly use p.guilde_id).
+    LEFT JOIN public.guildes g ON p.guilde_id = g.id;
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 

@@ -33,8 +33,8 @@ Arpent.io/
 │       │   ├── ArpentMainScreen.kt         Scaffold post-auth (bottom nav Carte/Courses/Guilde/Classement/Profil) + notifs in-app
 │       │   ├── AuthScreen.kt               Connexion / inscription e-mail (Supabase Auth)
 │       │   ├── ConquestMapScreen.kt        Carte de conquête (Mapbox) — le rendu, pas le calcul géométrique (~1550 lignes)
-│       │   ├── CoursesScreen.kt            Feed de courses, aperçu de tracé — ATTENTION: redéfinit sa propre distance
-│       │   │                               Haversine au lieu de réutiliser utils/GeoUtils.kt (~1900 lignes, le + gros fichier)
+│       │   ├── CoursesScreen.kt            Feed de courses, aperçu de tracé — calculateDistanceMeters délègue à
+│       │   │                               utils/GeoUtils.calculateDistance (~1900 lignes, le + gros fichier)
 │       │   ├── GuildeScreen.kt             Guildes/clans — section Social masquée "en construction" (voir commits c6d121c/6eef6dd)
 │       │   ├── LeaderboardScreen.kt        Classement joueurs/guildes — seul écran avec un ViewModel dédié
 │       │   ├── ProfileScreen.kt            Profil joueur + PlayerProfileDialog (~1700 lignes)
@@ -62,8 +62,10 @@ Arpent.io/
 │       │   └── LeaderboardModels.kt        DTOs classement (GuildRank, LeaderboardPlayer)
 │       │
 │       └── utils/
-│           ├── GeoUtils.kt                 Géométrie GPS pure — distance Haversine, aire de polygone, et surtout
-│           │                               splitIntoClosedPolygons : détecte la fermeture de boucle -> territoire (cœur du jeu)
+│           ├── GeoUtils.kt                 Géométrie GPS pure — distance Haversine, aire de polygone, splitIntoClosedPolygons
+│           │                               (détecte la fermeture de boucle -> territoire, cœur du jeu), et
+│           │                               groupRingsIntoPolygons (regroupe anneaux extérieurs/trous d'un territoire
+│           │                               multi-anneaux avant rendu — voir README §Points chauds)
 │           ├── StorageUtils.kt             Persistance locale territoires + saveRunToDatabase (écriture Supabase post-course)
 │           ├── NetworkUtils.kt             Vérification connectivité (déclenche la sync de PendingRunsQueue)
 │           └── ImageUtils.kt               Conversion image <-> base64 (upload avatar/bannière)
@@ -98,6 +100,7 @@ Arpent.io/
 ├── project-structure.json                   Cartographie machine-readable (source du serveur MCP)
 ├── structure.md                             Ce fichier
 ├── README.md                                Architecture technique en détail, stack, installation
+├── LICENSE                                  PolyForm Noncommercial License 1.0.0 — usage/clonage libres, commercialisation exclue, attribution obligatoire
 ├── AGENTS.md                                Onboarding agent IA — règle d'or MCP-first
 └── tools/project-map-mcp/                   Serveur MCP local exposant la cartographie (find_file, list_topics, ...)
 ```
@@ -121,12 +124,32 @@ Regroupements thématiques équivalents à ceux exposés par l'outil MCP `get_to
 
 ## Pièges connus (voir aussi README §Points chauds)
 
-- **`CoursesScreen.kt` redéfinit sa propre distance Haversine** au lieu de réutiliser
-  `utils/GeoUtils.kt` — un bug de calcul de distance doit être corrigé aux deux endroits.
+- **Rendu des territoires = anneaux extérieurs + trous, jamais un `PolygonAnnotation` par
+  anneau brut.** Un territoire multi-anneaux (`territoires.points` aplati, voir
+  `splitIntoClosedPolygons`) peut contenir un anneau intérieur (trou) issu d'un
+  `ST_Difference` — un adversaire qui referme une boucle entièrement à l'intérieur d'un
+  territoire ennemi perce un trou, pas une deuxième forme disjointe. Toujours passer par
+  `GeoUtils.groupRingsIntoPolygons` (utilisé dans `ConquestMapScreen.kt` et
+  `TerritoryMapBackground.kt`) avant d'appeler `PolygonAnnotation`, sinon le trou se
+  dessine comme une « base » fantôme solide de la même couleur — c'était le bug derrière
+  les rapports de « carte avec plusieurs bases / problèmes de soustraction ».
+- **`CoursesScreen.kt#calculateDistanceMeters` délègue désormais à
+  `utils/GeoUtils.calculateDistance`** (ancien piège : deux implémentations Haversine
+  indépendantes qui pouvaient diverger) — ne pas réintroduire une copie locale.
 - **Deux fichiers `CustomIcons.kt`** dans des packages différents (`ui/components` et `ui/icons`),
   générés, sans rapport de contenu — ne pas supposer qu'il y a doublon ou fusionner par erreur.
 - **Section Social de `GuildeScreen.kt` masquée** derrière un placeholder « en construction » —
   vérifier l'état de ce flag avant de considérer les fonctionnalités sociales comme actives.
-- **Trigger SQL de recalcul de territoire** (`supabase_schema.sql`, ~ligne 605) : ne pas revenir à
-  un simple `ST_Difference` lors de la suppression d'une course, un bug déjà corrigé une fois pour
-  cette raison précise (voir le commentaire en base).
+- **Trigger SQL de recalcul de territoire** (`supabase_schema.sql`, section
+  `delete_course_territory_portion`) : ne pas revenir à un simple `ST_Difference` lors de
+  la suppression d'une course, un bug déjà corrigé une fois pour cette raison précise
+  (voir le commentaire en base).
+- **`territoires.utilisateur_id` est maintenant `UNIQUE`** (contrainte
+  `territoires_utilisateur_id_unique`) : le code (`enregistrer_course`,
+  `delete_course_territory_portion`) a toujours supposé au plus une ligne par joueur sans
+  que la base ne l'impose ; ne pas retirer cette contrainte sans revoir ce code.
+- **`profiles.distance_totale` est une colonne cache** tenue à jour par
+  `update_profile_stats_on_course`, consommée par les vues `leaderboard`/
+  `clan_leaderboard` — ne pas revenir à un `SUM(courses.distance_totale)` en sous-requête
+  corrélée dans ces vues (coût N+1 sur un classement chargé en entier à chaque ouverture
+  de l'app, voir `LeaderboardViewModel`).

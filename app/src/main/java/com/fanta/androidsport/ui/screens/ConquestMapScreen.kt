@@ -90,8 +90,10 @@ import com.fanta.androidsport.ui.theme.ActiveOrange
 import com.fanta.androidsport.ui.theme.ElectricBlue
 import com.fanta.androidsport.ui.theme.NeonVolt
 import com.fanta.androidsport.utils.calculateDistance
+import com.fanta.androidsport.utils.closeRing
 import com.fanta.androidsport.utils.getPolygonArea
 import com.fanta.androidsport.utils.getPolygonCentroid
+import com.fanta.androidsport.utils.groupRingsIntoPolygons
 import com.fanta.androidsport.utils.saveRunToDatabase
 import com.fanta.androidsport.utils.saveTerritoriesLocally
 import com.fanta.androidsport.utils.splitIntoClosedPolygons
@@ -575,37 +577,34 @@ fun ConquestMapScreen(
                 )
             }
 
-            // Draw completed polygons (user's own territories)
-            completedPolygons.forEachIndexed { index, polygonPoints ->
+            // Draw completed polygons (user's own territories). Rings coming from the DB
+            // can include holes (see groupRingsIntoPolygons doc) — group them back into
+            // [exterior, hole...] sets before rendering so a hole punched by an
+            // opponent's loop shows as a gap instead of a solid phantom "extra base".
+            val ownPolygonGroups = remember(completedPolygons.toList()) {
+                groupRingsIntoPolygons(completedPolygons.map { closeRing(it) })
+            }
+            ownPolygonGroups.forEachIndexed { index, group ->
                 key("user_poly_$index") {
-                    val closedPoints = remember(polygonPoints) {
-                        if (polygonPoints.isNotEmpty() && 
-                            (polygonPoints.first().longitude() != polygonPoints.last().longitude() || 
-                             polygonPoints.first().latitude() != polygonPoints.last().latitude())) {
-                            polygonPoints + polygonPoints.first()
-                        } else {
-                            polygonPoints
-                        }
-                    }
-                    val polygonState = remember(closedPoints, parsedUserColor) {
+                    val polygonState = remember(group, parsedUserColor) {
                         PolygonAnnotationState().apply {
                             fillColor = parsedUserColor.copy(alpha = 0.50f)
                             fillOutlineColor = parsedUserColor
                         }
                     }
                     PolygonAnnotation(
-                        points = listOf(closedPoints),
+                        points = group,
                         polygonAnnotationState = polygonState
                     )
                 }
             }
 
             // Draw user avatar exactly once at centroid of largest polygon
-            val userLargestPolygon = remember(completedPolygons.size) {
-                completedPolygons.maxByOrNull { getPolygonArea(it) }
+            val userLargestGroup = remember(ownPolygonGroups) {
+                ownPolygonGroups.maxByOrNull { getPolygonArea(it[0]) }
             }
-            val userCentroid = remember(userLargestPolygon) {
-                userLargestPolygon?.let { getPolygonCentroid(it) }
+            val userCentroid = remember(userLargestGroup) {
+                userLargestGroup?.let { getPolygonCentroid(it[0]) }
             }
             if (userCentroid != null) {
                 ViewAnnotation(
@@ -640,26 +639,23 @@ fun ConquestMapScreen(
 
             // Draw other players' territories
             otherPlayersTerritories.forEach { player ->
+                // See ownPolygonGroups above: group rings into [exterior, hole...] sets
+                // so a chunk carved out of a player's territory renders as an actual
+                // hole instead of a solid phantom "extra base".
+                val playerPolygonGroups = remember(player.polygons) {
+                    groupRingsIntoPolygons(player.polygons.map { closeRing(it) })
+                }
                 key(player.playerId) {
-                    player.polygons.forEachIndexed { index, polygonPoints ->
+                    playerPolygonGroups.forEachIndexed { index, group ->
                         key(player.playerId + "_poly_$index") {
-                            val closedPoints = remember(polygonPoints) {
-                                if (polygonPoints.isNotEmpty() && 
-                                    (polygonPoints.first().longitude() != polygonPoints.last().longitude() || 
-                                     polygonPoints.first().latitude() != polygonPoints.last().latitude())) {
-                                    polygonPoints + polygonPoints.first()
-                                } else {
-                                    polygonPoints
-                                }
-                            }
-                            val polygonState = remember(closedPoints, player.empireColor) {
+                            val polygonState = remember(group, player.empireColor) {
                                 PolygonAnnotationState().apply {
                                     fillColor = player.empireColor.copy(alpha = 0.50f)
                                     fillOutlineColor = player.empireColor
                                 }
                             }
                             PolygonAnnotation(
-                                points = listOf(closedPoints),
+                                points = group,
                                 polygonAnnotationState = polygonState
                             )
                         }
@@ -667,11 +663,11 @@ fun ConquestMapScreen(
                 }
 
                 // Draw player avatar exactly once at centroid of largest polygon
-                val playerLargestPolygon = remember(player.polygons) {
-                    player.polygons.maxByOrNull { getPolygonArea(it) }
+                val playerLargestGroup = remember(playerPolygonGroups) {
+                    playerPolygonGroups.maxByOrNull { getPolygonArea(it[0]) }
                 }
-                val playerCentroid = remember(playerLargestPolygon) {
-                    playerLargestPolygon?.let { getPolygonCentroid(it) }
+                val playerCentroid = remember(playerLargestGroup) {
+                    playerLargestGroup?.let { getPolygonCentroid(it[0]) }
                 }
                 if (playerCentroid != null) {
                     ViewAnnotation(

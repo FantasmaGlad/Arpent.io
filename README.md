@@ -230,16 +230,54 @@ Tables principales : `profiles`, `courses`, `territoires`, `points_gps`, `guilde
 
 ## Points chauds et pièges connus
 
-- **Calcul de distance dupliqué.** `GeoUtils.kt` (module `app`) fournit la géométrie GPS de
-  référence (distance Haversine, aire de polygone, détection de fermeture de boucle), mais
-  `CoursesScreen.kt` redéfinit sa propre fonction de distance Haversine au lieu de la réutiliser. Un
-  bug de calcul de distance corrigé dans un des deux fichiers doit être vérifié/reporté dans l'autre.
+- **Rendu de territoires troués sur la carte (corrigé).** Un `territoires.points` peut
+  encoder plusieurs anneaux à plat (voir `splitIntoClosedPolygons`) : soit des morceaux de
+  territoire disjoints, soit — cas auparavant mal géré — un anneau **intérieur** (un trou)
+  quand `ST_Difference` retire une zone entièrement enclavée au milieu d'un territoire
+  existant. `ConquestMapScreen.kt` et `TerritoryMapBackground.kt` dessinaient chaque anneau
+  comme son propre `PolygonAnnotation` plein, donc un trou apparaissait comme une « base »
+  fantôme solide au lieu d'un vide — c'était la cause du bug « carte avec plusieurs bases /
+  problèmes de soustraction ». Fixé via `GeoUtils.groupRingsIntoPolygons`, qui régroupe les
+  anneaux en `[extérieur, trou...]` par signe d'aire (convention PostGIS : extérieur CCW,
+  trou CW) avant rendu. Tout nouveau code qui dessine un territoire doit passer par cette
+  fonction plutôt que d'itérer sur les anneaux bruts.
+- **Désynchronisation carte après course hors-ligne (corrigé).** Une course enregistrée
+  hors connexion ajoutait sa boucle brute (non fusionnée) à `completedPolygons` en local, et
+  `PendingRunsQueue.syncPendingRuns` (au retour réseau) poussait la course vers
+  `enregistrer_course` côté serveur sans jamais rappeler `syncTerritoriesFromDatabase` — la
+  carte affichait donc indéfiniment (jusqu'au redémarrage de l'app) les boucles non
+  fusionnées au lieu du territoire réellement fusionné en base. `ArpentMainScreen.kt`
+  rappelle maintenant `syncTerritoriesFromDatabase` juste après chaque `syncPendingRuns`.
+- **Calcul de distance dupliqué (corrigé).** `CoursesScreen.kt#calculateDistanceMeters`
+  délègue maintenant à `GeoUtils.calculateDistance` au lieu de garder une seconde
+  implémentation Haversine indépendante qui pouvait diverger silencieusement.
 - **Recalcul de territoire à la suppression d'une course.** Le trigger PL/pgSQL correspondant
   (`supabase_schema.sql`, section « Retrait de la portion de territoire lors de la suppression
   d'une course ») a déjà été corrigé une fois : un simple `ST_Difference` entre le territoire fusionné
   et le polygone de la course supprimée retire à tort une zone encore couverte par une autre course
   existante. Le calcul recompose désormais le territoire depuis zéro (union des polygones des
   courses restantes). Ne pas revenir à l'implémentation naïve.
+- **Un seul territoire par joueur, maintenant garanti en base.** Le code a toujours supposé
+  au plus une ligne `territoires` par `utilisateur_id` (`SELECT ... WHERE utilisateur_id = …`
+  sans filtre additionnel dans `enregistrer_course` et `delete_course_territory_portion`),
+  mais rien ne l'imposait en base — un historique de doublons avait déjà nécessité un script
+  de fusion ponctuel (voir « SCRIPT DE NETTOYAGE ET FUSION INITIALE DES DOUBLONS »). Une
+  contrainte `UNIQUE (utilisateur_id)` a été ajoutée après ce nettoyage pour empêcher qu'une
+  ligne fantôme ne réapparaisse et ne s'affiche comme une « base » fantôme sur la carte.
+- **`territoires.guilde_id` peut se désynchroniser (partiellement corrigé).** Cette colonne
+  n'est écrite qu'à la création de la ligne (ou remise à `NULL` à la dissolution d'un clan) ;
+  elle ne suivait pas un joueur qui change de guilde. `get_territoires_geojson` (web-admin)
+  la lisait directement et affichait donc un ancien clan — corrigé pour joindre sur
+  `profiles.guilde_id` (source vivante, comme `get_territoires_in_bbox` et
+  `clan_leaderboard` le faisaient déjà). `enregistrer_course` rafraîchit maintenant aussi
+  `territoires.guilde_id` à chaque conquête pour que la colonne se corrige d'elle-même.
+- **`profiles.distance_totale` : colonne cache (nouvelle).** Les vues `leaderboard` et
+  `clan_leaderboard` recalculaient `SUM(courses.distance_totale)` via une sous-requête
+  corrélée par ligne, alors que `LeaderboardViewModel` charge le classement complet, sans
+  filtre ni pagination, à chaque ouverture de l'app — un coût qui grossit avec l'historique
+  de courses de toute la base. `update_profile_stats_on_course` maintient maintenant
+  `profiles.distance_totale` en cache (même principe que `total_area_m2`), et les vues
+  lisent directement cette colonne.
 - **Fichiers d'icônes homonymes.** `ui/components/CustomIcons.kt` et `ui/icons/CustomIcons.kt` sont
   deux fichiers générés distincts (packages et jeux d'icônes différents) qui portent le même nom —
   vérifier le package avant de modifier ou de supposer un doublon.
@@ -254,6 +292,20 @@ Tables principales : `profiles`, `courses`, `territoires`, `points_gps`, `guilde
 - **Clé de service Supabase.** `web-admin/src/lib/supabaseAdmin.ts` utilise la clé `service_role`
   et ne doit jamais être importé depuis un composant client — uniquement depuis les routes API
   (`src/app/api/admin/*`).
+- **`courses.superficie_conquise` ≠ gain net de territoire (piège non corrigé, voir audit).**
+  Cette valeur, affichée dans le feed et utilisée pour l'XP, est l'aire brute de la boucle de
+  la course. Si la boucle recoupe le territoire déjà possédé par le même joueur,
+  `profiles.total_area_m2` (source du classement) n'augmente que de la surface réellement
+  nouvelle après `ST_Union` côté serveur — strictement inférieure à `superficie_conquise`
+  dans ce cas précis. Le feed peut donc annoncer un gain supérieur à ce que le classement
+  reflète ensuite. Non corrigé ici : cela suppose une décision produit (afficher l'aire
+  brute de la boucle, ou le gain net de territoire) plutôt qu'un simple bug de calcul.
+- **`get_feed_courses` et le classement global ne sont pas paginés.** `get_feed_courses`
+  renvoie tout l'historique visible (amis + guilde + proximité) avec le tracé GPS complet de
+  chaque course en un seul appel, et `LeaderboardViewModel` charge `SELECT * FROM
+  leaderboard` sans filtre ni `LIMIT` à chaque ouverture de l'app pour trier côté client. Les
+  deux passent à l'échelle avec le nombre total de joueurs/courses plutôt qu'avec ce que
+  l'utilisateur voit réellement à l'écran — à surveiller si la base grossit.
 
 ## Tests
 
@@ -266,4 +318,4 @@ stratégie retenue.
 
 ## Licence
 
-Projet propriétaire — tous droits réservés. Aucune licence d'utilisation, de modification ou de redistribution n'est accordée sans autorisation explicite de l'auteur.
+Distribué sous [PolyForm Noncommercial License 1.0.0](LICENSE) : le code est librement consultable, clonable et modifiable à des fins non commerciales, à condition de conserver l'attribution (voir la mention `Required Notice` dans le fichier [LICENSE](LICENSE)). Toute utilisation commerciale est exclue sans autorisation explicite de l'auteur.

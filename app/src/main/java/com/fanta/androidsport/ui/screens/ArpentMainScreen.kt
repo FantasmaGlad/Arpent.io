@@ -290,10 +290,17 @@ fun ArpentMainScreen(userId: String) {
         refreshStats()
         refreshNotifications()
         syncTerritoriesFromDatabase(userId, context, completedPolygons)
-        
-        // Sync pending offline runs immediately on startup/auth
+
+        // Sync pending offline runs immediately on startup/auth, then re-pull the
+        // now-authoritative merged territory from the DB: enregistrer_course unions
+        // each offline run into the player's single territoire row server-side, but
+        // completedPolygons still holds the raw, unmerged loops that were appended
+        // locally while offline (see saveRunToDatabase's onSuccess callback) — without
+        // this refresh the map keeps showing them as separate unmerged "bases" until
+        // the app is restarted.
         scope.launch {
             PendingRunsQueue.syncPendingRuns(context, supabase)
+            syncTerritoriesFromDatabase(userId, context, completedPolygons)
         }
     }
 
@@ -303,6 +310,7 @@ fun ArpentMainScreen(userId: String) {
             override fun onAvailable(network: android.net.Network) {
                 scope.launch {
                     PendingRunsQueue.syncPendingRuns(context, supabase)
+                    syncTerritoriesFromDatabase(userId, context, completedPolygons)
                 }
             }
         }

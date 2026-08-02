@@ -14,7 +14,7 @@
         "required": true,
         "location": "app/build.gradle.kts, bloc defaultConfig (champs versionCode et versionName)",
         "rule": "versionCode DOIT être incrémenté d'au moins 1 à CHAQUE build de release — Android refuse d'installer une mise à jour avec un versionCode égal ou inférieur à celui déjà installé. versionName suit un schéma libre \"MAJEUR.MINEUR\" : bump mineur pour une release normale (ex 8.1 -> 8.2), bump majeur seulement sur décision explicite de l'utilisateur.",
-        "currentAsOf2026-08-02": "versionCode=39, versionName=8.1. Le tag git 'v3.2' est obsolète / ne correspond à aucun schéma de version actif — ne pas s'y fier pour déduire la prochaine version."
+        "currentAsOf2026-08-02": "versionCode=40, versionName=8.2 (bump release, commit 36289a2). Le tag git 'v3.2' est obsolète / ne correspond à aucun schéma de version actif — ne pas s'y fier pour déduire la prochaine version. KEYSTORE_PATH dans .env pointait vers un fichier inexistant (/home/fanta/androidsport-release.jks) le 2026-08-02 ; corrigé localement vers /home/fanta/Dev/android/keystores/androidsport-release.jks (le vrai fichier, qui correspond au fallback par défaut de build.gradle.kts) — .env est gitignoré, cette correction n'est pas dans l'historique git."
       },
       "buildCommands": [
         "./gradlew bundleRelease    # génère l'AAB signé dans app/build/outputs/bundle/release/",

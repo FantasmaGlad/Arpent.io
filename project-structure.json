@@ -1,0 +1,416 @@
+{
+  "version": 1,
+  "_deployment": {
+    "_comment": "Runbook de build/publication/synchronisation, pensé pour qu'un agent IA soit autonome sur ces tâches. RÈGLE ABSOLUE : ne jamais écrire ici (ni dans aucun fichier versionné) un mot de passe, une clé API, un token ou un contenu de keystore — ce fichier est commité en clair dans git. Les secrets vivent exclusivement dans .env / web-admin/.env.local (gitignorés) ou dans les dashboards Vercel/Supabase. Statuts vérifiés le 2026-08-02 ; si un mécanisme a changé depuis (CLI relié, projet Vercel linké...), corrige cette section dans le même commit que le changement.",
+    "android": {
+      "distribution": "Pas encore publié sur Google Play. Distribution actuelle : APK signé partagé directement (pas de Play Console, pas de fastlane / gradle-play-publisher configuré). Si un jour l'app est soumise au Play Store, documenter ici le nouveau canal avant de l'utiliser.",
+      "signing": {
+        "mechanism": "app/build.gradle.kts (bloc signingConfigs.release) lit KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD depuis le fichier .env à la racine du repo (gitignoré, jamais commité), avec fallback sur les variables d'environnement du shell si .env est absent.",
+        "defaultKeystorePathFallback": "~/Dev/android/keystores/androidsport-release.jks — utilisé seulement si KEYSTORE_PATH est vide dans .env ET absent de l'environnement (voir app/build.gradle.kts).",
+        "howToCheck": "Les 4 variables sont actuellement renseignées dans .env sur ce poste. Avant un build release, vérifier leur présence avec un test de longueur (ex: awk -F= '{print $1\"=\"(length($2)>0)}' .env) plutôt que d'afficher/logger leur valeur.",
+        "warning": "Ne jamais imprimer, logger, copier dans un fichier versionné ou envoyer ailleurs le contenu de .env ou du .jks. Si une des 4 variables manque, le build release échoue ou produit un binaire mal signé — vérifier avant de lancer bundleRelease/assembleRelease, pas après."
+      },
+      "versionBump": {
+        "required": true,
+        "location": "app/build.gradle.kts, bloc defaultConfig (champs versionCode et versionName)",
+        "rule": "versionCode DOIT être incrémenté d'au moins 1 à CHAQUE build de release — Android refuse d'installer une mise à jour avec un versionCode égal ou inférieur à celui déjà installé. versionName suit un schéma libre \"MAJEUR.MINEUR\" : bump mineur pour une release normale (ex 8.1 -> 8.2), bump majeur seulement sur décision explicite de l'utilisateur.",
+        "currentAsOf2026-08-02": "versionCode=39, versionName=8.1. Le tag git 'v3.2' est obsolète / ne correspond à aucun schéma de version actif — ne pas s'y fier pour déduire la prochaine version."
+      },
+      "buildCommands": [
+        "./gradlew bundleRelease    # génère l'AAB signé dans app/build/outputs/bundle/release/",
+        "./gradlew assembleRelease  # génère l'APK signé dans app/build/outputs/apk/release/ (utilisé pour la distribution directe actuelle)"
+      ],
+      "verifySteps": [
+        "./gradlew :app:compileDebugKotlin -q   # compilation rapide à faire passer avant tout build release",
+        "Confirmer la présence de app/build/outputs/apk/release/*.apk (ou bundle/release/*.aab) et que le versionCode a bien été incrémenté avant de considérer la release prête"
+      ]
+    },
+    "webAdmin": {
+      "platform": "Vercel",
+      "deployMechanism": "Auto-déploiement en production via l'intégration GitHub de Vercel à chaque push sur la branche main (confirmé par l'utilisateur). Pas de vercel.json ni de web-admin/.vercel/project.json en local : le lien projet est géré côté Vercel/GitHub, pas par la CLI locale sur ce poste.",
+      "agentAutonomy": "L'agent est autorisé à pousser sur main pour déclencher un déploiement de production de façon autonome, À CONDITION d'avoir fait passer les vérifications ci-dessous AVANT de pousser — il n'y a pas d'étape de validation manuelle intermédiaire entre le push et la prod : un push cassé casse directement la prod.",
+      "buildCommands": [
+        "cd web-admin && npm install",
+        "npm run lint",
+        "npm run build   # doit passer en local avant tout push sur main : c'est la même commande que Vercel exécute en prod"
+      ],
+      "envVarsSync": {
+        "mechanism": "Aucun lien CLI local à la date de rédaction (web-admin/.vercel/ absent) : les variables d'environnement de production vivent uniquement dans le dashboard Vercel (Project Settings > Environment Variables), pas dans un fichier local synchronisé.",
+        "toEstablishCliLink": "Depuis web-admin/ : `vercel link` (associe ce dossier au projet Vercel), puis `vercel env pull .env.local` pour rapatrier les valeurs de prod en local, ou `vercel env add <NAME>` pour en ajouter une nouvelle. Pas encore fait sur ce poste — à établir avant de prétendre synchroniser automatiquement les env vars.",
+        "localReference": "web-admin/.env.example liste les noms de variables attendues (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN) — le garder à jour si une variable est ajoutée/renommée, sans jamais y mettre de vraie valeur."
+      }
+    },
+    "supabaseSchemaSync": {
+      "sourceOfTruth": "supabase_schema.sql à la racine du repo — fichier unique, pas de dossier supabase/migrations/.",
+      "idempotent": "Le fichier est écrit pour être rejoué intégralement sans casse : CREATE TABLE/INDEX/EXTENSION IF NOT EXISTS, ALTER TABLE ... ADD COLUMN IF NOT EXISTS, DROP POLICY IF EXISTS avant recréation. Rejouer le fichier ENTIER après une modification est la méthode normale de synchronisation, pas des migrations incrémentales écrites à la main.",
+      "currentMechanism": "MANUEL à la date de rédaction : coller/exécuter supabase_schema.sql dans l'éditeur SQL du dashboard du projet Supabase de prod (référence dans SUPABASE_PROJECT_ID, .env). La CLI Supabase est installée et authentifiée sur ce poste, mais `supabase projects list` ne fait apparaître aucun projet correspondant à SUPABASE_PROJECT_ID pour le compte connecté — la CLI n'est donc PAS utilisable telle quelle pour un `supabase link` / `supabase db push` automatisé sans reconfiguration préalable (ré-authentification avec le bon compte, ou connexion Postgres directe fournie par l'utilisateur).",
+      "warning": "Ne jamais générer ou exécuter un DROP TABLE, TRUNCATE, ou une suppression/renommage de colonne contenant des données sans confirmation explicite de l'utilisateur — l'idempotence documentée ci-dessus ne couvre que les CREATE/ADD/DROP POLICY, jamais une perte de données."
+    }
+  },
+  "generatedFrom": "structure.md",
+  "lastReviewed": "2026-08-02 (post-849e6cf)",
+  "note": "Cartographie machine-readable du dépôt, en complément de structure.md (lisible par un humain) et README.md (architecture en détail). Sert de source au serveur MCP local (tools/project-map-mcp/server.mjs). Mets à jour CE fichier ET structure.md dans le MÊME commit si tu ajoutes/déplaces/supprimes un fichier important — sinon les deux deviennent trompeurs. IMPORTANT: ce fichier est volontairement à la RACINE du repo (pas dans .claude/), car .claude/, .agents/ et .mcp.json sont gitignorés dans ce projet (config d'outillage personnelle, jamais commitée). Placer la cartographie ici la garde versionnée avec le code, conformément au principe qui la justifie. Voir aussi la clé _deployment ci-dessous (runbook de build/publication/synchronisation, exposé par l'outil MCP get_deployment_runbook) — NE JAMAIS y écrire de secret (mot de passe, clé API, token) : ce fichier est commité en clair dans git.",
+  "workspaces": [
+    {
+      "name": "app",
+      "path": "app",
+      "dependsOn": [],
+      "description": "Application Android (Kotlin, Jetpack Compose). Communique directement avec Supabase (Postgrest/Auth/Storage), pas de backend applicatif intermédiaire. Seul module Gradle du projet (voir settings.gradle.kts)."
+    },
+    {
+      "name": "web-admin",
+      "path": "web-admin",
+      "dependsOn": [],
+      "description": "Console d'administration Next.js (App Router). Déployée sur Vercel. Ne dépend pas du module app (aucun code partagé) mais lit/écrit la même base Supabase, côté serveur avec la clé service."
+    }
+  ],
+  "entries": [
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/MainActivity.kt",
+      "workspace": "app",
+      "tags": ["entrypoint", "activity"],
+      "description": "Unique Activity Android de l'app. Se contente de poser le contenu Compose racine (ArpentApp) — toute la logique d'écran vit dans ui/screens."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/ArpentApp.kt",
+      "workspace": "app",
+      "tags": ["navigation", "nav-host", "auth"],
+      "description": "Racine du graphe de navigation Compose. Bascule entre AuthScreen et ArpentMainScreen selon l'état de session Supabase — c'est le seul endroit qui décide si l'utilisateur est authentifié."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/ArpentMainScreen.kt",
+      "workspace": "app",
+      "tags": ["navigation", "scaffold", "notifications"],
+      "description": "Scaffold principal post-authentification (bottom navigation entre Carte, Courses, Guilde, Classement, Profil). Fichier volumineux (~1000 lignes) ; contient aussi NotificationItem/NotificationRow pour le centre de notifications in-app."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/AuthScreen.kt",
+      "workspace": "app",
+      "tags": ["auth", "supabase", "login"],
+      "description": "Écran de connexion / inscription par e-mail via Supabase Auth. Décalage de +30dp appliqué récemment (commit c6d121c) — vérifier l'alignement si on retouche le layout."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/ConquestMapScreen.kt",
+      "workspace": "app",
+      "tags": ["carte", "mapbox", "territoire", "conquete", "gps"],
+      "description": "Écran carte de conquête (Mapbox). Affiche les territoires de tous les joueurs par bounding box visible et gère RouteTraceView (tracé GPS en cours). Fichier très volumineux (~1550 lignes) ; contient la logique de rendu, pas le calcul géométrique (voir utils/GeoUtils.kt)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/CoursesScreen.kt",
+      "workspace": "app",
+      "tags": ["courses", "feed", "historique"],
+      "description": "Le plus gros fichier du projet (~1900 lignes) : feed des courses (FeedCourseCard), aperçu de tracé (RoutePreviewCanvas/RouteMapPreview), parsing de timestamps GPS. ATTENTION : redéfinit sa propre calculateDistanceMeters (Haversine) au lieu de réutiliser utils/GeoUtils.calculateDistance — les deux implémentations doivent rester cohérentes si un bug de calcul de distance est corrigé."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/GuildeScreen.kt",
+      "workspace": "app",
+      "tags": ["guilde", "clan", "social"],
+      "description": "Écrans guilde/clan (création, invitations, rôles chef/adjoint/membre). La section Social est actuellement masquée derrière un placeholder « en construction » (commit c6d121c, 6eef6dd) — vérifier l'état de ce flag avant de supposer que les fonctionnalités sociales sont actives en prod."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/LeaderboardScreen.kt",
+      "workspace": "app",
+      "tags": ["classement", "leaderboard"],
+      "description": "Classement joueurs/guildes par surface conquise. Enum MetricFilter (TERRITOIRE/DISTANCE/BOUCLES) pilote le tri ; c'est le seul écran adossé à un ViewModel dédié (voir ui/viewmodel/LeaderboardViewModel.kt)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/screens/ProfileScreen.kt",
+      "workspace": "app",
+      "tags": ["profil", "avatar", "banniere"],
+      "description": "Écran profil joueur (~1700 lignes) + PlayerProfileDialog pour la vue profil d'un tiers. Gère avatar/bannière et les statistiques (XP, surface totale, historique)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/viewmodel/LeaderboardViewModel.kt",
+      "workspace": "app",
+      "tags": ["architecture", "viewmodel"],
+      "description": "Seul ViewModel du projet. Tous les autres écrans gèrent leur état directement dans le Composable (remember/LaunchedEffect) sans couche ViewModel dédiée — incohérence d'architecture à connaître avant d'ajouter un nouvel écran (aligner sur le style dominant plutôt que d'introduire un deuxième pattern isolé)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/components/ColorWheel.kt",
+      "workspace": "app",
+      "tags": ["couleur", "empire", "territoire"],
+      "description": "Sélecteur de couleur circulaire utilisé pour choisir la couleur d'empire/territoire du joueur (affichée sur la carte de conquête)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/components/TerritoryMapBackground.kt",
+      "workspace": "app",
+      "tags": ["carte", "territoire", "rendu"],
+      "description": "Rendu du fond de carte stylisé utilisé pour prévisualiser un territoire (hors carte Mapbox interactive complète)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/components/AvatarImage.kt",
+      "workspace": "app",
+      "tags": ["avatar", "image", "coil"],
+      "description": "Chargement de l'image de profil via Coil avec fallback par défaut — utilisé partout où un avatar joueur est affiché (feed, profil, classement, guilde)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/components/CustomIcons.kt",
+      "workspace": "app",
+      "tags": ["icons", "generated"],
+      "description": "Icônes vectorielles générées (jeu d'icônes de style Google, ex. GoogleEditIcon), package ui.components. Ne pas confondre avec l'autre fichier de même nom ui/icons/CustomIcons.kt (package différent, jeu d'icônes différent) — les deux coexistent sans se chevaucher mais peuvent tromper une recherche par nom de fichier seul."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/ui/icons/CustomIcons.kt",
+      "workspace": "app",
+      "tags": ["icons", "generated"],
+      "description": "Second fichier d'icônes générées (~780 lignes, ex. aod_watch), package ui.icons — distinct de ui/components/CustomIcons.kt malgré le nom identique. Voir la note sur ce dernier."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/data/model/CourseModels.kt",
+      "workspace": "app",
+      "tags": ["model", "courses", "feed"],
+      "description": "DTOs kotlinx.serialization mappant les tables courses/course_reactions/course_commentaires (CourseItem, GPSPoint, CourseReaction, CourseCommentaire, FeedCourseItem)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/data/model/GuildModels.kt",
+      "workspace": "app",
+      "tags": ["model", "guilde", "clan", "amis"],
+      "description": "DTOs pour amis/guildes (FriendItem, PendingRequestItem, ProximitySuggestion, ClanMember, ClanItem, GuildeInvitationItem)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/data/model/LeaderboardModels.kt",
+      "workspace": "app",
+      "tags": ["model", "classement"],
+      "description": "DTOs du classement (GuildRank, LeaderboardPlayer) alimentant LeaderboardScreen/LeaderboardViewModel."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/LocationTrackingService.kt",
+      "workspace": "app",
+      "tags": ["gps", "service", "tracking", "foreground"],
+      "description": "Service Android en premier plan, cœur du tracking GPS — continue d'enregistrer écran éteint / app en arrière-plan. Toute modification de la fréquence/precision de mesure GPS passe par ce fichier."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/LocationTrackerState.kt",
+      "workspace": "app",
+      "tags": ["gps", "state", "singleton"],
+      "description": "Objet singleton exposant l'état du tracking en cours (StateFlow) partagé entre LocationTrackingService et les Composables qui affichent la course en direct."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/PendingRunsQueue.kt",
+      "workspace": "app",
+      "tags": ["offline", "room", "sync"],
+      "description": "File d'attente des courses enregistrées hors-ligne. Orchestre la synchronisation vers Supabase dès le retour réseau (voir utils/NetworkUtils.kt) — s'appuie sur PendingRunDao/PendingRunEntity/AppDatabase (Room)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/PendingRunDao.kt",
+      "workspace": "app",
+      "tags": ["offline", "room", "dao"],
+      "description": "DAO Room pour la file d'attente des courses hors-ligne."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/PendingRunEntity.kt",
+      "workspace": "app",
+      "tags": ["offline", "room", "entity"],
+      "description": "Entité Room de la file d'attente + Converters (sérialisation des types complexes, ex. listes de points GPS, pour le stockage SQLite)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/AppDatabase.kt",
+      "workspace": "app",
+      "tags": ["offline", "room", "database"],
+      "description": "Définition de la base Room locale (file d'attente hors-ligne). Toute migration de schéma local passe par ce fichier."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/SupabaseClient.kt",
+      "workspace": "app",
+      "tags": ["supabase", "auth", "config"],
+      "description": "Configuration unique du client Supabase (Postgrest/Auth/Storage) partagée par toute l'application — point central si les clés/URL Supabase ou les modules du SDK changent."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/MapPreloader.kt",
+      "workspace": "app",
+      "tags": ["mapbox", "cache", "performance"],
+      "description": "Préchargement du style/des tuiles Mapbox pour accélérer l'affichage initial de la carte de conquête."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/NotificationScheduler.kt",
+      "workspace": "app",
+      "tags": ["notifications", "alarm"],
+      "description": "Programmation des notifications locales (rappels) — coordonne avec NotificationReceiver."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/NotificationReceiver.kt",
+      "workspace": "app",
+      "tags": ["notifications", "broadcast-receiver"],
+      "description": "BroadcastReceiver qui reçoit les alarmes programmées par NotificationScheduler et déclenche l'affichage de la notification système."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/utils/GeoUtils.kt",
+      "workspace": "app",
+      "tags": ["gps", "geometrie", "territoire", "conquete"],
+      "description": "Géométrie GPS pure (sans dépendance Android) : distance Haversine (calculateDistance), aire de polygone (shoelace, estimateAreaKm2/getPolygonArea), centroïde, et surtout splitIntoClosedPolygons — la fonction qui détecte qu'une boucle GPS s'est refermée et doit devenir un territoire. C'est le cœur de la mécanique de jeu. Voir aussi CoursesScreen.kt qui redéfinit sa propre distance Haversine séparément."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/utils/StorageUtils.kt",
+      "workspace": "app",
+      "tags": ["storage", "supabase", "territoire"],
+      "description": "Persistance locale des territoires (SharedPreferences/fichiers) + saveRunToDatabase, le point d'entrée qui écrit une course terminée vers Supabase (déclenche les triggers PL/pgSQL de recalcul de superficie côté base, voir supabase_schema.sql)."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/utils/NetworkUtils.kt",
+      "workspace": "app",
+      "tags": ["network", "connectivity"],
+      "description": "Simple vérification de connectivité réseau (isNetworkAvailable), utilisée pour déclencher la synchronisation de PendingRunsQueue."
+    },
+    {
+      "path": "app/src/main/java/com/fanta/androidsport/utils/ImageUtils.kt",
+      "workspace": "app",
+      "tags": ["image", "base64", "upload"],
+      "description": "Conversion image <-> base64 (uriToBase64/base64ToImageBitmap) utilisée pour l'upload d'avatars/bannières vers Supabase Storage."
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "workspace": "app",
+      "tags": ["gradle", "dependances", "versions"],
+      "description": "Catalogue de versions Gradle (version catalog). Toute montée de version (AGP, Kotlin, Compose BOM, SDK Supabase/Mapbox/Room) se fait ici, pas dans build.gradle.kts."
+    },
+    {
+      "path": "web-admin/src/app/layout.tsx",
+      "workspace": "web-admin",
+      "tags": ["layout", "root"],
+      "description": "Layout racine Next.js de la console admin — englobe AuthWrapper et Sidebar pour toutes les pages."
+    },
+    {
+      "path": "web-admin/src/app/page.tsx",
+      "workspace": "web-admin",
+      "tags": ["dashboard", "accueil"],
+      "description": "Page d'accueil de la console d'administration."
+    },
+    {
+      "path": "web-admin/src/app/clans/page.tsx",
+      "workspace": "web-admin",
+      "tags": ["guilde", "clan", "moderation"],
+      "description": "Modération des guildes/clans (~840 lignes) — consomme l'API interne web-admin/src/app/api/admin/guilds/route.ts."
+    },
+    {
+      "path": "web-admin/src/app/feed/page.tsx",
+      "workspace": "web-admin",
+      "tags": ["feed", "courses", "moderation"],
+      "description": "Modération du feed de courses côté admin (~630 lignes) — consomme l'API interne api/admin/courses/route.ts."
+    },
+    {
+      "path": "web-admin/src/app/profiles/page.tsx",
+      "workspace": "web-admin",
+      "tags": ["profil", "moderation"],
+      "description": "Le plus gros fichier de web-admin (~1600 lignes) : modération des profils utilisateurs — consomme api/admin/profiles/route.ts."
+    },
+    {
+      "path": "web-admin/src/app/stats/page.tsx",
+      "workspace": "web-admin",
+      "tags": ["statistiques", "recharts", "dashboard"],
+      "description": "Statistiques globales (Recharts) sur les joueurs/guildes/courses."
+    },
+    {
+      "path": "web-admin/src/app/api/admin/courses/route.ts",
+      "workspace": "web-admin",
+      "tags": ["api", "admin", "courses"],
+      "description": "Route API Next.js (PUT/DELETE) pour la modération des courses, utilise supabaseAdmin (clé service) — jamais appelée avec la clé publique."
+    },
+    {
+      "path": "web-admin/src/app/api/admin/guilds/route.ts",
+      "workspace": "web-admin",
+      "tags": ["api", "admin", "guilde"],
+      "description": "Route API Next.js (PUT/DELETE) pour la modération des guildes, utilise supabaseAdmin (clé service)."
+    },
+    {
+      "path": "web-admin/src/app/api/admin/profiles/route.ts",
+      "workspace": "web-admin",
+      "tags": ["api", "admin", "profil"],
+      "description": "Route API Next.js (PUT/DELETE) pour la modération des profils, utilise supabaseAdmin (clé service)."
+    },
+    {
+      "path": "web-admin/src/lib/supabaseAdmin.ts",
+      "workspace": "web-admin",
+      "tags": ["supabase", "service-role", "server-only"],
+      "description": "Client Supabase avec la clé service (service_role) — server-only, ne doit JAMAIS être importé dans un composant client. Utilisé exclusivement par les routes api/admin/*."
+    },
+    {
+      "path": "web-admin/src/lib/supabase.ts",
+      "workspace": "web-admin",
+      "tags": ["supabase", "client"],
+      "description": "Client Supabase avec la clé publique — utilisé côté client pour la lecture/auth de la console admin."
+    },
+    {
+      "path": "web-admin/src/components/AuthWrapper.tsx",
+      "workspace": "web-admin",
+      "tags": ["auth", "guard"],
+      "description": "Garde d'authentification de la console admin — encapsule les pages protégées, redirige si pas de session Supabase valide."
+    },
+    {
+      "path": "web-admin/src/components/Sidebar.tsx",
+      "workspace": "web-admin",
+      "tags": ["navigation", "layout"],
+      "description": "Navigation latérale de la console admin (liens vers clans/feed/profiles/stats)."
+    },
+    {
+      "path": "supabase_schema.sql",
+      "workspace": "app",
+      "tags": ["database", "schema", "rls", "postgis", "trigger"],
+      "description": "Schéma complet de la base (tables, RLS, fonctions, triggers), rejouable sur un projet Supabase neuf. Contient notamment (~ligne 605) un trigger de recalcul de territoire documenté en commentaire : NE PAS revenir à un simple ST_Difference lors de la suppression d'une course, car ça retire à tort une zone encore justifiée par une autre course existante — le calcul doit repartir de zéro en unionnant les polygones des courses restantes. Tables principales : profiles, courses, territoires, points_gps, guildes, guilde_invitations, amis, notifications, course_reactions, course_commentaires, admins, profile_area_history, profile_guilde_history."
+    },
+    {
+      "path": "MapBoxStyle/style.json",
+      "workspace": "app",
+      "tags": ["mapbox", "style", "carte"],
+      "description": "Style de carte Mapbox personnalisé (JSON + sprites dans MapBoxStyle/sprite_images/) utilisé par la carte de conquête (app) et par Mapbox GL JS (web-admin)."
+    }
+  ],
+  "topics": {
+    "authentification": [
+      "app/src/main/java/com/fanta/androidsport/SupabaseClient.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/screens/AuthScreen.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/screens/ArpentApp.kt",
+      "web-admin/src/components/AuthWrapper.tsx",
+      "web-admin/src/lib/supabaseAdmin.ts"
+    ],
+    "territoire-et-conquete": [
+      "app/src/main/java/com/fanta/androidsport/utils/GeoUtils.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/screens/ConquestMapScreen.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/components/TerritoryMapBackground.kt",
+      "app/src/main/java/com/fanta/androidsport/utils/StorageUtils.kt",
+      "supabase_schema.sql"
+    ],
+    "guilde-et-clan": [
+      "app/src/main/java/com/fanta/androidsport/ui/screens/GuildeScreen.kt",
+      "app/src/main/java/com/fanta/androidsport/data/model/GuildModels.kt",
+      "web-admin/src/app/clans/page.tsx",
+      "web-admin/src/app/api/admin/guilds/route.ts"
+    ],
+    "classement": [
+      "app/src/main/java/com/fanta/androidsport/ui/screens/LeaderboardScreen.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/viewmodel/LeaderboardViewModel.kt",
+      "app/src/main/java/com/fanta/androidsport/data/model/LeaderboardModels.kt"
+    ],
+    "tracking-gps-et-courses": [
+      "app/src/main/java/com/fanta/androidsport/LocationTrackingService.kt",
+      "app/src/main/java/com/fanta/androidsport/LocationTrackerState.kt",
+      "app/src/main/java/com/fanta/androidsport/utils/GeoUtils.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/screens/CoursesScreen.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/screens/ConquestMapScreen.kt"
+    ],
+    "file-hors-ligne": [
+      "app/src/main/java/com/fanta/androidsport/PendingRunsQueue.kt",
+      "app/src/main/java/com/fanta/androidsport/PendingRunDao.kt",
+      "app/src/main/java/com/fanta/androidsport/PendingRunEntity.kt",
+      "app/src/main/java/com/fanta/androidsport/AppDatabase.kt",
+      "app/src/main/java/com/fanta/androidsport/utils/NetworkUtils.kt"
+    ],
+    "profil-et-social": [
+      "app/src/main/java/com/fanta/androidsport/ui/screens/ProfileScreen.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/components/AvatarImage.kt",
+      "app/src/main/java/com/fanta/androidsport/ui/components/ColorWheel.kt",
+      "web-admin/src/app/profiles/page.tsx"
+    ],
+    "administration-et-moderation": [
+      "web-admin/src/app/api/admin/courses/route.ts",
+      "web-admin/src/app/api/admin/guilds/route.ts",
+      "web-admin/src/app/api/admin/profiles/route.ts",
+      "web-admin/src/app/clans/page.tsx",
+      "web-admin/src/app/feed/page.tsx",
+      "web-admin/src/app/profiles/page.tsx",
+      "web-admin/src/app/stats/page.tsx"
+    ],
+    "base-de-donnees": [
+      "supabase_schema.sql"
+    ]
+  }
+}

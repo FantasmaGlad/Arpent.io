@@ -28,3 +28,4 @@ failles.md
 .venv/
 web-admin/AGENTS.md
 web-admin/CLAUDE.md
+tools/project-map-mcp/node_modules/

@@ -14,6 +14,8 @@ Application Android de course à pied à mécanique de conquête territoriale : 
 - [Stack technique](#stack-technique)
 - [Structure du dépôt](#structure-du-dépôt)
 - [Base de données](#base-de-données)
+- [Points chauds et pièges connus](#points-chauds-et-pièges-connus)
+- [Tests](#tests)
 - [Licence](#licence)
 
 ---
@@ -215,11 +217,52 @@ Arpent.io/
 └── build.gradle.kts            # Configuration Gradle racine
 ```
 
+Cartographie fichier par fichier (rôle de chaque fichier notable, mots-clés de recherche, sujets
+transversaux) : voir [`structure.md`](structure.md) et sa version machine-readable
+[`project-structure.json`](project-structure.json), consultables aussi via le serveur MCP local
+décrit dans [`AGENTS.md`](AGENTS.md).
+
 ## Base de données
 
 Le fichier [`supabase_schema.sql`](supabase_schema.sql) contient l'intégralité du schéma : définitions de tables, contraintes, index, fonctions PL/pgSQL et politiques de sécurité au niveau ligne (RLS). Il ne contient aucune donnée réelle ni identifiant — c'est un schéma pur, exportable et rejouable sur un projet Supabase neuf.
 
 Tables principales : `profiles`, `courses`, `territoires`, `points_gps`, `guildes`, `guilde_invitations`, `amis`, `notifications`, `course_reactions`, `course_commentaires`, `admins`.
+
+## Points chauds et pièges connus
+
+- **Calcul de distance dupliqué.** `GeoUtils.kt` (module `app`) fournit la géométrie GPS de
+  référence (distance Haversine, aire de polygone, détection de fermeture de boucle), mais
+  `CoursesScreen.kt` redéfinit sa propre fonction de distance Haversine au lieu de la réutiliser. Un
+  bug de calcul de distance corrigé dans un des deux fichiers doit être vérifié/reporté dans l'autre.
+- **Recalcul de territoire à la suppression d'une course.** Le trigger PL/pgSQL correspondant
+  (`supabase_schema.sql`, section « Retrait de la portion de territoire lors de la suppression
+  d'une course ») a déjà été corrigé une fois : un simple `ST_Difference` entre le territoire fusionné
+  et le polygone de la course supprimée retire à tort une zone encore couverte par une autre course
+  existante. Le calcul recompose désormais le territoire depuis zéro (union des polygones des
+  courses restantes). Ne pas revenir à l'implémentation naïve.
+- **Fichiers d'icônes homonymes.** `ui/components/CustomIcons.kt` et `ui/icons/CustomIcons.kt` sont
+  deux fichiers générés distincts (packages et jeux d'icônes différents) qui portent le même nom —
+  vérifier le package avant de modifier ou de supposer un doublon.
+- **Section Social masquée.** `GuildeScreen.kt` affiche actuellement un placeholder « en
+  construction » sur toute la section Social (voir historique récent de commits) ; les
+  fonctionnalités sociales (amis, invitations) existent en base et dans les modèles mais ne sont
+  pas exposées à l'utilisateur final tant que ce flag n'est pas levé.
+- **Architecture d'état hétérogène.** `LeaderboardViewModel` est le seul ViewModel du projet ; tous
+  les autres écrans gèrent leur état directement dans le Composable (`remember`, `LaunchedEffect`).
+  Un nouvel écran doit suivre le style dominant plutôt que d'introduire un deuxième pattern isolé,
+  sauf décision explicite de migrer progressivement l'ensemble des écrans.
+- **Clé de service Supabase.** `web-admin/src/lib/supabaseAdmin.ts` utilise la clé `service_role`
+  et ne doit jamais être importé depuis un composant client — uniquement depuis les routes API
+  (`src/app/api/admin/*`).
+
+## Tests
+
+Le projet ne contient actuellement aucune suite de tests automatisés (ni tests unitaires, ni tests
+instrumentés Android, ni tests web-admin) — seuls les gabarits par défaut d'Android Studio
+(`androidx-junit`, `espresso-core`) sont présents dans le catalogue de dépendances sans test
+associé. La validation se fait manuellement (build + usage réel avec une localisation GPS pour la
+partie tracking). Si des tests sont ajoutés, documenter ici la commande de lancement et la
+stratégie retenue.
 
 ## Licence
 

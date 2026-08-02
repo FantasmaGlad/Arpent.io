@@ -1,0 +1,11 @@
+{
+  "name": "arpent-project-map-mcp",
+  "private": true,
+  "type": "module",
+  "description": "Serveur MCP local exposant la cartographie du dépôt Arpent.io (project-structure.json).",
+  "main": "server.mjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  }
+}
